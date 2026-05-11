@@ -9,6 +9,16 @@ import { mkProfile } from '@/test/profileFixtures'
 
 const h = vi.hoisted(() => ({ getProfile: vi.fn() }))
 
+vi.mock('echarts', () => ({
+  init: vi.fn(() => ({
+    setOption: vi.fn(),
+    resize: vi.fn(),
+    dispose: vi.fn(),
+    on: vi.fn(),
+    off: vi.fn(),
+  })),
+}))
+
 vi.mock('@/api/client', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/api/client')>()
   return { ...mod, api: { ...mod.api, getProfile: h.getProfile } }
@@ -36,8 +46,9 @@ describe('OverviewPage', () => {
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     wrap(<OverviewPage />)
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Demo' })).toBeInTheDocument())
-    expect(screen.getByText('Hello', { exact: false })).toBeInTheDocument()
-    expect(screen.getByText(/world/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Profile snapshot' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Quality focus' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Column mix' })).toBeInTheDocument()
     expect(screen.getByText(/100 B/)).toBeInTheDocument()
   })
 

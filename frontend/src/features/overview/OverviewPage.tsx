@@ -3,12 +3,8 @@ import { useEffect, useMemo, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import * as echarts from 'echarts'
 import { useQuery } from '@tanstack/react-query'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { api } from '@/api/client'
-import type { QualityIssue } from '@/api/types'
-import { ActionInSql } from '@/components/ActionInSql'
-import { Badge } from '@/components/ui/badge'
+import type { DatasetProfile, QualityIssue } from '@/api/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageContainer, Section } from '@/components/ui/section'
 import { CardSkeleton } from '@/components/ui/skeleton'
@@ -18,12 +14,6 @@ import { formatBytes, formatCount, formatPercent } from '@/lib/format'
 import { qualityScoreSeverity } from '@/lib/tokens'
 import { useUiStore } from '@/store/uiStore'
 import { cn } from '@/lib/utils'
-
-function sevBadge(s: string) {
-  if (s === 'critical') return 'critical' as const
-  if (s === 'warning') return 'warning' as const
-  return 'info' as const
-}
 
 function HeroMetric({
   label,
@@ -81,6 +71,162 @@ function QualityHero({ score }: { score: number | null | undefined }) {
   )
 }
 
+function FigureCard({
+  title,
+  description,
+  children,
+  className,
+}: {
+  title: string
+  description?: string
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <Card className={cn('border-white/10', className)}>
+      <CardHeader className="space-y-1 pb-2">
+        <CardTitle className="text-sm font-semibold leading-tight">{title}</CardTitle>
+        {description ? (
+          <p className="text-xs leading-snug text-[hsl(var(--muted))]">{description}</p>
+        ) : null}
+      </CardHeader>
+      <CardContent className="pt-0">{children}</CardContent>
+    </Card>
+  )
+}
+
+function ColumnMixDonut({
+  numeric,
+  categorical,
+  datetime,
+  totalColumns,
+}: {
+  numeric: number
+  categorical: number
+  datetime: number
+  totalColumns: number
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const other = Math.max(0, totalColumns - numeric - categorical - datetime)
+  const seriesData = useMemo(
+    () =>
+      [
+        { name: 'Numeric', value: numeric },
+        { name: 'Categorical', value: categorical },
+        { name: 'Datetime', value: datetime },
+        ...(other > 0 ? [{ name: 'Other', value: other }] : []),
+      ].filter((d) => d.value > 0),
+    [numeric, categorical, datetime, other],
+  )
+
+  useEffect(() => {
+    if (!ref.current) return
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const chart = echarts.init(ref.current)
+    const palette = [
+      'hsl(var(--accent))',
+      'hsl(var(--severity-info))',
+      'hsl(var(--severity-warning))',
+      'hsl(var(--muted))',
+    ]
+    chart.setOption({
+      animation: !reduce,
+      color: palette,
+      tooltip: { trigger: 'item', valueFormatter: (v: number) => `${v} cols` },
+      legend: {
+        orient: 'horizontal',
+        bottom: 0,
+        textStyle: { color: 'hsl(var(--muted))', fontSize: 11 },
+      },
+      series: [
+        {
+          type: 'pie',
+          radius: ['42%', '68%'],
+          center: ['50%', '46%'],
+          avoidLabelOverlap: true,
+          label: { show: true, formatter: '{b}\n{c}', fontSize: 10, color: 'hsl(var(--foreground))' },
+          data: seriesData.length
+            ? seriesData
+            : [{ name: 'No columns', value: 1, itemStyle: { color: 'hsl(var(--muted) / 0.25)' } }],
+        },
+      ],
+    })
+    const onResize = () => chart.resize()
+    window.addEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      chart.dispose()
+    }
+  }, [seriesData])
+
+  if (totalColumns === 0) {
+    return <p className="text-sm text-[hsl(var(--muted))]">No column metadata.</p>
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="h-56 w-full sm:h-64"
+      role="img"
+      aria-label="Column types: numeric, categorical, datetime, and other counts"
+    />
+  )
+}
+
+function CompletenessBars({
+  missingPct,
+  duplicatePct,
+}: {
+  missingPct: number | null
+  duplicatePct: number | null
+}) {
+  const missing = missingPct != null ? Math.min(100, Math.max(0, missingPct)) : null
+  const duplicate = duplicatePct != null ? Math.min(100, Math.max(0, duplicatePct)) : null
+
+  return (
+    <div className="flex min-h-[14rem] flex-col justify-center gap-6 px-1 py-2">
+      <div>
+        <div className="mb-1 flex items-baseline justify-between gap-2">
+          <span className="text-xs font-medium text-[hsl(var(--muted))]">Missing cells</span>
+          <span className="tabular-nums text-sm font-semibold text-white">
+            {missing != null ? formatPercent(missing) : '—'}
+          </span>
+        </div>
+        <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
+          <div
+            className={cn(
+              'h-full rounded-full transition-all',
+              missing != null && missing > 20
+                ? 'bg-[hsl(var(--severity-warning))]'
+                : 'bg-[hsl(var(--severity-info))]',
+            )}
+            style={{ width: `${missing ?? 0}%` }}
+          />
+        </div>
+      </div>
+      <div>
+        <div className="mb-1 flex items-baseline justify-between gap-2">
+          <span className="text-xs font-medium text-[hsl(var(--muted))]">Duplicate rows (sample)</span>
+          <span className="tabular-nums text-sm font-semibold text-white">
+            {duplicate != null ? formatPercent(duplicate) : '—'}
+          </span>
+        </div>
+        <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
+          <div
+            className={cn(
+              'h-full rounded-full transition-all',
+              duplicate != null && duplicate > 5
+                ? 'bg-[hsl(var(--severity-warning))]'
+                : 'bg-[hsl(var(--severity-ok))]',
+            )}
+            style={{ width: `${duplicate ?? 0}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function MissingnessMiniChart({ names, values }: { names: string[]; values: number[] }) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -122,6 +268,99 @@ function MissingnessMiniChart({ names, values }: { names: string[]; values: numb
   return <div ref={ref} className="h-64 w-full" role="img" aria-label="Top columns by null percent" />
 }
 
+function IssuesImpactChart({
+  issues,
+  openCol,
+}: {
+  issues: QualityIssue[]
+  openCol: (c: string) => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!ref.current || !issues.length) return
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const chart = echarts.init(ref.current)
+    const maxImpact = Math.max(1, ...issues.map((i) => i.score_impact))
+    const labels = issues.map((i) => (i.title.length > 48 ? `${i.title.slice(0, 46)}…` : i.title))
+
+    const sevColor = (s: string) =>
+      s === 'critical'
+        ? 'hsl(var(--severity-critical))'
+        : s === 'warning'
+          ? 'hsl(var(--severity-warning))'
+          : 'hsl(var(--severity-info))'
+
+    chart.setOption({
+      animation: !reduce,
+      grid: { left: 8, right: 28, top: 8, bottom: 8, containLabel: true },
+      xAxis: { type: 'value', max: maxImpact * 1.08, splitLine: { lineStyle: { opacity: 0.2 } } },
+      yAxis: {
+        type: 'category',
+        data: labels,
+        inverse: true,
+        axisLabel: { width: 140, overflow: 'truncate', interval: 0 },
+      },
+      series: [
+        {
+          type: 'bar',
+          data: issues.map((i) => ({
+            value: i.score_impact,
+            itemStyle: { color: sevColor(i.severity) },
+          })),
+        },
+      ],
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter: (raw: unknown) => {
+          const arr = raw as { dataIndex: number }[]
+          const row = arr[0]
+          if (!row || typeof row.dataIndex !== 'number') return ''
+          const issue = issues[row.dataIndex]
+          if (!issue) return ''
+          const cols = issue.affected_columns.slice(0, 4).join(', ') || '—'
+          return `${issue.title}<br/><span style="opacity:.85">Impact</span>: ${issue.score_impact.toFixed(1)}<br/><span style="opacity:.85">Columns</span>: ${cols}`
+        },
+      },
+    })
+
+    const onClick = (p: { dataIndex?: number }) => {
+      const idx = typeof p.dataIndex === 'number' ? p.dataIndex : -1
+      const issue = idx >= 0 ? issues[idx] : undefined
+      const col = issue?.affected_columns[0]
+      if (col) openCol(col)
+    }
+    chart.on('click', onClick)
+
+    const onResize = () => chart.resize()
+    window.addEventListener('resize', onResize)
+    return () => {
+      chart.off('click', onClick)
+      window.removeEventListener('resize', onResize)
+      chart.dispose()
+    }
+  }, [issues, openCol])
+
+  if (!issues.length) {
+    return <p className="text-sm text-[hsl(var(--muted))]">No quality issues detected.</p>
+  }
+
+  return (
+    <div>
+      <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+        Click a bar to open the first affected column
+      </p>
+      <div
+        ref={ref}
+        className="h-72 w-full min-h-[16rem]"
+        role="img"
+        aria-label="Quality issues by score impact"
+      />
+    </div>
+  )
+}
+
 function chipCols(
   label: string,
   cols: string[],
@@ -130,7 +369,9 @@ function chipCols(
   if (!cols.length) return null
   return (
     <div className="flex flex-wrap items-start gap-2">
-      <span className="mt-1 min-w-[7rem] text-xs text-[hsl(var(--muted))]">{label}</span>
+      <span className="mt-1 min-w-[6.5rem] text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+        {label}
+      </span>
       <div className="flex flex-wrap gap-1.5">
         {cols.map((c) => (
           <button
@@ -147,49 +388,48 @@ function chipCols(
   )
 }
 
-function TopIssueCard({
-  issue,
-  searchSuffix,
-  openCol,
-}: {
-  issue: QualityIssue
-  searchSuffix: string
-  openCol: (c: string) => void
-}) {
+function StructureSummary({ profile, onPick }: { profile: DatasetProfile; onPick: (c: string) => void }) {
+  const idCount = profile.potential_id_columns.length
+  const keyCount = profile.potential_key_columns.length
+  const measureCount = profile.main_numeric_measures.length
+
   return (
-    <Card className="border-white/10">
-      <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium leading-snug">{issue.title}</CardTitle>
-        <Badge variant={sevBadge(issue.severity)}>{issue.severity}</Badge>
-      </CardHeader>
-      <CardContent className="space-y-2 text-xs">
-        <div className="flex flex-wrap gap-1">
-          {issue.affected_columns.slice(0, 4).map((c) => (
-            <button
-              key={c}
-              type="button"
-              className="rounded-md bg-white/5 px-1.5 py-0.5 font-mono hover:bg-white/10"
-              onClick={() => openCol(c)}
-            >
-              {c}
-            </button>
-          ))}
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-2 text-center">
+          <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">Date</div>
+          <div className="mt-0.5 truncate font-mono text-xs text-white" title={profile.primary_date_column ?? ''}>
+            {profile.primary_date_column ?? '—'}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            to={{ pathname: '/quality', search: searchSuffix }}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-white/15 bg-transparent px-3 text-xs font-medium hover:bg-white/5"
-          >
-            Open in Quality
-          </Link>
-          {issue.suggested_sql ? (
-            <ActionInSql sql={issue.suggested_sql} variant="outline" size="sm">
-              Insert suggested SQL
-            </ActionInSql>
-          ) : null}
+        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-2 text-center">
+          <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">IDs</div>
+          <div className="mt-0.5 tabular-nums text-lg font-semibold text-white">{idCount}</div>
         </div>
-      </CardContent>
-    </Card>
+        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-2 text-center">
+          <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">Keys</div>
+          <div className="mt-0.5 tabular-nums text-lg font-semibold text-white">{keyCount}</div>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-2 text-center">
+          <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">Measures</div>
+          <div className="mt-0.5 tabular-nums text-lg font-semibold text-white">{measureCount}</div>
+        </div>
+      </div>
+      {profile.likely_grain ? (
+        <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+          <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">Grain</div>
+          <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-white/90">{profile.likely_grain}</p>
+        </div>
+      ) : null}
+      <div className="space-y-2.5 border-t border-white/10 pt-3">
+        {profile.primary_date_column
+          ? chipCols('Primary date', [profile.primary_date_column], onPick)
+          : null}
+        {chipCols('Potential IDs', profile.potential_id_columns, onPick)}
+        {chipCols('Potential keys', profile.potential_key_columns, onPick)}
+        {chipCols('Main measures', profile.main_numeric_measures, onPick)}
+      </div>
+    </div>
   )
 }
 
@@ -217,7 +457,7 @@ export function OverviewPage() {
   const topIssues = useMemo(() => {
     const issues = [...(q.data?.quality_issues ?? [])]
     issues.sort((a, b) => b.score_impact - a.score_impact)
-    return issues.slice(0, 3)
+    return issues.slice(0, 5)
   }, [q.data])
 
   if (!activeId) {
@@ -274,40 +514,37 @@ export function OverviewPage() {
         <QualityHero score={p.quality_score} />
       </div>
 
-      <Section title="Dataset story">
-        <div className="dcc-md">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{p.narrative || '_No narrative._'}</ReactMarkdown>
-        </div>
-        <div className="mt-4 border-t border-white/10 pt-4">
-          <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
-            At a glance
-          </div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Badge variant="default">{formatPercent(p.missing_cell_pct)} missing cells</Badge>
-            <Badge variant="default">
-              Duplicate rows (sample) {p.duplicate_row_pct != null ? formatPercent(p.duplicate_row_pct) : '—'}
-            </Badge>
-            <Badge variant="default">Numeric cols {p.numeric_column_count}</Badge>
-            <Badge variant="default">Category cols {p.categorical_column_count}</Badge>
-            <Badge variant="default">Datetime cols {p.datetime_column_count}</Badge>
-          </div>
-        </div>
-      </Section>
-
-      <Section title="Structure" description="Inferred grain, time axis, identifiers, and core measures.">
-        <div className="space-y-3 text-sm">
-          {p.likely_grain && <p className="text-[hsl(var(--foreground))]/90">{p.likely_grain}</p>}
-          {p.primary_date_column &&
-            chipCols('Primary date', [p.primary_date_column], openCol)}
-          {chipCols('Potential IDs', p.potential_id_columns, openCol)}
-          {chipCols('Potential keys', p.potential_key_columns, openCol)}
-          {chipCols('Main measures', p.main_numeric_measures, openCol)}
+      <Section title="Profile snapshot" description="Column mix, completeness, and inferred structure at a glance.">
+        <div className="grid gap-3 lg:grid-cols-3">
+          <FigureCard
+            title="Column mix"
+            description="How inferred types split across the schema."
+          >
+            <ColumnMixDonut
+              numeric={p.numeric_column_count}
+              categorical={p.categorical_column_count}
+              datetime={p.datetime_column_count}
+              totalColumns={p.columns}
+            />
+          </FigureCard>
+          <FigureCard
+            title="Completeness"
+            description="Share of missing cells and sampled duplicate rows."
+          >
+            <CompletenessBars missingPct={p.missing_cell_pct} duplicatePct={p.duplicate_row_pct} />
+          </FigureCard>
+          <FigureCard
+            title="Structure"
+            description="Grain, time axis, identifiers, and core measures."
+          >
+            <StructureSummary profile={p} onPick={openCol} />
+          </FigureCard>
         </div>
       </Section>
 
       <Section
-        title="Top quality issues"
-        description="Highest score impact first. Jump to columns or apply suggested SQL."
+        title="Quality focus"
+        description="Largest score drivers and columns with the most nulls in the profile sample."
         action={
           <Link
             to={{ pathname: '/quality', search: searchSuffix }}
@@ -317,19 +554,17 @@ export function OverviewPage() {
           </Link>
         }
       >
-        {topIssues.length === 0 ? (
-          <p className="text-sm text-[hsl(var(--muted))]">No quality issues detected.</p>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-3">
-            {topIssues.map((issue) => (
-              <TopIssueCard key={issue.id} issue={issue} searchSuffix={searchSuffix} openCol={openCol} />
-            ))}
-          </div>
-        )}
-      </Section>
-
-      <Section title="Missingness" description="Columns with the highest null rate in the profile sample.">
-        <MissingnessMiniChart names={topNull.names} values={topNull.values} />
+        <div className="grid gap-3 lg:grid-cols-2">
+          <FigureCard title="Issue impact" description="Highest score impact first (max five).">
+            <IssuesImpactChart issues={topIssues} openCol={openCol} />
+          </FigureCard>
+          <FigureCard
+            title="Top null rates"
+            description="Columns with the highest null percentage."
+          >
+            <MissingnessMiniChart names={topNull.names} values={topNull.values} />
+          </FigureCard>
+        </div>
       </Section>
     </PageContainer>
   )
