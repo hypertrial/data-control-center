@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AskPage } from '@/features/ask/AskPage'
@@ -70,6 +70,32 @@ describe('AskPage', () => {
     )
     await user.click(screen.getByRole('button', { name: 'Open in SQL' }))
     expect(useUiStore.getState().pendingQuery).toBe('SELECT COUNT(*) AS n FROM t')
+  })
+
+  it('submits question on Meta+Enter from textarea', async () => {
+    h.askAgent.mockResolvedValue({ answer: 'ok', model: 'm' })
+    wrap(<AskPage />)
+    const ta = screen.getByPlaceholderText(/plain language/i)
+    fireEvent.change(ta, { target: { value: 'Why?' } })
+    fireEvent.keyDown(ta, { key: 'Enter', metaKey: true, bubbles: true })
+    await waitFor(() =>
+      expect(h.askAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ question: 'Why?' }),
+      ),
+    )
+  })
+
+  it('submits question on Ctrl+Enter from textarea', async () => {
+    h.askAgent.mockResolvedValue({ answer: 'ok', model: 'm' })
+    wrap(<AskPage />)
+    const ta = screen.getByPlaceholderText(/plain language/i)
+    fireEvent.change(ta, { target: { value: 'Why?' } })
+    fireEvent.keyDown(ta, { key: 'Enter', ctrlKey: true, bubbles: true })
+    await waitFor(() =>
+      expect(h.askAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ question: 'Why?' }),
+      ),
+    )
   })
 
   it('shows banner for API result error', async () => {

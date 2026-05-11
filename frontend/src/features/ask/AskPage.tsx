@@ -38,9 +38,21 @@ export function AskPage() {
     return 'Using schema context for all registered datasets.'
   }, [activeId])
 
+  const onQuestionKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Enter') return
+    if (!e.metaKey && !e.ctrlKey) return
+    e.preventDefault()
+    if (!question.trim() || mut.isPending) return
+    mut.mutate()
+  }
+
   return (
     <PageContainer>
-      <p className="text-xs text-[hsl(var(--muted))]">{scopeHint}</p>
+      <p className="text-xs text-[hsl(var(--muted))]">
+        {scopeHint} Press{' '}
+        <kbd className="rounded border border-white/20 px-1 font-mono text-[10px]">⌘</kbd>+
+        <kbd className="rounded border border-white/20 px-1 font-mono text-[10px]">Enter</kbd> to ask.
+      </p>
 
       <div className="grid gap-3 lg:grid-cols-[1fr_140px]">
         <div>
@@ -51,6 +63,7 @@ export function AskPage() {
             id="dcc-ask-q"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={onQuestionKeyDown}
             placeholder="Ask a question about your data in plain language…"
             rows={5}
             className="w-full resize-y rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-[hsl(var(--muted))] focus:border-white/25 focus:outline-none"

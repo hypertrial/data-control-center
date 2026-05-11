@@ -58,6 +58,7 @@ Open `http://localhost:5173`. The dev server proxies `/api` to the backend.
 - You can still register datasets via the API using **absolute file paths** (CSV, Parquet, JSON / JSON Lines, TSV) or a **folder** of those files.
 - DuckDB creates one internal **view per dataset** whose SQL name is derived from the **file stem** (e.g. `player_ratings_2006_2026.parquet` → `player_ratings_2006_2026`). If two files share the same stem, the later registration gets a suffix such as `ratings_ds_002`. Reserved SQL-like names get a `_dcc` suffix. **`GET /api/datasets`** includes **`view_name`** on each summary so the UI can quote it correctly. Ad-hoc SQL must reference at least one registered view when datasets exist. On startup, the API **renames legacy views** of the form `v_{dataset_id}` (e.g. `v_ds_001`) to the current stem-based rule when the source file is still present.
 - In the **SQL** tab, **⌘+Enter** (macOS) or **Ctrl+Enter** runs the current query (same as **Run query**).
+- In the **Ask** tab, **⌘+Enter** (macOS) or **Ctrl+Enter** submits the question (same as **Ask**).
 - Profiles and quality issues are cached in `DCC_WORKSPACE_DB_PATH` (default `./.dcc_workspace.duckdb` relative to the backend process cwd).
 - **`POST /api/datasets/{dataset_id}/profile/refresh`** recomputes the cached profile for one dataset (records an in-process job row in the workspace DB).
 - **`GET /api/datasets`** responses may include an optional **`quality_score`** (0–100) on each dataset when a cached profile exists for that id.
