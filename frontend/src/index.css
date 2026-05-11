@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --background: 222 47% 7%;
+    --foreground: 210 40% 98%;
+    --card: 222 40% 10%;
+    --muted: 215 20% 55%;
+    --border: 217 25% 18%;
+    --accent: 221 83% 53%;
+  }
+  body {
+    @apply bg-[hsl(var(--background))] text-[hsl(var(--foreground))] antialiased min-h-screen;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+}
