@@ -15,6 +15,13 @@ import { qualityScoreSeverity } from '@/lib/tokens'
 import { useUiStore } from '@/store/uiStore'
 import { cn } from '@/lib/utils'
 
+/** Theme tokens in `index.css` are space-separated HSL triples; ECharts canvas ignores `var()`, so resolve here. */
+function hslFromRootVar(name: string, alpha?: number): string {
+  const triple = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  if (!triple) return alpha != null ? 'hsla(0, 0%, 45%, 0.35)' : 'hsl(0, 0%, 45%)'
+  return alpha != null ? `hsl(${triple} / ${alpha})` : `hsl(${triple})`
+}
+
 function HeroMetric({
   label,
   value,
@@ -124,10 +131,10 @@ function ColumnMixDonut({
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const chart = echarts.init(ref.current)
     const palette = [
-      'hsl(var(--accent))',
-      'hsl(var(--severity-info))',
-      'hsl(var(--severity-warning))',
-      'hsl(var(--muted))',
+      hslFromRootVar('--accent'),
+      hslFromRootVar('--severity-info'),
+      hslFromRootVar('--severity-warning'),
+      hslFromRootVar('--muted'),
     ]
     chart.setOption({
       animation: !reduce,
@@ -136,7 +143,7 @@ function ColumnMixDonut({
       legend: {
         orient: 'horizontal',
         bottom: 0,
-        textStyle: { color: 'hsl(var(--muted))', fontSize: 11 },
+        textStyle: { color: hslFromRootVar('--muted'), fontSize: 11 },
       },
       series: [
         {
@@ -144,10 +151,15 @@ function ColumnMixDonut({
           radius: ['42%', '68%'],
           center: ['50%', '46%'],
           avoidLabelOverlap: true,
-          label: { show: true, formatter: '{b}\n{c}', fontSize: 10, color: 'hsl(var(--foreground))' },
+          label: {
+            show: true,
+            formatter: '{b}\n{c}',
+            fontSize: 10,
+            color: hslFromRootVar('--foreground'),
+          },
           data: seriesData.length
             ? seriesData
-            : [{ name: 'No columns', value: 1, itemStyle: { color: 'hsl(var(--muted) / 0.25)' } }],
+            : [{ name: 'No columns', value: 1, itemStyle: { color: hslFromRootVar('--muted', 0.28) } }],
         },
       ],
     })
@@ -234,6 +246,9 @@ function MissingnessMiniChart({ names, values }: { names: string[]; values: numb
     if (!ref.current || !names.length) return
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const chart = echarts.init(ref.current)
+    const crit = hslFromRootVar('--severity-critical')
+    const warn = hslFromRootVar('--severity-warning')
+    const info = hslFromRootVar('--severity-info')
     chart.setOption({
       animation: !reduce,
       grid: { left: 8, right: 16, top: 8, bottom: 8, containLabel: true },
@@ -245,11 +260,7 @@ function MissingnessMiniChart({ names, values }: { names: string[]; values: numb
           data: values,
           itemStyle: {
             color: (params: { data: number }) =>
-              params.data > 50
-                ? 'hsl(var(--severity-critical))'
-                : params.data > 20
-                  ? 'hsl(var(--severity-warning))'
-                  : 'hsl(var(--severity-info))',
+              params.data > 50 ? crit : params.data > 20 ? warn : info,
           },
         },
       ],
@@ -284,12 +295,10 @@ function IssuesImpactChart({
     const maxImpact = Math.max(1, ...issues.map((i) => i.score_impact))
     const labels = issues.map((i) => (i.title.length > 48 ? `${i.title.slice(0, 46)}…` : i.title))
 
-    const sevColor = (s: string) =>
-      s === 'critical'
-        ? 'hsl(var(--severity-critical))'
-        : s === 'warning'
-          ? 'hsl(var(--severity-warning))'
-          : 'hsl(var(--severity-info))'
+    const crit = hslFromRootVar('--severity-critical')
+    const warn = hslFromRootVar('--severity-warning')
+    const info = hslFromRootVar('--severity-info')
+    const sevColor = (s: string) => (s === 'critical' ? crit : s === 'warning' ? warn : info)
 
     chart.setOption({
       animation: !reduce,
