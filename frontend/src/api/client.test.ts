@@ -60,6 +60,7 @@ describe('api client', () => {
       jsonOk({
         dataset_id: 'ds_001',
         name: 'a.csv',
+        view_name: 'a',
         source_path: '/x',
         format: 'csv',
         row_count: 1,

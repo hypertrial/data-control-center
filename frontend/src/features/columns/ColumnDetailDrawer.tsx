@@ -39,12 +39,12 @@ export function ColumnDetailDrawer({
   open,
   onOpenChange,
   column,
-  datasetId,
+  viewName,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   column: ColumnProfile | null
-  datasetId: string | null
+  viewName: string
 }) {
   const [tab, setTab] = useState('distribution')
   const topRef = useRef<HTMLDivElement>(null)
@@ -89,9 +89,8 @@ export function ColumnDetailDrawer({
 
   if (!column) return null
 
-  const effectiveId = datasetId ?? 'dataset'
-  const selectOne = sqlSelectColumnFromView(effectiveId, column.name, 100)
-  const selectStar = sqlSelectStarFromView(effectiveId, 50)
+  const selectOne = viewName ? sqlSelectColumnFromView(viewName, column.name, 100) : ''
+  const selectStar = viewName ? sqlSelectStarFromView(viewName, 50) : ''
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={column.name}>
@@ -154,8 +153,14 @@ export function ColumnDetailDrawer({
         </TabsContent>
 
         <TabsContent value="use" className="mt-0 space-y-3">
-          <SqlSnippet label="Single column" sql={selectOne} />
-          <SqlSnippet label="Full sample" sql={selectStar} />
+          {viewName ? (
+            <>
+              <SqlSnippet label="Single column" sql={selectOne} />
+              <SqlSnippet label="Full sample" sql={selectStar} />
+            </>
+          ) : (
+            <p className="text-xs text-[hsl(var(--muted))]">Loading table name…</p>
+          )}
         </TabsContent>
       </Tabs>
     </Sheet>

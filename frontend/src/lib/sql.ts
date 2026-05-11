@@ -13,22 +13,18 @@ export function quoteLiteral(value: unknown): string {
   return `'${s.replaceAll("'", "''")}'`
 }
 
-export function viewNameForDataset(datasetId: string): string {
-  return `v_${datasetId}`
-}
-
-export function sqlSelectStarFromView(datasetId: string, limit = 50): string {
-  const v = viewNameForDataset(datasetId)
+export function sqlSelectStarFromView(viewName: string, limit = 50): string {
+  const v = quoteIdent(viewName)
   return `SELECT * FROM ${v} LIMIT ${limit};`
 }
 
-export function sqlSelectColumnFromView(datasetId: string, column: string, limit = 100): string {
-  const v = viewNameForDataset(datasetId)
+export function sqlSelectColumnFromView(viewName: string, column: string, limit = 100): string {
+  const v = quoteIdent(viewName)
   const col = quoteIdent(column)
   return `SELECT ${col} FROM ${v} LIMIT ${limit};`
 }
 
-export function sqlWherePkSample(datasetId: string, column: string, value: unknown, limit = 50): string {
-  const v = viewNameForDataset(datasetId)
+export function sqlWherePkSample(viewName: string, column: string, value: unknown, limit = 50): string {
+  const v = quoteIdent(viewName)
   return `SELECT * FROM ${v} WHERE ${quoteIdent(column)} = ${quoteLiteral(value)} LIMIT ${limit};`
 }

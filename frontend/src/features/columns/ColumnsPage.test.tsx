@@ -16,11 +16,11 @@ vi.mock('echarts', () => ({
   })),
 }))
 
-const h = vi.hoisted(() => ({ getProfile: vi.fn() }))
+const h = vi.hoisted(() => ({ getProfile: vi.fn(), listDatasets: vi.fn() }))
 
 vi.mock('@/api/client', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/api/client')>()
-  return { ...mod, api: { ...mod.api, getProfile: h.getProfile } }
+  return { ...mod, api: { ...mod.api, getProfile: h.getProfile, listDatasets: h.listDatasets } }
 })
 
 function wrap(ui: React.ReactElement) {
@@ -36,6 +36,18 @@ function wrap(ui: React.ReactElement) {
 
 describe('ColumnsPage', () => {
   beforeEach(() => {
+    h.listDatasets.mockResolvedValue([
+      {
+        dataset_id: 'ds_1',
+        name: 'fixture.csv',
+        view_name: 'fixture',
+        source_path: '/p/fixture.csv',
+        format: 'csv',
+        row_count: 1,
+        column_count: 2,
+        file_size_bytes: 1,
+      },
+    ])
     h.getProfile.mockResolvedValue(
       mkProfile({
         column_profiles: [

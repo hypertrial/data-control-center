@@ -17,7 +17,7 @@ describe('ColumnDetailDrawer', () => {
   it('returns null without column', () => {
     const { container } = render(
       <MemoryRouter>
-        <ColumnDetailDrawer open onOpenChange={vi.fn()} column={null} datasetId={null} />
+        <ColumnDetailDrawer open onOpenChange={vi.fn()} column={null} viewName="" />
       </MemoryRouter>,
     )
     expect(container.firstChild).toBeNull()
@@ -38,7 +38,7 @@ describe('ColumnDetailDrawer', () => {
     })
     render(
       <MemoryRouter>
-        <ColumnDetailDrawer open onOpenChange={onOpenChange} column={col} datasetId="ds_001" />
+        <ColumnDetailDrawer open onOpenChange={onOpenChange} column={col} viewName="metrics" />
       </MemoryRouter>,
     )
     expect(screen.getByText('col_a')).toBeInTheDocument()

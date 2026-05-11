@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
@@ -11,6 +12,81 @@ from app.services.workspace import Workspace
 
 
 SUPPORTED_EXTENSIONS = {".csv", ".parquet", ".json", ".jsonl", ".ndjson", ".tsv"}
+
+MAX_VIEW_STEM_LEN = 120
+
+_RESERVED_VIEW_IDENTIFIERS = frozenset(
+    {
+        "select",
+        "from",
+        "where",
+        "order",
+        "group",
+        "by",
+        "having",
+        "limit",
+        "offset",
+        "join",
+        "inner",
+        "left",
+        "right",
+        "full",
+        "cross",
+        "outer",
+        "on",
+        "as",
+        "with",
+        "union",
+        "all",
+        "case",
+        "when",
+        "then",
+        "else",
+        "end",
+        "true",
+        "false",
+        "null",
+        "table",
+        "create",
+        "drop",
+        "insert",
+        "update",
+        "delete",
+        "and",
+        "or",
+        "not",
+        "distinct",
+    },
+)
+
+
+def slugify_file_stem(raw_stem: str, dataset_id: str) -> str:
+    s = re.sub(r"[^A-Za-z0-9_]+", "_", raw_stem)
+    s = re.sub(r"_+", "_", s).strip("_")
+    if not s:
+        return f"dataset_{dataset_id}"
+    if len(s) > MAX_VIEW_STEM_LEN:
+        s = s[:MAX_VIEW_STEM_LEN].rstrip("_")
+        if not s:
+            return f"dataset_{dataset_id}"
+    return s
+
+
+def guard_reserved_identifier(slug: str) -> str:
+    if slug.lower() in _RESERVED_VIEW_IDENTIFIERS:
+        return f"{slug}_dcc"
+    return slug
+
+
+def pick_unique_view_name(base: str, dataset_id: str, taken: set[str]) -> str:
+    if base not in taken:
+        return base
+    candidate = f"{base}_{dataset_id}"
+    n = 2
+    while candidate in taken:
+        candidate = f"{base}_{dataset_id}_{n}"
+        n += 1
+    return candidate
 
 
 @dataclass
@@ -89,7 +165,10 @@ class DatasetRegistry:
             )
 
         dataset_id = self._alloc_id()
-        view_name = f"v_{dataset_id}"
+        taken = {ds.view_name for ds in self._by_id.values()}
+        slug = slugify_file_stem(p.stem, dataset_id)
+        base = guard_reserved_identifier(slug)
+        view_name = pick_unique_view_name(base, dataset_id, taken)
         fsize = p.stat().st_size if p.is_file() else None
 
         self._workspace.register_file_view(view_name, p, fmt)
@@ -153,6 +232,7 @@ class DatasetRegistry:
         return DatasetSummary(
             dataset_id=ds.dataset_id,
             name=ds.source_path.name,
+            view_name=ds.view_name,
             source_path=str(ds.source_path),
             format=ds.format,
             row_count=ds.row_count,

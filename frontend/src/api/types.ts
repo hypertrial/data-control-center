@@ -1,6 +1,7 @@
 export type DatasetSummary = {
   dataset_id: string
   name: string
+  view_name: string
   source_path: string
   format: string
   row_count: number | null

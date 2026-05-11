@@ -107,6 +107,12 @@ export function ColumnsPage() {
     enabled: !!activeId,
   })
 
+  const datasetsQ = useQuery({ queryKey: ['datasets'], queryFn: api.listDatasets })
+  const activeViewName = useMemo(
+    () => datasetsQ.data?.find((d) => d.dataset_id === activeId)?.view_name ?? '',
+    [datasetsQ.data, activeId],
+  )
+
   const columns = useMemo(
     () => [
       colHelper.accessor('name', {
@@ -323,7 +329,7 @@ export function ColumnsPage() {
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         column={selected}
-        datasetId={activeId}
+        viewName={activeViewName}
       />
     </PageContainer>
   )
