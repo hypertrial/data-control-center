@@ -142,3 +142,28 @@ def test_find_relationships_sample_exception_falls_back(tmp_path: Path, monkeypa
         boom,
     )
     find_relationships(reg)
+
+
+def test_find_relationships_bad_cache_json(tmp_path: Path) -> None:
+    from app.services.relationships import registry_fingerprint
+
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    reg = DatasetRegistry(ws)
+    (tmp_path / "solo.csv").write_text("uid\n1\n")
+    reg.register_path(tmp_path / "solo.csv")
+    fp = registry_fingerprint(reg)
+    ws.save_relationships_cache(fp, "not-json")
+    out = find_relationships(reg)
+    assert isinstance(out, list)
+
+
+def test_find_relationships_cache_hit(tmp_path: Path) -> None:
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    reg = DatasetRegistry(ws)
+    (tmp_path / "solo.csv").write_text("uid\n1\n")
+    reg.register_path(tmp_path / "solo.csv")
+    first = find_relationships(reg)
+    second = find_relationships(reg)
+    assert second == first

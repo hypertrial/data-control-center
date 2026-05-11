@@ -107,6 +107,15 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/profile')
   })
 
+  it('refreshProfile POST', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk({ dataset_id: 'ds_1' }))
+    vi.stubGlobal('fetch', fetchMock)
+    await api.refreshProfile('ds_1')
+    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/profile/refresh', {
+      method: 'POST',
+    })
+  })
+
   it('getQuality GET', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonOk([]))
     vi.stubGlobal('fetch', fetchMock)
@@ -143,5 +152,14 @@ describe('api client', () => {
     vi.stubGlobal('fetch', fetchMock)
     await api.relationships()
     expect(fetchMock).toHaveBeenCalledWith('/api/relationships')
+  })
+
+  it('refreshRelationships POST', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk([]))
+    vi.stubGlobal('fetch', fetchMock)
+    await api.refreshRelationships()
+    expect(fetchMock).toHaveBeenCalledWith('/api/relationships/refresh', {
+      method: 'POST',
+    })
   })
 })

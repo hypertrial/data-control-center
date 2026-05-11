@@ -104,3 +104,42 @@ def test_drop_view_if_exists(tmp_path: Path) -> None:
         ws.drop_view_if_exists("vd")
     finally:
         ws.close()
+
+
+def test_relationships_cache_roundtrip(tmp_path: Path) -> None:
+    import json
+
+    from app.models.api import RelationshipCandidate
+
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    try:
+        c = RelationshipCandidate(
+            left_dataset_id="ds_001",
+            left_column="a",
+            right_dataset_id="ds_002",
+            right_column="b",
+            score=0.5,
+            evidence="test",
+        )
+        payload = json.dumps([c.model_dump(mode="json")])
+        ws.save_relationships_cache("fp1", payload)
+        loaded = ws.load_relationships_cache()
+        assert loaded == ("fp1", payload)
+    finally:
+        ws.close()
+
+
+def test_jobs_insert_and_finish(tmp_path: Path) -> None:
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    try:
+        ws.job_insert("jid", "profile_refresh", "ds_001", "running")
+        ws.job_finish("jid", "failed", "oops")
+        row = ws.connection.execute(
+            "SELECT status, error FROM dcc_jobs WHERE job_id = ?",
+            ["jid"],
+        ).fetchone()
+        assert row == ("failed", "oops")
+    finally:
+        ws.close()

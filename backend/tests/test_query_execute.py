@@ -34,6 +34,36 @@ def test_execute_forbidden_keyword(registry_with_view: DatasetRegistry) -> None:
     assert "forbidden" in (out.error or "").lower()
 
 
+def test_execute_success_with_cte(registry_with_view: DatasetRegistry) -> None:
+    vw = next(iter(registry_with_view.list_all())).view_name
+    sql = f"WITH q AS (SELECT * FROM {vw}) SELECT * FROM q"
+    out = execute_query(registry_with_view, Settings(), QueryRequest(sql=sql))
+    assert not out.error
+    assert len(out.rows) >= 1
+
+
+def test_execute_insert_forbidden(registry_with_view: DatasetRegistry) -> None:
+    vw = next(iter(registry_with_view.list_all())).view_name
+    out = execute_query(
+        registry_with_view,
+        Settings(),
+        QueryRequest(sql=f"INSERT INTO {vw} SELECT 1"),
+    )
+    assert out.error
+    assert "forbidden" in (out.error or "").lower()
+
+
+def test_execute_multi_statement_rejected(registry_with_view: DatasetRegistry) -> None:
+    vw = next(iter(registry_with_view.list_all())).view_name
+    out = execute_query(
+        registry_with_view,
+        Settings(),
+        QueryRequest(sql=f"SELECT 1 FROM {vw}; SELECT 2 FROM {vw}"),
+    )
+    assert out.error
+    assert "single" in (out.error or "").lower()
+
+
 def test_execute_requires_view_when_datasets_exist(registry_with_view: DatasetRegistry) -> None:
     assert execute_query(
         registry_with_view,

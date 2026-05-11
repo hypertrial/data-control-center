@@ -363,6 +363,46 @@ def test_upload_register_valueerror_skips_file(tmp_path, monkeypatch):
     assert len(r.json()) == 1
 
 
+def test_refresh_profile(client, tmp_path):
+    csv = tmp_path / "t.csv"
+    csv.write_text("id,name\n1,x\n")
+    reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
+    did = reg.json()["dataset_id"]
+    pr = client.post(f"/api/datasets/{did}/profile/refresh")
+    assert pr.status_code == 200
+    assert pr.json()["dataset_id"] == did
+
+
+def test_refresh_profile_not_found(client):
+    assert client.post("/api/datasets/ds_missing/profile/refresh").status_code == 404
+
+
+def test_refresh_profile_build_failure(client, tmp_path, monkeypatch):
+    csv = tmp_path / "t.csv"
+    csv.write_text("id\n1\n")
+    reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
+    did = reg.json()["dataset_id"]
+
+    def boom(*a, **k):  # noqa: ANN002, ANN003
+        raise RuntimeError("prof fail")
+
+    monkeypatch.setattr("app.api.datasets.build_profile", boom)
+    pr = client.post(f"/api/datasets/{did}/profile/refresh")
+    assert pr.status_code == 500
+
+
+def test_refresh_relationships_endpoint(client, tmp_path):
+    a = tmp_path / "a.csv"
+    b = tmp_path / "b.csv"
+    a.write_text("uid\n1\n")
+    b.write_text("uid\n1\n")
+    client.post("/api/datasets/register-file", json={"path": str(a)})
+    client.post("/api/datasets/register-file", json={"path": str(b)})
+    r = client.post("/api/relationships/refresh")
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)
+
+
 def test_relationships_empty_and_pairs(client, tmp_path):
     r0 = client.get("/api/relationships")
     assert r0.status_code == 200

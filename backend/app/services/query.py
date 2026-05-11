@@ -7,11 +7,7 @@ import re
 from app.config import Settings
 from app.models.api import QueryRequest, QueryResult, QueryResultColumn
 from app.services.registry import DatasetRegistry
-
-FORBIDDEN = re.compile(
-    r"\b(ATTACH|DETACH|INSTALL|LOAD\s+EXTENSION|COPY\s+DATABASE|EXPORT\s+DATABASE)\b",
-    re.IGNORECASE,
-)
+from app.services.sql_validate import validate_workspace_sql
 
 
 def _references_registered_view(sql: str, view_names: set[str]) -> bool:
@@ -26,33 +22,46 @@ def execute_query(
     settings: Settings,
     req: QueryRequest,
 ) -> QueryResult:
-    if FORBIDDEN.search(req.sql):
+    err, normalized = validate_workspace_sql(req.sql)
+    if err:
         return QueryResult(
             columns=[],
             rows=[],
             row_count=0,
-            error="SQL contains a forbidden keyword for this workspace.",
+            error=err,
         )
+
+    assert normalized is not None
+
     views = {ds.view_name for ds in registry.list_all()}
-    if views and not _references_registered_view(req.sql, views):
+    if views and not _references_registered_view(normalized, views):
         return QueryResult(
             columns=[],
             rows=[],
             row_count=0,
             error="SQL must reference at least one registered dataset view (e.g. v_ds_001).",
         )
+
     limit = min(req.max_rows or settings.query_max_rows, settings.query_max_rows)
+    fetch_cap = limit + 1
+    wrapped = f"SELECT * FROM ({normalized}) AS _dcc_sub LIMIT {int(fetch_cap)}"
     con = registry.workspace.connection
     try:
-        res = con.execute(req.sql)
+        res = con.execute(wrapped)
         cols_meta = res.description or []
         colnames = [c[0] for c in cols_meta]
-        fetched = res.fetchall()
+        fetched: list[tuple[object, ...]] = []
+        while len(fetched) < fetch_cap:
+            row = res.fetchone()
+            if row is None:
+                break
+            fetched.append(row)
+
+        truncated = len(fetched) > limit
+        trimmed = fetched[:limit]
         rows: list[dict[str, object]] = [
-            {colnames[i]: row[i] for i in range(len(colnames))} for row in fetched
+            {colnames[i]: row[i] for i in range(len(colnames))} for row in trimmed
         ]
-        truncated = len(rows) > limit
-        rows = rows[:limit]
         cols = [QueryResultColumn(name=c, type=None) for c in colnames]
         return QueryResult(
             columns=cols,

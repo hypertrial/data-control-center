@@ -54,6 +54,30 @@ class Workspace:
             );
             """
         )
+        self._con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dcc_relationships_cache (
+              singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+              fingerprint VARCHAR NOT NULL,
+              payload_json VARCHAR NOT NULL,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+        self._con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dcc_jobs (
+              job_id VARCHAR PRIMARY KEY,
+              kind VARCHAR NOT NULL,
+              dataset_id VARCHAR,
+              status VARCHAR NOT NULL,
+              progress DOUBLE DEFAULT 0,
+              error VARCHAR,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
 
     @property
     def connection(self) -> duckdb.DuckDBPyConnection:
@@ -133,3 +157,42 @@ class Workspace:
 
     def delete_profile_cache(self, dataset_id: str) -> None:
         self._con.execute("DELETE FROM dcc_profile_cache WHERE dataset_id = ?", [dataset_id])
+
+    def load_relationships_cache(self) -> tuple[str, str] | None:
+        row = self._con.execute(
+            "SELECT fingerprint, payload_json FROM dcc_relationships_cache WHERE singleton = 1",
+        ).fetchone()
+        if not row:
+            return None
+        return str(row[0]), str(row[1])
+
+    def save_relationships_cache(self, fingerprint: str, payload_json: str) -> None:
+        self._con.execute(
+            """
+            INSERT INTO dcc_relationships_cache (singleton, fingerprint, payload_json)
+            VALUES (1, ?, ?)
+            ON CONFLICT (singleton) DO UPDATE SET
+              fingerprint = excluded.fingerprint,
+              payload_json = excluded.payload_json,
+              updated_at = now()
+            """,
+            [fingerprint, payload_json],
+        )
+
+    def job_insert(self, job_id: str, kind: str, dataset_id: str | None, status: str) -> None:
+        self._con.execute(
+            """
+            INSERT INTO dcc_jobs (job_id, kind, dataset_id, status, progress)
+            VALUES (?, ?, ?, ?, 0)
+            """,
+            [job_id, kind, dataset_id, status],
+        )
+
+    def job_finish(self, job_id: str, status: str, error: str | None = None) -> None:
+        self._con.execute(
+            """
+            UPDATE dcc_jobs SET status = ?, error = ?, updated_at = now()
+            WHERE job_id = ?
+            """,
+            [status, error, job_id],
+        )

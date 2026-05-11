@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from difflib import SequenceMatcher
 
@@ -40,7 +41,33 @@ def _jaccard_sample(a: pl.Series, b: pl.Series) -> float:
     return inter / union if union else 0.0
 
 
-def find_relationships(registry: DatasetRegistry, min_score: float = 0.35) -> list[RelationshipCandidate]:
+def registry_fingerprint(registry: DatasetRegistry) -> str:
+    dss = sorted(registry.list_all(), key=lambda d: d.dataset_id)
+    return "|".join(
+        f"{d.dataset_id}:{d.view_name}:{d.row_count}:{d.column_count}"
+        for d in dss
+    )
+
+
+def find_relationships(
+    registry: DatasetRegistry,
+    min_score: float = 0.35,
+    *,
+    force_refresh: bool = False,
+) -> list[RelationshipCandidate]:
+    ws = registry.workspace
+    fp = registry_fingerprint(registry)
+    if not force_refresh:
+        cached = ws.load_relationships_cache()
+        if cached:
+            cf, payload = cached
+            if cf == fp:
+                try:
+                    raw = json.loads(payload)
+                    return [RelationshipCandidate.model_validate(x) for x in raw]
+                except Exception:
+                    pass
+
     datasets = registry.list_all()
     candidates: list[RelationshipCandidate] = []
     for i, left in enumerate(datasets):
@@ -84,4 +111,6 @@ def find_relationships(registry: DatasetRegistry, min_score: float = 0.35) -> li
                         )
                     )
     candidates.sort(key=lambda x: -x.score)
-    return candidates[:200]
+    out = candidates[:200]
+    ws.save_relationships_cache(fp, json.dumps([c.model_dump(mode="json") for c in out]))
+    return out

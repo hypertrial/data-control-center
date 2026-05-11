@@ -1,73 +1,40 @@
-# React + TypeScript + Vite
+# Data Control Center — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite + TypeScript UI for browsing datasets, profiles, SQL, and relationship hints.
 
-Currently, two official plugins are available:
+## Prerequisites
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Use the Node version from [`.nvmrc`](../.nvmrc) (same as CI).
 
-## React Compiler
+## Commands
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+From `frontend/`:
 
-## Expanding the ESLint configuration
+| Command | Purpose |
+| --- | --- |
+| `npm install` | Install dependencies |
+| `npm run dev` | Dev server on port **5173** |
+| `npm run build` | Production build |
+| `npm run lint` | ESLint |
+| `npm test` | Vitest (happy-dom) |
+| `npm run test:coverage` | Vitest with **v8** coverage thresholds |
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+You can also run **`npm run dev`** from the **repository root** (see root [`README.md`](../README.md)); it forwards to this package.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## API proxy
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+[`vite.config.ts`](vite.config.ts) proxies **`/api`** → **`http://127.0.0.1:8000`**. Start the FastAPI backend separately (`make backend` or `make dev` from the repo root).
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## Layout & conventions
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+- **`src/features/`** — route-level pages (overview, columns, query, relationships, …).
+- **`src/api/`** — typed fetch client ([`client.ts`](src/api/client.ts)) and shared DTOs ([`types.ts`](src/api/types.ts)).
+- **`src/lib/sql.ts`** — SQL identifier/string quoting and snippet builders (see unit tests in [`sql.test.ts`](src/lib/sql.test.ts)).
+- **`src/hooks/useDisposableEChart.ts`** — shared ECharts init / `setOption` / resize / dispose lifecycle ([`useDisposableEChart.test.tsx`](src/hooks/useDisposableEChart.test.tsx)).
+- **`src/store/uiStore.ts`** — Zustand UI state (active dataset, drawer, filters).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+TanStack Query keys commonly used: `['datasets']`, `['profile', datasetId]`, `['quality', datasetId]`, `['relationships']`. Expensive recomputes use **`api.refreshProfile`** and **`api.refreshRelationships`** before invalidating those keys.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## Tests & coverage
+
+Tests live next to sources as `*.test.ts(x)`. Coverage thresholds are defined in [`vitest.config.ts`](vitest.config.ts) (baseline **~85%** lines/statements with deliberate excludes); CI runs `npm run test:coverage`.

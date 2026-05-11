@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import * as echarts from 'echarts'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import type { DatasetProfile, QualityIssue } from '@/api/types'
@@ -9,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageContainer, Section } from '@/components/ui/section'
 import { CardSkeleton } from '@/components/ui/skeleton'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
+import { useDisposableEChart } from '@/hooks/useDisposableEChart'
 import { useOpenColumnDrawer } from '@/hooks/useOpenColumnDrawer'
 import { formatBytes, formatCount, formatPercent } from '@/lib/format'
 import { qualityScoreSeverity } from '@/lib/tokens'
@@ -126,50 +126,45 @@ function ColumnMixDonut({
     [numeric, categorical, datetime, other],
   )
 
-  useEffect(() => {
-    if (!ref.current) return
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const chart = echarts.init(ref.current)
-    const palette = [
-      hslFromRootVar('--accent'),
-      hslFromRootVar('--severity-info'),
-      hslFromRootVar('--severity-warning'),
-      hslFromRootVar('--muted'),
-    ]
-    chart.setOption({
-      animation: !reduce,
-      color: palette,
-      tooltip: { trigger: 'item', valueFormatter: (v: number) => `${v} cols` },
-      legend: {
-        orient: 'horizontal',
-        bottom: 0,
-        textStyle: { color: hslFromRootVar('--muted'), fontSize: 11 },
-      },
-      series: [
-        {
-          type: 'pie',
-          radius: ['42%', '68%'],
-          center: ['50%', '46%'],
-          avoidLabelOverlap: true,
-          label: {
-            show: true,
-            formatter: '{b}\n{c}',
-            fontSize: 10,
-            color: hslFromRootVar('--foreground'),
-          },
-          data: seriesData.length
-            ? seriesData
-            : [{ name: 'No columns', value: 1, itemStyle: { color: hslFromRootVar('--muted', 0.28) } }],
+  useDisposableEChart(
+    ref,
+    totalColumns > 0,
+    () => {
+      const palette = [
+        hslFromRootVar('--accent'),
+        hslFromRootVar('--severity-info'),
+        hslFromRootVar('--severity-warning'),
+        hslFromRootVar('--muted'),
+      ]
+      return {
+        color: palette,
+        tooltip: { trigger: 'item', valueFormatter: (v: number) => `${v} cols` },
+        legend: {
+          orient: 'horizontal',
+          bottom: 0,
+          textStyle: { color: hslFromRootVar('--muted'), fontSize: 11 },
         },
-      ],
-    })
-    const onResize = () => chart.resize()
-    window.addEventListener('resize', onResize)
-    return () => {
-      window.removeEventListener('resize', onResize)
-      chart.dispose()
-    }
-  }, [seriesData])
+        series: [
+          {
+            type: 'pie',
+            radius: ['42%', '68%'],
+            center: ['50%', '46%'],
+            avoidLabelOverlap: true,
+            label: {
+              show: true,
+              formatter: '{b}\n{c}',
+              fontSize: 10,
+              color: hslFromRootVar('--foreground'),
+            },
+            data: seriesData.length
+              ? seriesData
+              : [{ name: 'No columns', value: 1, itemStyle: { color: hslFromRootVar('--muted', 0.28) } }],
+          },
+        ],
+      }
+    },
+    [seriesData],
+  )
 
   if (totalColumns === 0) {
     return <p className="text-sm text-[hsl(var(--muted))]">No column metadata.</p>
@@ -242,37 +237,32 @@ function CompletenessBars({
 function MissingnessMiniChart({ names, values }: { names: string[]; values: number[] }) {
   const ref = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!ref.current || !names.length) return
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const chart = echarts.init(ref.current)
-    const crit = hslFromRootVar('--severity-critical')
-    const warn = hslFromRootVar('--severity-warning')
-    const info = hslFromRootVar('--severity-info')
-    chart.setOption({
-      animation: !reduce,
-      grid: { left: 8, right: 16, top: 8, bottom: 8, containLabel: true },
-      xAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
-      yAxis: { type: 'category', data: names, inverse: true, axisLabel: { width: 90, overflow: 'truncate' } },
-      series: [
-        {
-          type: 'bar',
-          data: values,
-          itemStyle: {
-            color: (params: { data: number }) =>
-              params.data > 50 ? crit : params.data > 20 ? warn : info,
+  useDisposableEChart(
+    ref,
+    names.length > 0,
+    () => {
+      const crit = hslFromRootVar('--severity-critical')
+      const warn = hslFromRootVar('--severity-warning')
+      const info = hslFromRootVar('--severity-info')
+      return {
+        grid: { left: 8, right: 16, top: 8, bottom: 8, containLabel: true },
+        xAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
+        yAxis: { type: 'category', data: names, inverse: true, axisLabel: { width: 90, overflow: 'truncate' } },
+        series: [
+          {
+            type: 'bar',
+            data: values,
+            itemStyle: {
+              color: (params: { data: number }) =>
+                params.data > 50 ? crit : params.data > 20 ? warn : info,
+            },
           },
-        },
-      ],
-      tooltip: { trigger: 'axis', valueFormatter: (v: number) => `${v.toFixed(2)}%` },
-    })
-    const onResize = () => chart.resize()
-    window.addEventListener('resize', onResize)
-    return () => {
-      window.removeEventListener('resize', onResize)
-      chart.dispose()
-    }
-  }, [names, values])
+        ],
+        tooltip: { trigger: 'axis', valueFormatter: (v: number) => `${v.toFixed(2)}%` },
+      }
+    },
+    [names, values],
+  )
 
   if (!names.length) return <p className="text-sm text-[hsl(var(--muted))]">No column stats.</p>
 
@@ -288,68 +278,63 @@ function IssuesImpactChart({
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!ref.current || !issues.length) return
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const chart = echarts.init(ref.current)
-    const maxImpact = Math.max(1, ...issues.map((i) => i.score_impact))
-    const labels = issues.map((i) => (i.title.length > 48 ? `${i.title.slice(0, 46)}…` : i.title))
+  useDisposableEChart(
+    ref,
+    issues.length > 0,
+    () => {
+      const maxImpact = Math.max(1, ...issues.map((i) => i.score_impact))
+      const labels = issues.map((i) => (i.title.length > 48 ? `${i.title.slice(0, 46)}…` : i.title))
 
-    const crit = hslFromRootVar('--severity-critical')
-    const warn = hslFromRootVar('--severity-warning')
-    const info = hslFromRootVar('--severity-info')
-    const sevColor = (s: string) => (s === 'critical' ? crit : s === 'warning' ? warn : info)
+      const crit = hslFromRootVar('--severity-critical')
+      const warn = hslFromRootVar('--severity-warning')
+      const info = hslFromRootVar('--severity-info')
+      const sevColor = (s: string) => (s === 'critical' ? crit : s === 'warning' ? warn : info)
 
-    chart.setOption({
-      animation: !reduce,
-      grid: { left: 8, right: 28, top: 8, bottom: 8, containLabel: true },
-      xAxis: { type: 'value', max: maxImpact * 1.08, splitLine: { lineStyle: { opacity: 0.2 } } },
-      yAxis: {
-        type: 'category',
-        data: labels,
-        inverse: true,
-        axisLabel: { width: 140, overflow: 'truncate', interval: 0 },
-      },
-      series: [
-        {
-          type: 'bar',
-          data: issues.map((i) => ({
-            value: i.score_impact,
-            itemStyle: { color: sevColor(i.severity) },
-          })),
+      return {
+        grid: { left: 8, right: 28, top: 8, bottom: 8, containLabel: true },
+        xAxis: { type: 'value', max: maxImpact * 1.08, splitLine: { lineStyle: { opacity: 0.2 } } },
+        yAxis: {
+          type: 'category',
+          data: labels,
+          inverse: true,
+          axisLabel: { width: 140, overflow: 'truncate', interval: 0 },
         },
-      ],
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'shadow' },
-        formatter: (raw: unknown) => {
-          const arr = raw as { dataIndex: number }[]
-          const row = arr[0]
-          if (!row || typeof row.dataIndex !== 'number') return ''
-          const issue = issues[row.dataIndex]
-          if (!issue) return ''
-          const cols = issue.affected_columns.slice(0, 4).join(', ') || '—'
-          return `${issue.title}<br/><span style="opacity:.85">Impact</span>: ${issue.score_impact.toFixed(1)}<br/><span style="opacity:.85">Columns</span>: ${cols}`
+        series: [
+          {
+            type: 'bar',
+            data: issues.map((i) => ({
+              value: i.score_impact,
+              itemStyle: { color: sevColor(i.severity) },
+            })),
+          },
+        ],
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'shadow' },
+          formatter: (raw: unknown) => {
+            const arr = raw as { dataIndex: number }[]
+            const row = arr[0]
+            if (!row || typeof row.dataIndex !== 'number') return ''
+            const issue = issues[row.dataIndex]
+            if (!issue) return ''
+            const cols = issue.affected_columns.slice(0, 4).join(', ') || '—'
+            return `${issue.title}<br/><span style="opacity:.85">Impact</span>: ${issue.score_impact.toFixed(1)}<br/><span style="opacity:.85">Columns</span>: ${cols}`
+          },
         },
-      },
-    })
-
-    const onClick = (p: { dataIndex?: number }) => {
-      const idx = typeof p.dataIndex === 'number' ? p.dataIndex : -1
-      const issue = idx >= 0 ? issues[idx] : undefined
-      const col = issue?.affected_columns[0]
-      if (col) openCol(col)
-    }
-    chart.on('click', onClick)
-
-    const onResize = () => chart.resize()
-    window.addEventListener('resize', onResize)
-    return () => {
-      chart.off('click', onClick)
-      window.removeEventListener('resize', onResize)
-      chart.dispose()
-    }
-  }, [issues, openCol])
+      }
+    },
+    [issues, openCol],
+    (chart) => {
+      const onClick = (p: { dataIndex?: number }) => {
+        const idx = typeof p.dataIndex === 'number' ? p.dataIndex : -1
+        const issue = idx >= 0 ? issues[idx] : undefined
+        const col = issue?.affected_columns[0]
+        if (col) openCol(col)
+      }
+      chart.on('click', onClick)
+      return () => chart.off('click', onClick)
+    },
+  )
 
   if (!issues.length) {
     return <p className="text-sm text-[hsl(var(--muted))]">No quality issues detected.</p>

@@ -9,14 +9,10 @@ import { TableSkeleton } from '@/components/ui/skeleton'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
 import { Badge } from '@/components/ui/badge'
 import { formatCount } from '@/lib/format'
+import { sqlWherePkSample } from '@/lib/sql'
 import { useUiStore } from '@/store/uiStore'
 
 const PAGE_OPTIONS = [50, 100, 250, 500] as const
-
-function quoteIdent(name: string) {
-  if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) return name
-  return `"${name.replaceAll('"', '""')}"`
-}
 
 export function SamplesPage() {
   const activeId = useUiStore((s) => s.activeDatasetId)
@@ -147,7 +143,7 @@ export function SamplesPage() {
               const pkVal = idCol ? row[idCol] : null
               const whereSql =
                 idCol != null && pkVal != null && String(pkVal).length > 0
-                  ? `SELECT * FROM v_${activeId} WHERE ${quoteIdent(idCol)} = ${typeof pkVal === 'string' ? `'${String(pkVal).replaceAll("'", "''")}'` : String(pkVal)} LIMIT 50;`
+                  ? sqlWherePkSample(activeId, idCol, pkVal, 50)
                   : null
               return (
                 <TR key={i} className="group">

@@ -12,3 +12,8 @@ router = APIRouter(prefix="/api", tags=["relationships"])
 @router.get("/relationships", response_model=list[RelationshipCandidate])
 def relationships(registry: RegistryDep) -> list[RelationshipCandidate]:
     return find_relationships(registry)
+
+
+@router.post("/relationships/refresh", response_model=list[RelationshipCandidate])
+def refresh_relationships(registry: RegistryDep) -> list[RelationshipCandidate]:
+    return find_relationships(registry, force_refresh=True)

@@ -1,4 +1,5 @@
 import { RefreshCw } from 'lucide-react'
+import { useState } from 'react'
 import { api } from '@/api/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -34,6 +35,7 @@ function QualityBar({ score }: { score: number | null | undefined }) {
 export function DatasetContextStrip() {
   const activeId = useUiStore((s) => s.activeDatasetId)
   const qc = useQueryClient()
+  const [refreshBusy, setRefreshBusy] = useState(false)
 
   const dsQ = useQuery({
     queryKey: ['datasets'],
@@ -102,13 +104,19 @@ export function DatasetContextStrip() {
           size="sm"
           className="shrink-0 gap-1"
           onClick={() => {
-            void qc.invalidateQueries({ queryKey: ['profile', activeId] })
-            void qc.invalidateQueries({ queryKey: ['quality', activeId] })
-            void profileQ.refetch()
+            setRefreshBusy(true)
+            void api
+              .refreshProfile(activeId)
+              .then(() => {
+                void qc.invalidateQueries({ queryKey: ['datasets'] })
+                void qc.invalidateQueries({ queryKey: ['profile', activeId] })
+                void qc.invalidateQueries({ queryKey: ['quality', activeId] })
+              })
+              .finally(() => setRefreshBusy(false))
           }}
-          disabled={profileQ.isFetching}
+          disabled={profileQ.isFetching || refreshBusy}
         >
-          <RefreshCw className={cn('h-3.5 w-3.5', profileQ.isFetching && 'animate-spin')} />
+          <RefreshCw className={cn('h-3.5 w-3.5', (profileQ.isFetching || refreshBusy) && 'animate-spin')} />
           Refresh
         </Button>
       </div>

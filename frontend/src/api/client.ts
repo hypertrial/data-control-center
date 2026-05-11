@@ -56,6 +56,11 @@ export const api = {
   getProfile: (datasetId: string) =>
     handle<DatasetProfile>(fetch(`${API}/datasets/${datasetId}/profile`)),
 
+  refreshProfile: (datasetId: string) =>
+    handle<DatasetProfile>(
+      fetch(`${API}/datasets/${datasetId}/profile/refresh`, { method: 'POST' }),
+    ),
+
   getQuality: (datasetId: string) =>
     handle<import('@/api/types').QualityIssue[]>(
       fetch(`${API}/datasets/${datasetId}/quality-issues`),
@@ -79,4 +84,9 @@ export const api = {
 
   relationships: () =>
     handle<RelationshipCandidate[]>(fetch(`${API}/relationships`)),
+
+  refreshRelationships: () =>
+    handle<RelationshipCandidate[]>(
+      fetch(`${API}/relationships/refresh`, { method: 'POST' }),
+    ),
 }

@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
-import * as echarts from 'echarts'
+import { useRef, useState } from 'react'
 import type { ColumnProfile } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Sheet } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useDisposableEChart } from '@/hooks/useDisposableEChart'
 import { useOpenInSql } from '@/hooks/useOpenInSql'
 import { formatPercent } from '@/lib/format'
+import { sqlSelectColumnFromView, sqlSelectStarFromView } from '@/lib/sql'
 
 const FLAG_HELP: Record<string, string> = {
   high_missingness: 'A large share of values are null; joins and aggregates may be biased.',
@@ -49,58 +50,48 @@ export function ColumnDetailDrawer({
   const topRef = useRef<HTMLDivElement>(null)
   const histRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!open || !column) return
-    const hasHist = (column.histogram?.length ?? 0) > 0
-    const el = hasHist ? histRef.current : topRef.current
-    if (!el) return
-    if (hasHist) {
-      const chart = echarts.init(el)
-      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      const h = column.histogram!
-      chart.setOption({
-        animation: !reduce,
-        grid: { left: 12, right: 12, top: 24, bottom: 24, containLabel: true },
-        xAxis: { type: 'category', data: h.map((x) => x.bin), axisLabel: { rotate: 35 } },
-        yAxis: { type: 'value' },
-        series: [{ type: 'bar', data: h.map((x) => x.count) }],
-        tooltip: { trigger: 'axis' },
-      })
-      const onResize = () => chart.resize()
-      window.addEventListener('resize', onResize)
-      return () => {
-        window.removeEventListener('resize', onResize)
-        chart.dispose()
-      }
-    }
-    const chart = echarts.init(el)
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const data = column.top_values.map((t) => ({
-      name: String(t.value ?? '∅'),
-      value: t.count,
-    }))
-    chart.setOption({
-      animation: !reduce,
+  const distActive = open && !!column && tab === 'distribution'
+  const hist = column?.histogram ?? []
+  const hasHist = hist.length > 0
+
+  useDisposableEChart(
+    histRef,
+    distActive && hasHist,
+    () => ({
       grid: { left: 12, right: 12, top: 24, bottom: 24, containLabel: true },
-      xAxis: { type: 'category', data: data.map((d) => d.name), axisLabel: { rotate: 35 } },
+      xAxis: { type: 'category', data: hist.map((x) => x.bin), axisLabel: { rotate: 35 } },
       yAxis: { type: 'value' },
-      series: [{ type: 'bar', data: data.map((d) => d.value) }],
+      series: [{ type: 'bar', data: hist.map((x) => x.count) }],
       tooltip: { trigger: 'axis' },
-    })
-    const onResize = () => chart.resize()
-    window.addEventListener('resize', onResize)
-    return () => {
-      window.removeEventListener('resize', onResize)
-      chart.dispose()
-    }
-  }, [open, column, tab])
+    }),
+    [column, hist],
+  )
+
+  useDisposableEChart(
+    topRef,
+    distActive && !hasHist && !!column,
+    () => {
+      const data =
+        column!.top_values.map((t) => ({
+          name: String(t.value ?? '∅'),
+          value: t.count,
+        }))
+      return {
+        grid: { left: 12, right: 12, top: 24, bottom: 24, containLabel: true },
+        xAxis: { type: 'category', data: data.map((d) => d.name), axisLabel: { rotate: 35 } },
+        yAxis: { type: 'value' },
+        series: [{ type: 'bar', data: data.map((d) => d.value) }],
+        tooltip: { trigger: 'axis' },
+      }
+    },
+    [column],
+  )
 
   if (!column) return null
 
-  const view = datasetId ? `v_${datasetId}` : 'v_dataset'
-  const quotedCol = `"${column.name.replaceAll('"', '""')}"`
-  const selectOne = `SELECT ${quotedCol} FROM ${view} LIMIT 100;`
-  const selectStar = `SELECT * FROM ${view} LIMIT 50;`
+  const effectiveId = datasetId ?? 'dataset'
+  const selectOne = sqlSelectColumnFromView(effectiveId, column.name, 100)
+  const selectStar = sqlSelectStarFromView(effectiveId, 50)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={column.name}>

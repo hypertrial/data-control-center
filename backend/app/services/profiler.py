@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import math
 import re
 from typing import Any
@@ -136,7 +135,6 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
     key_candidates: list[str] = []
 
     for col, dtype in zip(names, dtypes, strict=False):
-        s = df_sample[col]
         nulls_full = (
             int(lf.select(pl.col(col).null_count().alias("_ncc")).collect()["_ncc"][0])
             if row_count

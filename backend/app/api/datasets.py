@@ -158,6 +158,28 @@ def get_profile(
     return _cached_profile(dataset_id, registry, workspace)
 
 
+@router.post("/{dataset_id}/profile/refresh", response_model=DatasetProfile)
+def refresh_profile(
+    dataset_id: str,
+    registry: RegistryDep,
+    workspace: WorkspaceDep,
+) -> DatasetProfile:
+    ds = registry.get(dataset_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    job_id = uuid.uuid4().hex
+    workspace.job_insert(job_id, "profile_refresh", dataset_id, "running")
+    try:
+        workspace.delete_profile_cache(dataset_id)
+        prof = build_profile(ds)
+        workspace.save_profile_cache(dataset_id, prof.model_dump(mode="json"))
+        workspace.job_finish(job_id, "completed")
+        return prof
+    except Exception as e:
+        workspace.job_finish(job_id, "failed", str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 @router.get("/{dataset_id}/columns", response_model=list[ColumnProfile])
 def get_columns(
     dataset_id: str,

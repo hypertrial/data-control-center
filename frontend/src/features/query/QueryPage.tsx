@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { PageContainer } from '@/components/ui/section'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
+import { quoteIdent, sqlSelectStarFromView, viewNameForDataset } from '@/lib/sql'
 import { useUiStore } from '@/store/uiStore'
 import { cn } from '@/lib/utils'
 
@@ -39,7 +40,9 @@ export function QueryPage() {
   const activeId = useUiStore((s) => s.activeDatasetId)
   const sqlInjectTick = useUiStore((s) => s.sqlInjectTick)
 
-  const [sqlText, setSqlText] = useState(() => (activeId ? `SELECT * FROM v_${activeId} LIMIT 50;` : 'SELECT 1;'))
+  const [sqlText, setSqlText] = useState(() =>
+    activeId ? sqlSelectStarFromView(activeId, 50) : 'SELECT 1;',
+  )
   const [maxRows, setMaxRows] = useState(1000)
   const [history, setHistory] = useState<string[]>(() => loadHistory())
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -97,7 +100,7 @@ export function QueryPage() {
       }
       if (prevActive.current !== activeId) {
         prevActive.current = activeId
-        if (activeId) setSqlText(`SELECT * FROM v_${activeId} LIMIT 50;`)
+        if (activeId) setSqlText(sqlSelectStarFromView(activeId, 50))
         else setSqlText('SELECT 1;')
       }
     }
@@ -121,7 +124,7 @@ export function QueryPage() {
     [],
   )
 
-  const viewHint = activeId != null ? `v_${activeId}` : 'v_ds_*'
+  const viewHint = activeId != null ? viewNameForDataset(activeId) : 'v_ds_*'
 
   const toggleDs = (id: string) => setExpanded((e) => ({ ...e, [id]: !e[id] }))
 
@@ -271,7 +274,7 @@ function SchemaDatasetBlock({
   })
 
   const cols: ColumnProfile[] = pq.data?.column_profiles ?? []
-  const viewName = `v_${summary.dataset_id}`
+  const viewName = viewNameForDataset(summary.dataset_id)
 
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.03]">
@@ -306,11 +309,6 @@ function SchemaDatasetBlock({
       )}
     </div>
   )
-}
-
-function quoteIdent(name: string) {
-  if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) return name
-  return `"${name.replaceAll('"', '""')}"`
 }
 
 function formatCell(v: unknown) {

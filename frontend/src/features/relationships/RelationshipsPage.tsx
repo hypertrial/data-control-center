@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import * as echarts from 'echarts'
-import { useQuery } from '@tanstack/react-query'
+import { RefreshCw } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import type { RelationshipCandidate } from '@/api/types'
 import { ActionInSql } from '@/components/ActionInSql'
+import { Button } from '@/components/ui/button'
 import { PageContainer, Section } from '@/components/ui/section'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
+import { useDisposableEChart } from '@/hooks/useDisposableEChart'
+import { sqlJoinPreviewSnippet } from '@/lib/sql'
 import { useUiStore } from '@/store/uiStore'
 import { cn } from '@/lib/utils'
 
@@ -35,8 +38,10 @@ function ScoreBar({ score, max }: { score: number; max: number }) {
 
 export function RelationshipsPage() {
   const activeId = useUiStore((s) => s.activeDatasetId)
+  const qc = useQueryClient()
   const [scope, setScope] = useState<Scope>('active')
   const [view, setView] = useState<'table' | 'graph'>('table')
+  const [refreshBusy, setRefreshBusy] = useState(false)
   const chartRef = useRef<HTMLDivElement>(null)
 
   const q = useQuery({
@@ -63,52 +68,46 @@ export function RelationshipsPage() {
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
   }, [rows])
 
-  useEffect(() => {
-    if (!chartRef.current || view !== 'graph') return
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const nodes = new Map<string, number>()
-    let idx = 0
-    for (const r of rows) {
-      if (!nodes.has(r.left_dataset_id)) nodes.set(r.left_dataset_id, idx++)
-      if (!nodes.has(r.right_dataset_id)) nodes.set(r.right_dataset_id, idx++)
-    }
-    const nodeArr = [...nodes.keys()].map((name) => ({
-      id: String(nodes.get(name)),
-      name,
-      symbolSize: 28,
-      label: { show: true, fontSize: 10 },
-    }))
-    const links = rows.map((r) => ({
-      source: String(nodes.get(r.left_dataset_id)),
-      target: String(nodes.get(r.right_dataset_id)),
-      value: r.score,
-      lineStyle: { width: 1 + r.score },
-    }))
-
-    const chart = echarts.init(chartRef.current)
-    chart.setOption({
-      animation: !reduce,
-      tooltip: {},
-      series: [
-        {
-          type: 'graph',
-          layout: 'force',
-          roam: true,
-          label: { show: true, position: 'right' },
-          data: nodeArr,
-          edges: links,
-          force: { repulsion: 200, edgeLength: [40, 120] },
-          lineStyle: { curveness: 0.1, opacity: 0.7 },
-        },
-      ],
-    })
-    const onResize = () => chart.resize()
-    window.addEventListener('resize', onResize)
-    return () => {
-      window.removeEventListener('resize', onResize)
-      chart.dispose()
-    }
-  }, [rows, view])
+  useDisposableEChart(
+    chartRef,
+    view === 'graph' && rows.length > 0,
+    () => {
+      const nodes = new Map<string, number>()
+      let idx = 0
+      for (const r of rows) {
+        if (!nodes.has(r.left_dataset_id)) nodes.set(r.left_dataset_id, idx++)
+        if (!nodes.has(r.right_dataset_id)) nodes.set(r.right_dataset_id, idx++)
+      }
+      const nodeArr = [...nodes.keys()].map((name) => ({
+        id: String(nodes.get(name)),
+        name,
+        symbolSize: 28,
+        label: { show: true, fontSize: 10 },
+      }))
+      const links = rows.map((r) => ({
+        source: String(nodes.get(r.left_dataset_id)),
+        target: String(nodes.get(r.right_dataset_id)),
+        value: r.score,
+        lineStyle: { width: 1 + r.score },
+      }))
+      return {
+        tooltip: {},
+        series: [
+          {
+            type: 'graph',
+            layout: 'force',
+            roam: true,
+            label: { show: true, position: 'right' },
+            data: nodeArr,
+            edges: links,
+            force: { repulsion: 200, edgeLength: [40, 120] },
+            lineStyle: { curveness: 0.1, opacity: 0.7 },
+          },
+        ],
+      }
+    },
+    [rows, view],
+  )
 
   if (q.isLoading) {
     return (
@@ -179,6 +178,24 @@ export function RelationshipsPage() {
           >
             Graph
           </button>
+          <span className="mx-2 text-white/15">·</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={() => {
+              setRefreshBusy(true)
+              void api
+                .refreshRelationships()
+                .then(() => void qc.invalidateQueries({ queryKey: ['relationships'] }))
+                .finally(() => setRefreshBusy(false))
+            }}
+            disabled={q.isFetching || refreshBusy}
+          >
+            <RefreshCw className={cn('h-3.5 w-3.5', (q.isFetching || refreshBusy) && 'animate-spin')} />
+            Refresh discovery
+          </Button>
         </div>
       </Section>
 
@@ -217,7 +234,13 @@ export function RelationshipsPage() {
                 </THead>
                 <TBody>
                   {list.map((r, i) => {
-                    const sqlSnippet = `SELECT * FROM v_${r.left_dataset_id} a JOIN v_${r.right_dataset_id} b ON a.${quoteIdent(r.left_column)} = b.${quoteIdent(r.right_column)} LIMIT 100;`
+                    const sqlSnippet = sqlJoinPreviewSnippet(
+                      r.left_dataset_id,
+                      r.left_column,
+                      r.right_dataset_id,
+                      r.right_column,
+                      100,
+                    )
                     return (
                       <TR key={`${r.left_dataset_id}-${r.left_column}-${r.right_dataset_id}-${r.right_column}-${i}`}>
                         <TD className="font-mono text-xs">
@@ -251,9 +274,4 @@ export function RelationshipsPage() {
       )}
     </PageContainer>
   )
-}
-
-function quoteIdent(name: string) {
-  if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) return name
-  return `"${name.replaceAll('"', '""')}"`
 }
