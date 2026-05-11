@@ -1,4 +1,6 @@
 import type {
+  AgentAskRequest,
+  AgentAskResponse,
   DatasetProfile,
   DatasetSummary,
   QueryRequest,
@@ -75,6 +77,15 @@ export const api = {
   runQuery: (body: QueryRequest) =>
     handle<QueryResult>(
       fetch(`${API}/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    ),
+
+  askAgent: (body: AgentAskRequest) =>
+    handle<AgentAskResponse>(
+      fetch(`${API}/agent/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

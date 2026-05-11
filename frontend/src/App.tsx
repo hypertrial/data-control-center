@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import {
   AlertCircle,
   LayoutDashboard,
+  MessageCircle,
   Rows3,
   Table2,
   Terminal,
@@ -13,6 +14,7 @@ import { CardSkeleton } from '@/components/ui/skeleton'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
 import { DatasetSidebar } from '@/features/datasets/DatasetSidebar'
 import { OverviewPage } from '@/features/overview/OverviewPage'
+import { AskPage } from '@/features/ask/AskPage'
 import { ColumnsPage } from '@/features/columns/ColumnsPage'
 import { QualityPage } from '@/features/quality/QualityPage'
 import { SamplesPage } from '@/features/samples/SamplesPage'
@@ -28,6 +30,7 @@ const NAV: Array<{ to: string; label: string; icon: typeof LayoutDashboard; end?
   { to: '/columns', label: 'Columns', icon: Table2 },
   { to: '/quality', label: 'Quality', icon: AlertCircle },
   { to: '/samples', label: 'Samples', icon: Rows3 },
+  { to: '/ask', label: 'Ask', icon: MessageCircle },
   { to: '/sql', label: 'SQL', icon: Terminal },
 ]
 
@@ -102,6 +105,7 @@ function RoutedPages() {
       <Route path="/columns" element={<ColumnsPage />} />
       <Route path="/quality" element={<QualityPage />} />
       <Route path="/samples" element={<SamplesPage />} />
+      <Route path="/ask" element={<AskPage />} />
       <Route path="/sql" element={<QueryPage />} />
     </Routes>
   )

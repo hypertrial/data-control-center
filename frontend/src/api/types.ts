@@ -88,6 +88,21 @@ export type QueryResult = {
   error: string | null
 }
 
+export type AgentAskRequest = {
+  question: string
+  dataset_ids?: string[] | null
+  max_rows?: number | null
+}
+
+export type AgentAskResponse = {
+  answer?: string | null
+  sql?: string | null
+  explanation?: string | null
+  query_result?: QueryResult | null
+  model: string
+  error?: string | null
+}
+
 export type SampleResponse = {
   page: number
   page_size: number

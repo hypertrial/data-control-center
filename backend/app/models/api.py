@@ -114,3 +114,28 @@ class QueryResult(BaseModel):
     row_count: int
     truncated: bool = False
     error: str | None = None
+
+
+class AgentAskRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=10_000)
+    dataset_ids: list[str] | None = Field(
+        default=None,
+        description="If set, only these datasets are included in context",
+    )
+    max_rows: int | None = Field(default=None, ge=1, le=100_000)
+
+
+class AgentSqlDraft(BaseModel):
+    """Structured JSON output from the LLM for SQL generation."""
+
+    sql: str = Field(..., description="Single SELECT or WITH statement for DuckDB")
+    explanation: str = Field(default="", description="Brief reasoning for the query")
+
+
+class AgentAskResponse(BaseModel):
+    answer: str | None = None
+    sql: str | None = None
+    explanation: str | None = None
+    query_result: QueryResult | None = None
+    model: str
+    error: str | None = None

@@ -63,6 +63,22 @@ Open `http://localhost:5173`. The dev server proxies `/api` to the backend.
 - **`GET /api/datasets`** responses may include an optional **`quality_score`** (0–100) on each dataset when a cached profile exists for that id.
 - **`GET /api/datasets/{dataset_id}/sample`** includes **`total_rows`**: a full-table row count before `LIMIT` / `OFFSET` are applied.
 
+## Local LLM assistant (Ask tab)
+
+- Install **[Ollama](https://ollama.com)** on macOS (download from the site, or e.g. `brew install ollama` if you use Homebrew).
+- Pull a model (default used by the app is **`qwen3:8b`**):
+
+  ```bash
+  ollama pull qwen3:8b
+  ```
+
+  For a faster, lighter option on laptops with less unified memory, try **`qwen3:4b`** and set **`DCC_LLM_MODEL=qwen3:4b`** when starting the backend.
+- Keep the Ollama app/daemon running, then run **`make dev`** as usual. Open the **Ask** tab, type a question in plain language, and optional **max_rows** for the result preview.
+- The backend calls Ollama at **`DCC_LLM_BASE_URL`** (default `http://127.0.0.1:11434`), asks the model for a single read-only **`SELECT`/`WITH`** statement, runs it through the same validation and row limits as **`POST /api/query`**, then asks the model to summarize the result. Generated SQL can be opened in the **SQL** tab.
+- Useful settings (all prefixed with **`DCC_`**): **`LLM_BASE_URL`**, **`LLM_MODEL`**, **`LLM_TIMEOUT_SECONDS`**, **`AGENT_MAX_ROWS`**, **`AGENT_SQL_ATTEMPTS`**, **`AGENT_SUMMARIZE_MAX_JSON_CHARS`**.
+- **HTTP API:** `POST /api/agent/ask` with JSON body **`{ "question": "...", "dataset_ids": ["ds_001"] | null, "max_rows": 200 }`**. The UI sends **`dataset_ids: [active]`** when a dataset is selected in the strip, and **`null`** otherwise (all datasets in context).
+- **CI** does not run Ollama; backend tests **mock** the LLM HTTP calls.
+
 ## Tests
 
 ### Backend & frontend (local)
@@ -97,6 +113,7 @@ cd frontend && npm run test:coverage
 - **Frontend SQL helpers:** [`frontend/src/lib/sql.ts`](frontend/src/lib/sql.ts)
 - **ECharts lifecycle hook:** [`frontend/src/hooks/useDisposableEChart.ts`](frontend/src/hooks/useDisposableEChart.ts)
 - **Workspace metadata (profile cache + job rows):** DuckDB tables in [`backend/app/services/workspace.py`](backend/app/services/workspace.py)
+- **Local LLM agent (Ollama client + prompts):** [`backend/app/services/agent.py`](backend/app/services/agent.py)
 
 ## Known limitations (MVP)
 

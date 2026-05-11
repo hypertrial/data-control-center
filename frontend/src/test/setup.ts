@@ -15,5 +15,7 @@ beforeEach(() => {
     columnSearch: '',
     semanticFilter: 'all',
     qualitySeverityFilter: 'all',
+    pendingQuery: null,
+    sqlInjectTick: 0,
   })
 })

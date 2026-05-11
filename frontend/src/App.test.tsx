@@ -22,6 +22,7 @@ vi.mock('@/api/client', () => ({
     getQuality: vi.fn(),
     getSample: vi.fn(),
     runQuery: vi.fn(),
+    askAgent: vi.fn(),
   },
 }))
 
@@ -60,6 +61,10 @@ describe('App', () => {
       error: null,
       truncated: false,
     })
+    vi.mocked(api.askAgent).mockResolvedValue({
+      model: 'qwen3:8b',
+      answer: 'Mock answer',
+    })
     vi.mocked(api.uploadDatasets).mockResolvedValue([])
   })
 
@@ -74,5 +79,8 @@ describe('App', () => {
 
     await user.click(screen.getByRole('link', { name: /Columns/i }))
     await waitFor(() => expect(screen.getByPlaceholderText(/Filter by column name/)).toBeInTheDocument())
+
+    await user.click(screen.getByRole('link', { name: /Ask/i }))
+    await waitFor(() => expect(screen.getByPlaceholderText(/plain language/i)).toBeInTheDocument())
   })
 })

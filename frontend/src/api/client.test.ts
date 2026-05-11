@@ -147,4 +147,26 @@ describe('api client', () => {
       body: JSON.stringify({ sql: 'SELECT 1', max_rows: 5 }),
     })
   })
+
+  it('askAgent POST', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonOk({
+        answer: 'ok',
+        sql: 'SELECT 1',
+        model: 'qwen3:8b',
+        error: null,
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await api.askAgent({ question: 'how many rows?', dataset_ids: ['ds_001'], max_rows: 50 })
+    expect(fetchMock).toHaveBeenCalledWith('/api/agent/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: 'how many rows?',
+        dataset_ids: ['ds_001'],
+        max_rows: 50,
+      }),
+    })
+  })
 })
