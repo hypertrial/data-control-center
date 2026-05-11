@@ -11,7 +11,8 @@ const initMock = vi.fn(() => ({
 }))
 
 vi.mock('echarts', () => ({
-  init: (...args: unknown[]) => initMock(...args),
+  init: (...args: unknown[]) =>
+    Reflect.apply(initMock as (...a: unknown[]) => ReturnType<typeof initMock>, undefined, args),
 }))
 
 function Harness({

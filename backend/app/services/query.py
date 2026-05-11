@@ -35,11 +35,12 @@ def execute_query(
 
     views = {ds.view_name for ds in registry.list_all()}
     if views and not _references_registered_view(normalized, views):
+        example = sorted(views)[0]
         return QueryResult(
             columns=[],
             rows=[],
             row_count=0,
-            error="SQL must reference at least one registered dataset view (e.g. player_ratings_2006_2026).",
+            error=f"SQL must reference at least one registered dataset view (e.g. {example}).",
         )
 
     limit = min(req.max_rows or settings.query_max_rows, settings.query_max_rows)

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { vscodeDark } from '@uiw/codemirror-theme-vscode'
 import { sql } from '@codemirror/lang-sql'
-import { keymap } from '@codemirror/view'
+import { Prec } from '@codemirror/state'
+import { EditorView } from '@codemirror/view'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import type { ColumnProfile, DatasetSummary } from '@/api/types'
@@ -127,15 +128,19 @@ export function QueryPage() {
     () => [
       vscodeDark,
       sql(),
-      keymap.of([
-        {
-          key: 'Mod-Enter',
-          run: () => {
+      // Highest precedence + DOM handler so Cmd+Enter works on Mac even when default uiw/CodeMirror keymaps win.
+      Prec.highest(
+        EditorView.domEventHandlers({
+          keydown: (event) => {
+            if (event.defaultPrevented) return false
+            if (event.key !== 'Enter') return false
+            if (!event.metaKey && !event.ctrlKey) return false
+            event.preventDefault()
             execRunHolder.run()
             return true
           },
-        },
-      ]),
+        }),
+      ),
     ],
     [],
   )

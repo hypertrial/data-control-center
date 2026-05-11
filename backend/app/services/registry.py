@@ -107,6 +107,7 @@ class DatasetRegistry:
         self._next_id = self._load_max_id() + 1
         self._by_id: dict[str, RegisteredDataset] = {}
         self._load_from_db()
+        self._migrate_legacy_v_dataset_views()
 
     def _load_max_id(self) -> int:
         con = self._workspace.connection
@@ -135,6 +136,60 @@ class DatasetRegistry:
                 column_count=int(col_count) if col_count is not None else None,
                 file_size_bytes=int(fsize) if fsize is not None else None,
             )
+
+    def _migrate_legacy_v_dataset_views(self) -> None:
+        """Upgrade rows created before file-stem views: `v_{dataset_id}` -> stem-based name."""
+        legacy_ids = sorted(
+            did for did, ds in self._by_id.items() if ds.view_name == f"v_{did}"
+        )
+        if not legacy_ids:
+            return
+
+        legacy_set = frozenset(legacy_ids)
+
+        with self._lock:
+            taken = {ds.view_name for did, ds in self._by_id.items() if did not in legacy_set}
+            for did in legacy_ids:
+                ds = self._by_id[did]
+                p = ds.source_path.expanduser().resolve()
+                if not p.is_file():
+                    continue
+
+                slug = slugify_file_stem(p.stem, did)
+                base = guard_reserved_identifier(slug)
+                new_name = pick_unique_view_name(base, did, taken)
+                taken.add(new_name)
+
+                if new_name == ds.view_name:
+                    continue
+
+                old_view = ds.view_name
+                try:
+                    self._workspace.register_file_view(new_name, p, ds.format)
+                except (FileNotFoundError, OSError, ValueError):
+                    continue
+                self._workspace.drop_view_if_exists(old_view)
+
+                rows, cols = self._workspace.get_row_column_counts(new_name)
+                fsize = p.stat().st_size
+                self._workspace.connection.execute(
+                    """
+                    UPDATE dcc_datasets
+                    SET view_name = ?, row_count = ?, column_count = ?, file_size_bytes = ?
+                    WHERE dataset_id = ?
+                    """,
+                    [new_name, rows, cols, fsize, did],
+                )
+                self._by_id[did] = RegisteredDataset(
+                    dataset_id=did,
+                    source_path=p,
+                    view_name=new_name,
+                    format=ds.format,
+                    row_count=rows,
+                    column_count=cols,
+                    file_size_bytes=fsize,
+                )
+                self._workspace.delete_profile_cache(did)
 
     def _alloc_id(self) -> str:
         with self._lock:
