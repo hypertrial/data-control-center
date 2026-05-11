@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -6,23 +7,47 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryPage } from '@/features/query/QueryPage'
 import { useUiStore } from '@/store/uiStore'
 
-const h = vi.hoisted(() => ({ runQuery: vi.fn() }))
+vi.mock('@uiw/react-codemirror', () => ({
+  __esModule: true,
+  default: function MockCM({
+    value,
+    onChange,
+  }: {
+    value: string
+    onChange: (v: string) => void
+  }) {
+    return <textarea aria-label="SQL editor" value={value} onChange={(e) => onChange(e.target.value)} />
+  },
+}))
+
+const h = vi.hoisted(() => ({
+  runQuery: vi.fn(),
+  listDatasets: vi.fn(),
+}))
 
 vi.mock('@/api/client', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/api/client')>()
-  return { ...mod, api: { ...mod.api, runQuery: h.runQuery } }
+  return {
+    ...mod,
+    api: { ...mod.api, runQuery: h.runQuery, listDatasets: h.listDatasets },
+  }
 })
 
 function wrap(ui: React.ReactElement) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
+  return render(
+    <MemoryRouter>
+      <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+    </MemoryRouter>,
+  )
 }
 
 describe('QueryPage', () => {
   beforeEach(() => {
     h.runQuery.mockReset()
+    h.listDatasets.mockResolvedValue([])
   })
 
   it('runs query with view hint and shows results', async () => {
@@ -46,7 +71,7 @@ describe('QueryPage', () => {
   it('no active dataset view hint fallback', () => {
     useUiStore.setState({ activeDatasetId: null })
     wrap(<QueryPage />)
-    expect(screen.getAllByText(/v_ds_001/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/v_ds_\*/).length).toBeGreaterThan(0)
   })
 
   it('shows sql error and mutation error', async () => {

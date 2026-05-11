@@ -49,6 +49,7 @@ describe('App', () => {
       page: 1,
       page_size: 100,
       row_count: 0,
+      total_rows: 0,
       columns: [],
       rows: [],
     })
@@ -67,12 +68,12 @@ describe('App', () => {
     const user = userEvent.setup()
     renderApp()
     await waitFor(() => expect(useUiStore.getState().activeDatasetId).toBe('ds_001'))
-    expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Overview/i })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('link', { name: 'SQL' }))
+    await user.click(screen.getByRole('link', { name: /SQL/i }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Run query' })).toBeInTheDocument())
 
-    await user.click(screen.getByRole('link', { name: 'Columns' }))
-    await waitFor(() => expect(screen.getByText(/Search columns/)).toBeInTheDocument())
+    await user.click(screen.getByRole('link', { name: /Columns/i }))
+    await waitFor(() => expect(screen.getByPlaceholderText(/Filter by column name/)).toBeInTheDocument())
   })
 })

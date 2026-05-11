@@ -9,9 +9,55 @@
     --muted: 215 20% 55%;
     --border: 217 25% 18%;
     --accent: 221 83% 53%;
+    /* Severity (aligned with Badge / charts) */
+    --severity-critical: 0 72% 50%;
+    --severity-warning: 38 92% 50%;
+    --severity-info: 199 89% 48%;
+    --severity-ok: 142 71% 40%;
+    /* Quality score bar (low → high) */
+    --quality-low: var(--severity-critical);
+    --quality-mid: var(--severity-warning);
+    --quality-high: var(--severity-ok);
   }
   body {
     @apply bg-[hsl(var(--background))] text-[hsl(var(--foreground))] antialiased min-h-screen;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family:
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dcc-md {
+    font-size: 0.875rem;
+    line-height: 1.65;
+    color: hsl(var(--foreground) / 0.92);
+  }
+  .dcc-md p {
+    margin-bottom: 0.75rem;
+  }
+  .dcc-md p:last-child {
+    margin-bottom: 0;
+  }
+  .dcc-md strong {
+    font-weight: 600;
+    color: hsl(var(--foreground));
+  }
+  .dcc-md code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.85em;
+    background: rgb(255 255 255 / 0.06);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+  }
+  .dcc-md ul {
+    list-style: disc;
+    padding-left: 1.25rem;
+    margin: 0.5rem 0;
   }
 }

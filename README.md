@@ -58,6 +58,8 @@ Open `http://localhost:5173`. The dev server proxies `/api` to the backend.
 - You can still register datasets via the API using **absolute file paths** (CSV, Parquet, JSON / JSON Lines, TSV) or a **folder** of those files.
 - DuckDB creates internal views named `v_<dataset_id>` (e.g. `v_ds_001`). The SQL panel auto-fills a `SELECT` for the active dataset; ad-hoc SQL must reference at least one registered view when datasets exist.
 - Profiles and quality issues are cached in `DCC_WORKSPACE_DB_PATH` (default `./.dcc_workspace.duckdb` relative to the backend process cwd).
+- **`GET /api/datasets`** responses may include an optional **`quality_score`** (0–100) on each dataset when a cached profile exists for that id.
+- **`GET /api/datasets/{dataset_id}/sample`** includes **`total_rows`**: a full-table row count before `LIMIT` / `OFFSET` are applied.
 
 ## Tests
 

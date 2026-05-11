@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom'
 import * as React from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -26,7 +27,11 @@ function wrap(ui: React.ReactElement) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
+  return render(
+    <MemoryRouter>
+      <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+    </MemoryRouter>,
+  )
 }
 
 describe('ColumnsPage', () => {
@@ -50,7 +55,7 @@ describe('ColumnsPage', () => {
     useUiStore.setState({ activeDatasetId: 'ds_1' })
     h.getProfile.mockImplementation(() => new Promise(() => {}))
     wrap(<ColumnsPage />)
-    expect(screen.getAllByText(/Loading columns/).length).toBeGreaterThan(0)
+    expect(screen.getByRole('status', { name: /loading table/i })).toBeInTheDocument()
   })
 
   it('error', async () => {
@@ -66,16 +71,15 @@ describe('ColumnsPage', () => {
     wrap(<ColumnsPage />)
     await waitFor(() => expect(screen.getAllByText('alpha')[0]).toBeInTheDocument())
 
-    const search = screen.getAllByRole('textbox')[0]!
+    const search = screen.getByPlaceholderText(/Filter by column name/)
     await user.type(search, 'alp')
     expect(screen.queryByText('beta')).toBeNull()
 
     await user.clear(search)
-    const sem = screen.getByRole('combobox')
-    await user.selectOptions(sem, 'text')
+    await user.click(screen.getByRole('button', { name: 'Text' }))
     expect(screen.queryByText('alpha')).toBeNull()
 
-    await user.selectOptions(sem, 'all')
+    await user.click(screen.getByRole('button', { name: 'All types' }))
     const sortBtn = screen.getByRole('button', { name: /Column/ })
     await user.click(sortBtn)
 

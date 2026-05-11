@@ -8,9 +8,12 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default: 'border-white/10 bg-white/5',
-        critical: 'border-red-500/40 bg-red-500/10 text-red-200',
-        warning: 'border-amber-500/40 bg-amber-500/10 text-amber-100',
-        info: 'border-sky-500/40 bg-sky-500/10 text-sky-100',
+        critical:
+          'border-[hsl(var(--severity-critical)/0.45)] bg-[hsl(var(--severity-critical)/0.12)] text-red-100',
+        warning:
+          'border-[hsl(var(--severity-warning)/0.45)] bg-[hsl(var(--severity-warning)/0.12)] text-amber-50',
+        info: 'border-[hsl(var(--severity-info)/0.45)] bg-[hsl(var(--severity-info)/0.12)] text-sky-50',
+        ok: 'border-[hsl(var(--severity-ok)/0.45)] bg-[hsl(var(--severity-ok)/0.12)] text-emerald-100',
       },
     },
     defaultVariants: { variant: 'default' },

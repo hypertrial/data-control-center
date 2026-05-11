@@ -29,6 +29,7 @@ class DatasetSummary(BaseModel):
     row_count: int | None = None
     column_count: int | None = None
     file_size_bytes: int | None = None
+    quality_score: int | None = None
 
 
 class SemanticType(str, Enum):

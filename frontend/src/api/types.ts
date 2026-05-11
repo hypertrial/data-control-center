@@ -6,6 +6,7 @@ export type DatasetSummary = {
   row_count: number | null
   column_count: number | null
   file_size_bytes: number | null
+  quality_score?: number | null
 }
 
 export type SemanticType =
@@ -99,6 +100,7 @@ export type SampleResponse = {
   page: number
   page_size: number
   row_count: number
+  total_rows: number
   columns: string[]
   rows: Record<string, unknown>[]
 }
