@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { PageContainer } from '@/components/ui/section'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
-import { quoteIdent, sqlSelectStarFromView, viewNameForDataset } from '@/lib/sql'
+import { quoteIdent, sqlSelectStarFromView } from '@/lib/sql'
 import { useUiStore } from '@/store/uiStore'
 import { cn } from '@/lib/utils'
 
@@ -40,9 +40,7 @@ export function QueryPage() {
   const activeId = useUiStore((s) => s.activeDatasetId)
   const sqlInjectTick = useUiStore((s) => s.sqlInjectTick)
 
-  const [sqlText, setSqlText] = useState(() =>
-    activeId ? sqlSelectStarFromView(activeId, 50) : 'SELECT 1;',
-  )
+  const [sqlText, setSqlText] = useState(() => 'SELECT 1;')
   const [maxRows, setMaxRows] = useState(1000)
   const [history, setHistory] = useState<string[]>(() => loadHistory())
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -50,6 +48,12 @@ export function QueryPage() {
   const cmRef = useRef<ReactCodeMirrorRef>(null)
 
   const dq = useQuery({ queryKey: ['datasets'], queryFn: api.listDatasets })
+
+  const activeSummary = useMemo(
+    () => dq.data?.find((d) => d.dataset_id === activeId),
+    [dq.data, activeId],
+  )
+  const activeViewName = activeSummary?.view_name
 
   const insertAtCursor = useCallback((fragment: string) => {
     const view = cmRef.current?.view
@@ -85,7 +89,7 @@ export function QueryPage() {
   }, [execRun])
 
   const processedInject = useRef(0)
-  const prevActive = useRef<string | null>(activeId)
+  const prevTemplateKey = useRef<string>('')
 
   useEffect(() => {
     const applyPendingOrTemplate = () => {
@@ -94,18 +98,30 @@ export function QueryPage() {
         const pending = useUiStore.getState().takePendingQuery()
         if (pending) {
           setSqlText(pending)
-          prevActive.current = activeId
+          prevTemplateKey.current =
+            !activeId ? 'idle' : activeViewName ? `${activeId}\0${activeViewName}` : `pending:${activeId}`
           return
         }
       }
-      if (prevActive.current !== activeId) {
-        prevActive.current = activeId
-        if (activeId) setSqlText(sqlSelectStarFromView(activeId, 50))
-        else setSqlText('SELECT 1;')
+      const templateKey =
+        !activeId ? 'idle' : activeViewName ? `${activeId}\0${activeViewName}` : `pending:${activeId}`
+
+      if (templateKey.startsWith('pending:')) {
+        if (prevTemplateKey.current !== templateKey) {
+          prevTemplateKey.current = templateKey
+          setSqlText('SELECT 1;')
+        }
+        return
+      }
+
+      if (prevTemplateKey.current !== templateKey) {
+        prevTemplateKey.current = templateKey
+        if (!activeId) setSqlText('SELECT 1;')
+        else if (activeViewName) setSqlText(sqlSelectStarFromView(activeViewName, 50))
       }
     }
     queueMicrotask(applyPendingOrTemplate)
-  }, [sqlInjectTick, activeId])
+  }, [sqlInjectTick, activeId, activeViewName])
 
   const extensions = useMemo(
     () => [
@@ -124,7 +140,12 @@ export function QueryPage() {
     [],
   )
 
-  const viewHint = activeId != null ? viewNameForDataset(activeId) : 'v_ds_*'
+  const viewHint =
+    activeViewName != null && activeViewName !== ''
+      ? quoteIdent(activeViewName)
+      : activeId != null
+        ? '(loading view name…)'
+        : '<dataset_table>'
 
   const toggleDs = (id: string) => setExpanded((e) => ({ ...e, [id]: !e[id] }))
 
@@ -274,7 +295,7 @@ function SchemaDatasetBlock({
   })
 
   const cols: ColumnProfile[] = pq.data?.column_profiles ?? []
-  const viewName = viewNameForDataset(summary.dataset_id)
+  const viewIdent = quoteIdent(summary.view_name)
 
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.03]">
@@ -297,7 +318,7 @@ function SchemaDatasetBlock({
                 className={cn(
                   'flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left font-mono hover:bg-white/10',
                 )}
-                onClick={() => onInsert(`${viewName}.${quoteIdent(c.name)} `)}
+                onClick={() => onInsert(`${viewIdent}.${quoteIdent(c.name)} `)}
                 title="Insert at cursor"
               >
                 <span className="truncate">{c.name}</span>

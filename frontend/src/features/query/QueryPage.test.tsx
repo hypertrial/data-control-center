@@ -44,6 +44,17 @@ function wrap(ui: React.ReactElement) {
   )
 }
 
+const dsFooRow = {
+  dataset_id: 'ds_001',
+  name: 'foo.csv',
+  view_name: 'foo',
+  source_path: '/p/foo.csv',
+  format: 'csv',
+  row_count: 1,
+  column_count: 1,
+  file_size_bytes: 1,
+}
+
 describe('QueryPage', () => {
   beforeEach(() => {
     h.runQuery.mockReset()
@@ -59,9 +70,10 @@ describe('QueryPage', () => {
       truncated: true,
       error: null,
     })
+    h.listDatasets.mockResolvedValue([dsFooRow])
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     wrap(<QueryPage />)
-    expect(screen.getAllByText(/v_ds_001/).length).toBeGreaterThan(0)
+    await waitFor(() => expect(screen.getAllByText(/foo/).length).toBeGreaterThan(0))
 
     await user.click(screen.getByRole('button', { name: 'Run query' }))
     await waitFor(() => expect(screen.getByText(/\(truncated\)/)).toBeInTheDocument())
@@ -71,7 +83,7 @@ describe('QueryPage', () => {
   it('no active dataset view hint fallback', () => {
     useUiStore.setState({ activeDatasetId: null })
     wrap(<QueryPage />)
-    expect(screen.getAllByText(/v_ds_\*/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/<dataset_table>/).length).toBeGreaterThan(0)
   })
 
   it('shows sql error and mutation error', async () => {

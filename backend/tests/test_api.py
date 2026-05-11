@@ -178,8 +178,8 @@ def test_query_forbidden_and_success_and_truncation(client, tmp_path):
     csv = tmp_path / "q.csv"
     csv.write_text("id,val\n" + "\n".join(f"{i},{i}" for i in range(25)))
     reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
-    did = reg.json()["dataset_id"]
-    vw = f"v_{did}"
+    assert reg.status_code == 200
+    vw = "q"
     fb = client.post("/api/query", json={"sql": f"ATTACH 'x' AS z; SELECT * FROM {vw}"})
     assert fb.status_code == 200 and fb.json()["error"]
     ok = client.post("/api/query", json={"sql": f"SELECT * FROM {vw}", "max_rows": 5})

@@ -24,6 +24,7 @@ class RegisterFolderRequest(BaseModel):
 class DatasetSummary(BaseModel):
     dataset_id: str
     name: str
+    view_name: str
     source_path: str
     format: str
     row_count: int | None = None

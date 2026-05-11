@@ -26,6 +26,7 @@ describe('DatasetSidebar', () => {
       {
         dataset_id: 'ds_001',
         name: 'a.csv',
+        view_name: 'a',
         source_path: '/p',
         format: 'csv',
         row_count: 1,
@@ -37,6 +38,7 @@ describe('DatasetSidebar', () => {
       {
         dataset_id: 'ds_002',
         name: 'b.csv',
+        view_name: 'b',
         source_path: '/up/b.csv',
         format: 'csv',
         row_count: 1,

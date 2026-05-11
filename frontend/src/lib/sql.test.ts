@@ -5,7 +5,6 @@ import {
   sqlSelectColumnFromView,
   sqlSelectStarFromView,
   sqlWherePkSample,
-  viewNameForDataset,
 } from '@/lib/sql'
 
 describe('sql helpers', () => {
@@ -27,20 +26,19 @@ describe('sql helpers', () => {
     expect(quoteLiteral(null)).toBe('NULL')
   })
 
-  it('viewNameForDataset prefixes', () => {
-    expect(viewNameForDataset('ds_001')).toBe('v_ds_001')
-  })
-
-  it('sqlSelectStarFromView', () => {
-    expect(sqlSelectStarFromView('ds_001', 10)).toContain('v_ds_001')
-    expect(sqlSelectStarFromView('ds_001', 10)).toContain('LIMIT 10')
+  it('sqlSelectStarFromView quotes non-identifier views', () => {
+    expect(sqlSelectStarFromView('player_ratings', 10)).toContain('player_ratings')
+    expect(sqlSelectStarFromView('player_ratings', 10)).toContain('LIMIT 10')
+    expect(sqlSelectStarFromView('bad-name', 10)).toContain('"bad-name"')
   })
 
   it('sqlSelectColumnFromView quotes column', () => {
     expect(sqlSelectColumnFromView('ds_001', 'bad name')).toContain('"bad name"')
+    expect(sqlSelectColumnFromView('ds_001', 'bad name')).toContain('FROM ds_001')
   })
 
   it('sqlWherePkSample', () => {
-    expect(sqlWherePkSample('ds_001', 'id', 'x')).toContain("= 'x'")
+    expect(sqlWherePkSample('t', 'id', 'x')).toContain("= 'x'")
+    expect(sqlWherePkSample('t', 'id', 'x')).toContain('FROM t')
   })
 })
