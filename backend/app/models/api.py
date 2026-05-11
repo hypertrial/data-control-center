@@ -113,12 +113,3 @@ class QueryResult(BaseModel):
     row_count: int
     truncated: bool = False
     error: str | None = None
-
-
-class RelationshipCandidate(BaseModel):
-    left_dataset_id: str
-    left_column: str
-    right_dataset_id: str
-    right_column: str
-    score: float
-    evidence: str

@@ -10,7 +10,6 @@ from app.models.api import (
     QueryResult,
     RegisterFileRequest,
     RegisterFolderRequest,
-    RelationshipCandidate,
 )
 
 __all__ = [
@@ -23,5 +22,4 @@ __all__ = [
     "QueryResult",
     "RegisterFileRequest",
     "RegisterFolderRequest",
-    "RelationshipCandidate",
 ]

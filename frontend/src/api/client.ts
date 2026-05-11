@@ -3,7 +3,6 @@ import type {
   DatasetSummary,
   QueryRequest,
   QueryResult,
-  RelationshipCandidate,
   SampleResponse,
 } from '@/api/types'
 
@@ -80,13 +79,5 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       }),
-    ),
-
-  relationships: () =>
-    handle<RelationshipCandidate[]>(fetch(`${API}/relationships`)),
-
-  refreshRelationships: () =>
-    handle<RelationshipCandidate[]>(
-      fetch(`${API}/relationships/refresh`, { method: 'POST' }),
     ),
 }

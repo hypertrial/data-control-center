@@ -32,17 +32,3 @@ export function sqlWherePkSample(datasetId: string, column: string, value: unkno
   const v = viewNameForDataset(datasetId)
   return `SELECT * FROM ${v} WHERE ${quoteIdent(column)} = ${quoteLiteral(value)} LIMIT ${limit};`
 }
-
-export function sqlJoinPreviewSnippet(
-  leftDatasetId: string,
-  leftColumn: string,
-  rightDatasetId: string,
-  rightColumn: string,
-  limit = 100,
-): string {
-  const lv = viewNameForDataset(leftDatasetId)
-  const rv = viewNameForDataset(rightDatasetId)
-  const lc = quoteIdent(leftColumn)
-  const rc = quoteIdent(rightColumn)
-  return `SELECT * FROM ${lv} a JOIN ${rv} b ON a.${lc} = b.${rc} LIMIT ${limit};`
-}

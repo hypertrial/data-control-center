@@ -146,20 +146,4 @@ describe('api client', () => {
       body: JSON.stringify({ sql: 'SELECT 1', max_rows: 5 }),
     })
   })
-
-  it('relationships GET', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonOk([]))
-    vi.stubGlobal('fetch', fetchMock)
-    await api.relationships()
-    expect(fetchMock).toHaveBeenCalledWith('/api/relationships')
-  })
-
-  it('refreshRelationships POST', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonOk([]))
-    vi.stubGlobal('fetch', fetchMock)
-    await api.refreshRelationships()
-    expect(fetchMock).toHaveBeenCalledWith('/api/relationships/refresh', {
-      method: 'POST',
-    })
-  })
 })

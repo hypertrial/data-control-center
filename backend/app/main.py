@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.datasets import router as datasets_router
 from app.api.health import router as health_router
 from app.api.query import router as query_router
-from app.api.relationships import router as relationships_router
 from app.config import get_settings
 from app.services.registry import DatasetRegistry
 from app.services.workspace import Workspace
@@ -41,7 +40,6 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(datasets_router)
     app.include_router(query_router)
-    app.include_router(relationships_router)
     return app
 
 

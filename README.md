@@ -59,7 +59,6 @@ Open `http://localhost:5173`. The dev server proxies `/api` to the backend.
 - DuckDB creates internal views named `v_<dataset_id>` (e.g. `v_ds_001`). The SQL panel auto-fills a `SELECT` for the active dataset; ad-hoc SQL must reference at least one registered view when datasets exist.
 - Profiles and quality issues are cached in `DCC_WORKSPACE_DB_PATH` (default `./.dcc_workspace.duckdb` relative to the backend process cwd).
 - **`POST /api/datasets/{dataset_id}/profile/refresh`** recomputes the cached profile for one dataset (records an in-process job row in the workspace DB).
-- **`GET /api/relationships`** returns cached relationship candidates when the workspace fingerprint matches; **`POST /api/relationships/refresh`** forces recomputation and updates the cache.
 - **`GET /api/datasets`** responses may include an optional **`quality_score`** (0–100) on each dataset when a cached profile exists for that id.
 - **`GET /api/datasets/{dataset_id}/sample`** includes **`total_rows`**: a full-table row count before `LIMIT` / `OFFSET` are applied.
 
@@ -96,10 +95,10 @@ cd frontend && npm run test:coverage
 
 - **Frontend SQL helpers:** [`frontend/src/lib/sql.ts`](frontend/src/lib/sql.ts)
 - **ECharts lifecycle hook:** [`frontend/src/hooks/useDisposableEChart.ts`](frontend/src/hooks/useDisposableEChart.ts)
-- **Workspace metadata (jobs + relationship cache):** DuckDB tables managed in [`backend/app/services/workspace.py`](backend/app/services/workspace.py)
+- **Workspace metadata (profile cache + job rows):** DuckDB tables in [`backend/app/services/workspace.py`](backend/app/services/workspace.py)
 
 ## Known limitations (MVP)
 
 - Excel and remote files are not supported yet.
-- Relationship and key heuristics are sample-based and best-effort; use **Refresh discovery** on the Relationships page or `POST /api/relationships/refresh` to rebuild after adding datasets.
+- Relationship-style join hints across datasets are not part of the MVP UI; explore overlaps with ad-hoc SQL if needed.
 - Very wide files may be slower on first profile; use **Refresh** in the dataset strip or `POST /api/datasets/{id}/profile/refresh` to rebuild explicitly.

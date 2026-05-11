@@ -87,15 +87,6 @@ export type QueryResult = {
   error: string | null
 }
 
-export type RelationshipCandidate = {
-  left_dataset_id: string
-  left_column: string
-  right_dataset_id: string
-  right_column: string
-  score: number
-  evidence: string
-}
-
 export type SampleResponse = {
   page: number
   page_size: number

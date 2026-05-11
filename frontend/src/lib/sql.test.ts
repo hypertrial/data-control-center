@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   quoteIdent,
   quoteLiteral,
-  sqlJoinPreviewSnippet,
   sqlSelectColumnFromView,
   sqlSelectStarFromView,
   sqlWherePkSample,
@@ -43,11 +42,5 @@ describe('sql helpers', () => {
 
   it('sqlWherePkSample', () => {
     expect(sqlWherePkSample('ds_001', 'id', 'x')).toContain("= 'x'")
-  })
-
-  it('sqlJoinPreviewSnippet', () => {
-    const s = sqlJoinPreviewSnippet('ds_001', 'k', 'ds_002', 'k', 50)
-    expect(s).toContain('JOIN')
-    expect(s).toContain('LIMIT 50')
   })
 })

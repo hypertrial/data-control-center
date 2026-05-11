@@ -1,6 +1,6 @@
 # Data Control Center — Frontend
 
-React + Vite + TypeScript UI for browsing datasets, profiles, SQL, and relationship hints.
+React + Vite + TypeScript UI for browsing datasets, profiles, SQL, and quality insights.
 
 ## Prerequisites
 
@@ -27,13 +27,13 @@ You can also run **`npm run dev`** from the **repository root** (see root [`READ
 
 ## Layout & conventions
 
-- **`src/features/`** — route-level pages (overview, columns, query, relationships, …).
+- **`src/features/`** — route-level pages (overview, columns, quality, samples, SQL).
 - **`src/api/`** — typed fetch client ([`client.ts`](src/api/client.ts)) and shared DTOs ([`types.ts`](src/api/types.ts)).
 - **`src/lib/sql.ts`** — SQL identifier/string quoting and snippet builders (see unit tests in [`sql.test.ts`](src/lib/sql.test.ts)).
 - **`src/hooks/useDisposableEChart.ts`** — shared ECharts init / `setOption` / resize / dispose lifecycle ([`useDisposableEChart.test.tsx`](src/hooks/useDisposableEChart.test.tsx)).
 - **`src/store/uiStore.ts`** — Zustand UI state (active dataset, drawer, filters).
 
-TanStack Query keys commonly used: `['datasets']`, `['profile', datasetId]`, `['quality', datasetId]`, `['relationships']`. Expensive recomputes use **`api.refreshProfile`** and **`api.refreshRelationships`** before invalidating those keys.
+TanStack Query keys commonly used: `['datasets']`, `['profile', datasetId]`, `['quality', datasetId]`. Expensive profile recomputes use **`api.refreshProfile`** before invalidating those keys.
 
 ## Tests & coverage
 

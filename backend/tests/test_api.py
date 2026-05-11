@@ -390,29 +390,3 @@ def test_refresh_profile_build_failure(client, tmp_path, monkeypatch):
     pr = client.post(f"/api/datasets/{did}/profile/refresh")
     assert pr.status_code == 500
 
-
-def test_refresh_relationships_endpoint(client, tmp_path):
-    a = tmp_path / "a.csv"
-    b = tmp_path / "b.csv"
-    a.write_text("uid\n1\n")
-    b.write_text("uid\n1\n")
-    client.post("/api/datasets/register-file", json={"path": str(a)})
-    client.post("/api/datasets/register-file", json={"path": str(b)})
-    r = client.post("/api/relationships/refresh")
-    assert r.status_code == 200
-    assert isinstance(r.json(), list)
-
-
-def test_relationships_empty_and_pairs(client, tmp_path):
-    r0 = client.get("/api/relationships")
-    assert r0.status_code == 200
-    assert r0.json() == []
-    a = tmp_path / "a.csv"
-    b = tmp_path / "b.csv"
-    a.write_text("uid\n1\n2\n")
-    b.write_text("uid\n2\n3\n")
-    client.post("/api/datasets/register-file", json={"path": str(a)})
-    client.post("/api/datasets/register-file", json={"path": str(b)})
-    r1 = client.get("/api/relationships")
-    assert r1.status_code == 200
-    assert isinstance(r1.json(), list)

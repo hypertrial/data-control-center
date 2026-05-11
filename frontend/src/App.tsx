@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import {
   AlertCircle,
-  GitBranch,
   LayoutDashboard,
   Rows3,
   Table2,
@@ -18,7 +17,6 @@ import { ColumnsPage } from '@/features/columns/ColumnsPage'
 import { QualityPage } from '@/features/quality/QualityPage'
 import { SamplesPage } from '@/features/samples/SamplesPage'
 import { QueryPage } from '@/features/query/QueryPage'
-import { RelationshipsPage } from '@/features/relationships/RelationshipsPage'
 import { DatasetContextStrip } from '@/features/shell/DatasetContextStrip'
 import { UiUrlSync } from '@/hooks/UiUrlSync'
 import { cn } from '@/lib/utils'
@@ -31,7 +29,6 @@ const NAV: Array<{ to: string; label: string; icon: typeof LayoutDashboard; end?
   { to: '/quality', label: 'Quality', icon: AlertCircle },
   { to: '/samples', label: 'Samples', icon: Rows3 },
   { to: '/sql', label: 'SQL', icon: Terminal },
-  { to: '/relationships', label: 'Relationships', icon: GitBranch },
 ]
 
 function Shell({ children }: { children: ReactNode }) {
@@ -106,7 +103,6 @@ function RoutedPages() {
       <Route path="/quality" element={<QualityPage />} />
       <Route path="/samples" element={<SamplesPage />} />
       <Route path="/sql" element={<QueryPage />} />
-      <Route path="/relationships" element={<RelationshipsPage />} />
     </Routes>
   )
 }

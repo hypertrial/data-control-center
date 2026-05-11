@@ -22,7 +22,6 @@ vi.mock('@/api/client', () => ({
     getQuality: vi.fn(),
     getSample: vi.fn(),
     runQuery: vi.fn(),
-    relationships: vi.fn(),
   },
 }))
 
@@ -60,7 +59,6 @@ describe('App', () => {
       error: null,
       truncated: false,
     })
-    vi.mocked(api.relationships).mockResolvedValue([])
     vi.mocked(api.uploadDatasets).mockResolvedValue([])
   })
 
