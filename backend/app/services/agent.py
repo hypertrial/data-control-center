@@ -73,6 +73,9 @@ def _system_prompt() -> str:
         "- Aggregate queries: GROUP BY only raw non-aggregated columns/expressions that also "
         "appear in SELECT. Never put aggregate functions such as COUNT, SUM, AVG, MIN, MAX, "
         "or ANY_VALUE in GROUP BY.\n"
+        "- Most common / mode / top by frequency / highest count: GROUP BY the dimension column, "
+        "ORDER BY COUNT(*) DESC (or COUNT of that column), then LIMIT. Without GROUP BY, "
+        "ORDER BY COUNT(...) cannot rank categories; do not fake it with ANY_VALUE alone.\n"
         "- Prefer quoted identifiers for column names when they contain spaces or special characters "
         'using double quotes, e.g. "col name".\n'
     )
