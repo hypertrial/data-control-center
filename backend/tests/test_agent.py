@@ -17,6 +17,7 @@ from app.services.agent import (
     _result_preview_for_summary,
     _should_retry_empty_result,
     _sql_retry_prompt,
+    _system_prompt,
     build_dataset_context,
     ollama_chat,
     parse_sql_draft,
@@ -25,6 +26,13 @@ from app.services.agent import (
 )
 from app.services.registry import DatasetRegistry
 from app.services.workspace import Workspace
+
+
+def test_system_prompt_discourages_any_value_without_group_for_frequency() -> None:
+    p = _system_prompt()
+    assert "Most common" in p
+    assert "GROUP BY the dimension column" in p
+    assert "ANY_VALUE alone" in p
 
 
 @pytest.fixture()
