@@ -13,7 +13,7 @@ from app.services.registry import (
     pick_unique_view_name,
     slugify_file_stem,
 )
-from app.services.workspace import Workspace
+from app.services.workspace import Workspace, sanitize_sql_identifier
 
 
 def test_register_path_unsupported_extension(tmp_path: Path) -> None:
@@ -158,6 +158,103 @@ def test_register_path_duplicate_stem_in_different_dirs(tmp_path: Path) -> None:
     d2 = reg.register_path(f2)
     assert d1.view_name == "data"
     assert d2.view_name == f"data_{d2.dataset_id}"
+
+
+def test_migrate_legacy_v_dataset_view_on_load(tmp_path: Path) -> None:
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    csv = tmp_path / "player_ratings_2006_2026.csv"
+    csv.write_text("id\n1\n")
+    ws.register_file_view("v_ds_001", csv, "csv")
+    rows, cols = ws.get_row_column_counts("v_ds_001")
+    sz = csv.stat().st_size
+    ws.connection.execute(
+        """
+        INSERT INTO dcc_datasets (dataset_id, source_path, view_name, format, row_count, column_count, file_size_bytes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        ["ds_001", str(csv.resolve()), "v_ds_001", "csv", rows, cols, sz],
+    )
+    reg = DatasetRegistry(ws)
+    ds = reg.get("ds_001")
+    assert ds is not None
+    assert ds.view_name == "player_ratings_2006_2026"
+    db_row = ws.connection.execute(
+        "SELECT view_name FROM dcc_datasets WHERE dataset_id = 'ds_001'"
+    ).fetchone()
+    assert db_row is not None and db_row[0] == "player_ratings_2006_2026"
+    safe = sanitize_sql_identifier(ds.view_name)
+    assert ws.connection.execute(f"SELECT COUNT(*) FROM {safe}").fetchone()[0] == rows
+
+
+def test_migrate_legacy_skips_missing_source_file(tmp_path: Path) -> None:
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    csv = tmp_path / "gone.csv"
+    csv.write_text("a\n1\n")
+    ws.register_file_view("v_ds_001", csv, "csv")
+    rows, cols = ws.get_row_column_counts("v_ds_001")
+    sz = csv.stat().st_size
+    resolved = str(csv.resolve())
+    csv.unlink()
+    ws.connection.execute(
+        """
+        INSERT INTO dcc_datasets (dataset_id, source_path, view_name, format, row_count, column_count, file_size_bytes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        ["ds_001", resolved, "v_ds_001", "csv", rows, cols, sz],
+    )
+    reg = DatasetRegistry(ws)
+    ds = reg.get("ds_001")
+    assert ds is not None
+    assert ds.view_name == "v_ds_001"
+
+
+def test_migrate_legacy_noop_when_stem_matches_existing_view_name(tmp_path: Path) -> None:
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    csv = tmp_path / "v_ds_001.csv"
+    csv.write_text("a\n1\n")
+    ws.register_file_view("v_ds_001", csv, "csv")
+    rows, cols = ws.get_row_column_counts("v_ds_001")
+    sz = csv.stat().st_size
+    ws.connection.execute(
+        """
+        INSERT INTO dcc_datasets (dataset_id, source_path, view_name, format, row_count, column_count, file_size_bytes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        ["ds_001", str(csv.resolve()), "v_ds_001", "csv", rows, cols, sz],
+    )
+    reg = DatasetRegistry(ws)
+    assert reg.get("ds_001") is not None
+    assert reg.get("ds_001").view_name == "v_ds_001"
+
+
+def test_migrate_legacy_register_failure_keeps_old_view_name(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    csv = tmp_path / "z.csv"
+    csv.write_text("a\n1\n")
+    ws.register_file_view("v_ds_001", csv, "csv")
+    rows, cols = ws.get_row_column_counts("v_ds_001")
+    sz = csv.stat().st_size
+    ws.connection.execute(
+        """
+        INSERT INTO dcc_datasets (dataset_id, source_path, view_name, format, row_count, column_count, file_size_bytes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        ["ds_001", str(csv.resolve()), "v_ds_001", "csv", rows, cols, sz],
+    )
+
+    def boom(*_args, **_kwargs) -> None:
+        raise OSError("register blocked")
+
+    monkeypatch.setattr(ws, "register_file_view", boom)
+    reg = DatasetRegistry(ws)
+    assert reg.get("ds_001") is not None
+    assert reg.get("ds_001").view_name == "v_ds_001"
 
 
 def test_register_path_reserved_keyword_stem(tmp_path: Path) -> None:
