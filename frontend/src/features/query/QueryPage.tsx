@@ -139,10 +139,11 @@ export function QueryPage() {
             <CodeMirror
               value={sqlText}
               height="200px"
+              theme="none"
               extensions={extensions}
               onChange={(v) => setSqlText(v)}
               ref={cmRef}
-              className="text-sm"
+              className="text-sm [&_.cm-editor]:rounded-lg"
               basicSetup={{ lineNumbers: true, foldGutter: false }}
             />
           </div>
