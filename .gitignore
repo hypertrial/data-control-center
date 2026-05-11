@@ -214,5 +214,14 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+*.duckdb
+*.duckdb.wal
+.dcc_workspace.duckdb
+node_modules/
+frontend/dist/
+frontend/node_modules/
+backend/.venv/
+
 # Streamlit
 .streamlit/secrets.toml
+
