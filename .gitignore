@@ -217,8 +217,10 @@ __marimo__/
 *.duckdb
 *.duckdb.wal
 .dcc_workspace.duckdb
+.dcc_uploads/
 node_modules/
 frontend/dist/
+frontend/coverage/
 frontend/node_modules/
 backend/.venv/
 

@@ -17,12 +17,28 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.0",
+    "pytest-cov>=6.0.0",
     "httpx>=0.27.0",
     "ruff>=0.8.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = [
+    "--cov=app",
+    "--cov-report=term-missing",
+    "--cov-fail-under=100",
+]
+
+[tool.coverage.run]
+source = ["app"]
+branch = false
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]
 
 [tool.ruff]
 line-length = 100

@@ -1,0 +1,11 @@
+{
+  "name": "data-control-center",
+  "private": true,
+  "description": "Root scripts delegate to frontend/; use `make dev` to run API + UI.",
+  "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "test": "npm run test --prefix frontend",
+    "lint": "npm run lint --prefix frontend"
+  }
+}

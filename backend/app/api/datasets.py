@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from app.api.deps import RegistryDep, SettingsDep, WorkspaceDep
 from app.models.api import (
@@ -16,9 +18,75 @@ from app.models.api import (
     RegisterFolderRequest,
 )
 from app.services.profiler import build_profile
+from app.services.registry import SUPPORTED_EXTENSIONS
 from app.services.workspace import sanitize_sql_identifier
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
+
+
+def _safe_upload_filename(raw: str) -> str:
+    name = Path(raw).name
+    if not name or name != Path(name).name:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    if ".." in name or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    return name
+
+
+@router.post("/upload", response_model=list[DatasetSummary])
+async def upload_datasets(
+    registry: RegistryDep,
+    settings: SettingsDep,
+    files: Annotated[list[UploadFile], File(default_factory=list)],
+):
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+    upload_root = settings.upload_dir
+    if not upload_root.is_absolute():
+        upload_root = Path.cwd() / upload_root
+    upload_root.mkdir(parents=True, exist_ok=True)
+    batch_dir = upload_root / uuid.uuid4().hex[:16]
+    batch_dir.mkdir(parents=True)
+    summaries: list[DatasetSummary] = []
+    skipped: list[str] = []
+    for uf in files:
+        raw_name = uf.filename or ""
+        safe = _safe_upload_filename(raw_name)
+        ext = Path(safe).suffix.lower()
+        if ext not in SUPPORTED_EXTENSIONS:
+            skipped.append(safe)
+            continue
+        dest = batch_dir / safe
+        if dest.exists():
+            stem, sfx = Path(safe).stem, Path(safe).suffix
+            dest = batch_dir / f"{stem}_{uuid.uuid4().hex[:6]}{sfx}"
+        size = 0
+        try:
+            with dest.open("wb") as out:
+                while chunk := await uf.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > settings.upload_max_bytes_per_file:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"File exceeds max size ({settings.upload_max_bytes_per_file} bytes): {safe}",
+                        )
+                    out.write(chunk)
+        except HTTPException:
+            dest.unlink(missing_ok=True)
+            raise
+        try:
+            ds = registry.register_path(dest)
+            summaries.append(registry.to_summary(ds))
+        except ValueError:
+            dest.unlink(missing_ok=True)
+            skipped.append(safe)
+    if not summaries:
+        raise HTTPException(
+            status_code=400,
+            detail="No supported data files in upload "
+            + (f"(skipped: {', '.join(skipped)})" if skipped else ""),
+        )
+    return summaries
 
 
 @router.get("", response_model=list[DatasetSummary])

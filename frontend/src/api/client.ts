@@ -41,6 +41,18 @@ export const api = {
       }),
     ),
 
+  /** Multipart upload: browser → API (no filesystem paths on the client). */
+  uploadDatasets: (files: File[]) => {
+    const body = new FormData()
+    for (const f of files) body.append('files', f)
+    return handle<DatasetSummary[]>(
+      fetch(`${API}/datasets/upload`, {
+        method: 'POST',
+        body,
+      }),
+    )
+  },
+
   getProfile: (datasetId: string) =>
     handle<DatasetProfile>(fetch(`${API}/datasets/${datasetId}/profile`)),
 

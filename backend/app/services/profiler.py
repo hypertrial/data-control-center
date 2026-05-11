@@ -96,12 +96,17 @@ def _numeric_histogram(series: pl.Series, bins: int = 12) -> list[dict[str, Any]
         return None
     if not math.isfinite(mn) or not math.isfinite(mx) or mn == mx:
         return None
-    # simple equal-width bins using polars cut if available
+    # Equal-width bins via explicit break points (Polars requires a Sequence for `breaks`).
     try:
-        binned = clean.cut(bins).value_counts().sort(by=series.name)
+        edges = [mn + (mx - mn) * i / bins for i in range(bins + 1)]
+        binned = clean.cut(breaks=edges)
+        counts = binned.value_counts().sort(by=binned.name)
         hist = []
-        for row in binned.iter_rows(named=True):
-            hist.append({"bin": str(row.get(series.name)), "count": int(row.get("count", 0))})
+        for row in counts.iter_rows(named=True):
+            bin_key = binned.name
+            hist.append(
+                {"bin": str(row.get(bin_key)), "count": int(row.get("count", 0))}
+            )
         return hist
     except Exception:
         return None

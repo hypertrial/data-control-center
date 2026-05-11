@@ -1,25 +1,69 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
-import { Database, FolderOpen, Loader2 } from 'lucide-react'
-import { useState } from 'react'
+import { Database, FolderOpen, Loader2, Upload } from 'lucide-react'
+import { useCallback, useRef, useState } from 'react'
+
+/** Mirrors backend `SUPPORTED_EXTENSIONS` for client-side filtering. */
+const UPLOAD_EXT = new Set(['.csv', '.tsv', '.parquet', '.json', '.jsonl', '.ndjson'])
+
+const ACCEPT_ATTR = '.csv,.tsv,.parquet,.json,.jsonl,.ndjson'
+
+function extOf(name: string): string {
+  const i = name.lastIndexOf('.')
+  return i >= 0 ? name.slice(i).toLowerCase() : ''
+}
+
+function normalizeUploadFile(file: File): File {
+  const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath
+  if (rel && rel.length > 0) {
+    const safe = rel.replace(/[/\\]/g, '__')
+    return new File([file], safe, { type: file.type, lastModified: file.lastModified })
+  }
+  return file
+}
+
+function filterSupportedFiles(files: File[]): File[] {
+  return files.map(normalizeUploadFile).filter((f) => UPLOAD_EXT.has(extOf(f.name)))
+}
 
 export function DatasetSidebar() {
   const qc = useQueryClient()
   const { activeDatasetId, setActiveDatasetId } = useUiStore()
-  const [filePath, setFilePath] = useState('')
-  const [folderPath, setFolderPath] = useState('')
-  const [recursive, setRecursive] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [dragOver, setDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
 
   const q = useQuery({
     queryKey: ['datasets'],
     queryFn: api.listDatasets,
   })
+
+  const uploadFiles = useCallback(
+    async (picked: File[]) => {
+      const files = filterSupportedFiles(picked)
+      if (!files.length) {
+        setErr('No supported files (.csv, .tsv, .parquet, .json, .jsonl, .ndjson).')
+        return
+      }
+      setBusy(true)
+      setErr(null)
+      try {
+        const rows = await api.uploadDatasets(files)
+        await qc.invalidateQueries({ queryKey: ['datasets'] })
+        if (rows.length) setActiveDatasetId(rows[rows.length - 1]!.dataset_id)
+      } catch (e) {
+        setErr((e as Error).message)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [qc, setActiveDatasetId],
+  )
 
   return (
     <aside className="flex h-full w-72 flex-col border-r border-white/10 bg-[hsl(var(--card))]">
@@ -30,72 +74,90 @@ export function DatasetSidebar() {
         </div>
         <div className="mt-3 space-y-2">
           {err && <div className="text-xs text-red-300">{err}</div>}
-          <Input
-            placeholder="Absolute path to file…"
-            value={filePath}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={ACCEPT_ATTR}
+            className="hidden"
             onChange={(e) => {
-              setErr(null)
-              setFilePath(e.target.value)
+              const list = e.target.files ? Array.from(e.target.files) : []
+              e.target.value = ''
+              void uploadFiles(list)
             }}
           />
-          <Button
-            className="w-full"
-            disabled={!filePath || busy}
-            onClick={async () => {
-              setBusy(true)
-              setErr(null)
-              try {
-                const row = await api.registerFile(filePath)
-                await qc.invalidateQueries({ queryKey: ['datasets'] })
-                setActiveDatasetId(row.dataset_id)
-                setFilePath('')
-              } catch (e) {
-                setErr((e as Error).message)
-              } finally {
-                setBusy(false)
+          {/* Chromium / Safari: directory picker; not in narrow React DOM typings */}
+          <input
+            ref={folderInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            {...({ webkitdirectory: '' } as object)}
+            onChange={(e) => {
+              const list = e.target.files ? Array.from(e.target.files) : []
+              e.target.value = ''
+              void uploadFiles(list)
+            }}
+          />
+
+          <div
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                fileInputRef.current?.click()
               }
             }}
-          >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add file'}
-          </Button>
-          <Input
-            placeholder="Absolute path to folder…"
-            value={folderPath}
-            onChange={(e) => {
-              setErr(null)
-              setFolderPath(e.target.value)
+            onDragEnter={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setDragOver(true)
             }}
-          />
-          <label className="flex items-center gap-2 text-xs text-[hsl(var(--muted))]">
-            <input
-              type="checkbox"
-              checked={recursive}
-              onChange={(e) => setRecursive(e.target.checked)}
-              className="accent-[hsl(var(--accent))]"
-            />
-            Recursive
-          </label>
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setDragOver(true)
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false)
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setDragOver(false)
+              const list = e.dataTransfer.files ? Array.from(e.dataTransfer.files) : []
+              void uploadFiles(list)
+            }}
+            className={cn(
+              'flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-3 py-6 text-center text-xs transition',
+              dragOver
+                ? 'border-[hsl(var(--accent))] bg-white/10'
+                : 'border-white/20 bg-white/[0.03] hover:border-white/30',
+            )}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="mb-2 h-6 w-6 text-[hsl(var(--muted))]" />
+            <span className="font-medium text-[hsl(var(--foreground))]">Drop files here</span>
+            <span className="mt-1 text-[hsl(var(--muted))]">or click to choose files</span>
+          </div>
+
           <Button
+            type="button"
             variant="outline"
             className="w-full"
-            disabled={!folderPath || busy}
-            onClick={async () => {
-              setBusy(true)
-              setErr(null)
-              try {
-                const rows = await api.registerFolder(folderPath, recursive)
-                await qc.invalidateQueries({ queryKey: ['datasets'] })
-                if (rows.length) setActiveDatasetId(rows[rows.length - 1]!.dataset_id)
-                setFolderPath('')
-              } catch (e) {
-                setErr((e as Error).message)
-              } finally {
-                setBusy(false)
-              }
-            }}
+            disabled={busy}
+            onClick={() => folderInputRef.current?.click()}
           >
-            <FolderOpen className="mr-2 h-4 w-4" />
-            Add folder
+            {busy ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <FolderOpen className="mr-2 h-4 w-4" />
+            )}
+            Choose folder
           </Button>
         </div>
       </div>

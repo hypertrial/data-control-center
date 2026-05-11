@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     # Sample pagination
     sample_max_page_size: int = 500
     sample_default_page_size: int = 100
+    # Browser uploads are copied here, then registered with DuckDB
+    upload_dir: Path = Path(".dcc_uploads")
+    upload_max_bytes_per_file: int = 250 * 1024 * 1024  # 250 MiB
 
 
 def get_settings() -> Settings:
