@@ -52,7 +52,7 @@ describe('AskPage', () => {
       answer: 'There are **2** rows.',
       sql: 'SELECT COUNT(*) AS n FROM t',
       explanation: 'Counted rows.',
-      model: 'qwen3:8b',
+      model: 'qwen3:4b',
       query_result: {
         columns: [{ name: 'n', type: null }],
         rows: [{ n: 2 }],
@@ -101,7 +101,7 @@ describe('AskPage', () => {
   it('shows banner for API result error', async () => {
     const user = userEvent.setup()
     h.askAgent.mockResolvedValue({
-      model: 'qwen3:8b',
+      model: 'qwen3:4b',
       error: 'Could not reach Ollama',
     })
     wrap(<AskPage />)

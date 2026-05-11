@@ -62,7 +62,7 @@ describe('App', () => {
       truncated: false,
     })
     vi.mocked(api.askAgent).mockResolvedValue({
-      model: 'qwen3:8b',
+      model: 'qwen3:4b',
       answer: 'Mock answer',
     })
     vi.mocked(api.uploadDatasets).mockResolvedValue([])

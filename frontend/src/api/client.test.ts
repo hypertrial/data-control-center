@@ -153,7 +153,7 @@ describe('api client', () => {
       jsonOk({
         answer: 'ok',
         sql: 'SELECT 1',
-        model: 'qwen3:8b',
+        model: 'qwen3:4b',
         error: null,
       }),
     )

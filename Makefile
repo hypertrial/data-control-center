@@ -21,7 +21,13 @@ install:
 	cd backend && uv sync --extra dev
 	cd frontend && npm install
 
-dev:
+# Ensures Vite exists so `npm run dev` can resolve it (avoids "vite: command not found"
+# after a fresh clone or if frontend deps were never installed).
+frontend/node_modules/.bin/vite:
+	@echo "Installing frontend dependencies (npm install)..."
+	cd frontend && npm install
+
+dev: frontend/node_modules/.bin/vite
 	bash -c '\
 		(cd backend && uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000) & pid1=$$!; \
 		(cd frontend && npm run dev) & pid2=$$!; \
@@ -31,5 +37,5 @@ dev:
 backend:
 	cd backend && uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
-frontend:
+frontend: frontend/node_modules/.bin/vite
 	cd frontend && npm run dev

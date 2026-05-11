@@ -28,6 +28,8 @@ make dev       # API + UI; Ctrl+C stops both
 
 Bare `make` prints the same as `make help`. Needs **bash** for `make dev` (default on macOS/Linux).
 
+If **`frontend/node_modules`** is missing, **`make dev`** and **`make frontend`** run **`npm install`** in **`frontend/`** once (tracked via the Vite binary) so you do not hit **`vite: command not found`**. **`make install`** is still recommended for a first-time setup because it also syncs the backend with **`uv`**.
+
 Other targets: `make help`, `make backend`, `make frontend`.
 
 **UI only from repo root:** `npm run dev` uses the root [`package.json`](package.json) and forwards to `frontend/`. You still need the API (`make backend` in another terminal, or use `make dev` for both).
@@ -67,13 +69,13 @@ Open `http://localhost:5173`. The dev server proxies `/api` to the backend.
 ## Local LLM assistant (Ask tab)
 
 - Install **[Ollama](https://ollama.com)** on macOS (download from the site, or e.g. `brew install ollama` if you use Homebrew).
-- Pull a model (default used by the app is **`qwen3:8b`**):
+- Pull a model (default used by the app is **`qwen3:4b`**):
 
   ```bash
-  ollama pull qwen3:8b
+  ollama pull qwen3:4b
   ```
 
-  For a faster, lighter option on laptops with less unified memory, try **`qwen3:4b`** and set **`DCC_LLM_MODEL=qwen3:4b`** when starting the backend.
+  For a larger, often more capable model, install **`qwen3:8b`** and set **`DCC_LLM_MODEL=qwen3:8b`** when starting the backend.
 - Keep the Ollama app/daemon running, then run **`make dev`** as usual. Open the **Ask** tab, type a question in plain language, and optional **max_rows** for the result preview.
 - The backend calls Ollama at **`DCC_LLM_BASE_URL`** (default `http://127.0.0.1:11434`), asks the model for a single read-only **`SELECT`/`WITH`** statement, runs it through the same validation and row limits as **`POST /api/query`**, then asks the model to summarize the result. Generated SQL can be opened in the **SQL** tab.
 - Useful settings (all prefixed with **`DCC_`**): **`LLM_BASE_URL`**, **`LLM_MODEL`**, **`LLM_TIMEOUT_SECONDS`**, **`AGENT_MAX_ROWS`**, **`AGENT_SQL_ATTEMPTS`**, **`AGENT_SUMMARIZE_MAX_JSON_CHARS`**.
