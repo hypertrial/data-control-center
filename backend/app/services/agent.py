@@ -4,13 +4,20 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 import httpx
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.models.api import AgentAskRequest, AgentAskResponse, AgentSqlDraft, QueryRequest
+from app.models.api import (
+    AgentAskRequest,
+    AgentAskResponse,
+    AgentSqlDraft,
+    QueryRequest,
+    QueryResult,
+)
 from app.services.query import execute_query
 from app.services.registry import DatasetRegistry
 from app.services.workspace import Workspace, sanitize_sql_identifier
@@ -52,7 +59,8 @@ def _system_prompt() -> str:
     return (
         "You are a data analyst assistant for a local Data Control Center. "
         "The database is DuckDB. Each registered dataset is exposed as a view. "
-        "You must output only valid JSON when asked, with no markdown or extra text.\n\n"
+        "Do not think step-by-step. You must output only valid JSON when asked, "
+        "with no markdown or extra text.\n\n"
         "Rules for SQL:\n"
         "- Exactly one SELECT or WITH statement (no semicolons chaining multiple statements).\n"
         "- Use DuckDB syntax.\n"
@@ -60,6 +68,11 @@ def _system_prompt() -> str:
         "(e.g. SELECT * FROM my_view).\n"
         "- Read-only: never use ATTACH, INSTALL, COPY, CREATE, DROP, INSERT, UPDATE, DELETE, "
         "PRAGMA, or other mutating operations.\n"
+        "- Do not invent filters. Only add WHERE/HAVING conditions that the user explicitly asked "
+        "for or that directly remove nulls from the selected/grouped column itself.\n"
+        "- Aggregate queries: GROUP BY only raw non-aggregated columns/expressions that also "
+        "appear in SELECT. Never put aggregate functions such as COUNT, SUM, AVG, MIN, MAX, "
+        "or ANY_VALUE in GROUP BY.\n"
         "- Prefer quoted identifiers for column names when they contain spaces or special characters "
         'using double quotes, e.g. "col name".\n'
     )
@@ -82,6 +95,7 @@ def build_dataset_context(
     registry: DatasetRegistry,
     workspace: Workspace,
     dataset_ids: list[str] | None,
+    max_columns: int = 40,
 ) -> tuple[str | None, str | None]:
     """
     Return (context_block, error_message).
@@ -95,16 +109,19 @@ def build_dataset_context(
         prof_raw = workspace.load_profile_cache(ds.dataset_id)
         col_bits: list[str] = []
         if isinstance(prof_raw, dict):
-            for c in (prof_raw.get("column_profiles") or [])[:80]:
+            columns = prof_raw.get("column_profiles") or []
+            for c in columns[:max_columns]:
                 if isinstance(c, dict) and c.get("name"):
                     pt = c.get("physical_type", "?")
                     col_bits.append(f"{c['name']}:{pt}")
-            if len(prof_raw.get("column_profiles") or []) > 80:
-                col_bits.append(
-                    f"... +{len(prof_raw.get('column_profiles') or []) - 80} more columns"
-                )
+            if len(columns) > max_columns:
+                col_bits.append(f"... +{len(columns) - max_columns} more columns")
         if not col_bits:
-            col_bits = _pragma_column_summaries(workspace.connection, ds.view_name)
+            col_bits = _pragma_column_summaries(
+                workspace.connection,
+                ds.view_name,
+                max_cols=max_columns,
+            )
         if not col_bits:
             col_bits = ["(no columns resolved)"]
         narrative = ""
@@ -138,6 +155,15 @@ def ollama_chat(
         "model": settings.llm_model,
         "messages": messages,
         "stream": False,
+        "think": settings.llm_think,
+        "options": {
+            "temperature": settings.llm_temperature,
+            "num_predict": (
+                settings.llm_sql_num_predict
+                if format_schema == OLLAMA_SQL_DRAFT_FORMAT
+                else settings.llm_summary_num_predict
+            ),
+        },
     }
     if format_schema is not None:
         body["format"] = format_schema
@@ -170,10 +196,24 @@ def ollama_chat(
     return content if isinstance(content, str) else ""
 
 
-def parse_sql_draft(content: str) -> tuple[AgentSqlDraft | None, str | None]:
+def _load_json_object(content: str) -> Any:
+    """Load a JSON object, tolerating model-added thinking text around it."""
     stripped = content.strip()
+    if not stripped:
+        raise json.JSONDecodeError("empty response", content, 0)
+    decoder = json.JSONDecoder()
     try:
-        obj = json.loads(stripped)
+        return decoder.raw_decode(stripped)[0]
+    except json.JSONDecodeError:
+        start = stripped.find("{")
+        if start < 0:
+            raise
+        return decoder.raw_decode(stripped[start:])[0]
+
+
+def parse_sql_draft(content: str) -> tuple[AgentSqlDraft | None, str | None]:
+    try:
+        obj = _load_json_object(content)
     except json.JSONDecodeError as e:
         return None, f"Model returned invalid JSON: {e}"
     if not isinstance(obj, dict):
@@ -185,9 +225,8 @@ def parse_sql_draft(content: str) -> tuple[AgentSqlDraft | None, str | None]:
 
 
 def parse_summary_answer(content: str) -> tuple[str | None, str | None]:
-    stripped = content.strip()
     try:
-        obj = json.loads(stripped)
+        obj = _load_json_object(content)
     except json.JSONDecodeError as e:
         return None, f"Invalid summary JSON: {e}"
     if not isinstance(obj, dict):
@@ -205,6 +244,44 @@ def _result_preview_for_summary(result_json: dict[str, Any], max_chars: int) -> 
     return raw[: max_chars - 20] + "\n... (truncated)"
 
 
+def _default_answer(draft: AgentSqlDraft, qres: QueryResult) -> str:
+    prefix = draft.explanation.strip() or "Query completed."
+    parts = [f"Returned {qres.row_count} row{'s' if qres.row_count != 1 else ''}."]
+    if qres.rows:
+        first = qres.rows[0]
+        preview = ", ".join(f"{k}={v}" for k, v in list(first.items())[:3])
+        if preview:
+            parts.append(f"Preview: {preview}.")
+    return f"{prefix}\n\n{' '.join(parts)}"
+
+
+def _sql_retry_prompt(err_text: str) -> str:
+    hint = ""
+    if "GROUP BY clause cannot contain aggregates" in err_text:
+        hint = (
+            " DuckDB does not allow aggregate functions in GROUP BY. Move aggregates "
+            "to SELECT/HAVING/ORDER BY only, and GROUP BY the raw dimension columns."
+        )
+    return (
+        f"The SQL failed when executed: {err_text}.{hint} "
+        'Return corrected JSON with keys "sql" and "explanation" only.'
+    )
+
+
+def _should_retry_empty_result(sql: str) -> bool:
+    """Retry once when an otherwise-valid query likely filtered away all rows."""
+    return bool(re.search(r"\b(WHERE|HAVING)\b", sql, flags=re.IGNORECASE))
+
+
+def _empty_result_retry_prompt() -> str:
+    return (
+        "The SQL executed successfully but returned 0 rows. If you added filters that were not "
+        "explicitly requested, remove them. Do not filter by ID/null columns unless the user asked "
+        "for that or the filtered column is the selected/grouped result column. Return corrected "
+        'JSON with keys "sql" and "explanation" only.'
+    )
+
+
 def run_agent_ask(
     registry: DatasetRegistry,
     settings: Settings,
@@ -212,7 +289,12 @@ def run_agent_ask(
     ollama_call=ollama_chat,
 ) -> AgentAskResponse:
     model_name = settings.llm_model
-    ctx, ctx_err = build_dataset_context(registry, registry.workspace, req.dataset_ids)
+    ctx, ctx_err = build_dataset_context(
+        registry,
+        registry.workspace,
+        req.dataset_ids,
+        settings.agent_context_max_columns,
+    )
     if ctx_err:
         return AgentAskResponse(model=model_name, error=ctx_err)
 
@@ -222,7 +304,7 @@ def run_agent_ask(
     user_block = (
         f"Datasets and schema:\n{ctx}\n\n"
         f"User question:\n{req.question.strip()}\n\n"
-        'Return JSON object with keys "sql" (string) and "explanation" (string).'
+        'Return JSON object with keys "sql" (string) and "explanation" (string). /no_think'
     )
     messages: list[dict[str, str]] = [
         {"role": "system", "content": _system_prompt()},
@@ -234,8 +316,18 @@ def run_agent_ask(
     for attempt in range(max(1, settings.agent_sql_attempts)):
         try:
             content = ollama_call(settings, messages, OLLAMA_SQL_DRAFT_FORMAT)
+        except httpx.ConnectError as e:
+            logger.warning("Ollama connection failed: %s", e)
+            return AgentAskResponse(
+                model=model_name,
+                error=(
+                    f"Ollama is not reachable at {settings.llm_base_url}. "
+                    f"Start Ollama and run `ollama pull {settings.llm_model}` "
+                    "if the model is not installed."
+                ),
+            )
         except httpx.HTTPError as e:
-            logger.exception("Ollama HTTP error")
+            logger.warning("Ollama HTTP error: %s", e)
             return AgentAskResponse(
                 model=model_name,
                 error=f"Ollama at {settings.llm_base_url} failed: {e}",
@@ -270,6 +362,24 @@ def run_agent_ask(
             QueryRequest(sql=draft.sql, max_rows=limit),
         )
         if not qres.error:
+            if (
+                qres.row_count == 0
+                and attempt + 1 < settings.agent_sql_attempts
+                and _should_retry_empty_result(draft.sql)
+            ):
+                messages.append({"role": "assistant", "content": content})
+                messages.append({"role": "user", "content": _empty_result_retry_prompt()})
+                continue
+
+            if not settings.agent_summarize_with_llm:
+                return AgentAskResponse(
+                    answer=_default_answer(draft, qres),
+                    sql=draft.sql,
+                    explanation=draft.explanation or None,
+                    query_result=qres,
+                    model=model_name,
+                )
+
             summary_messages = [
                 {
                     "role": "system",
@@ -324,10 +434,7 @@ def run_agent_ask(
         messages.append(
             {
                 "role": "user",
-                "content": (
-                    f"The SQL failed when executed: {err_text}. "
-                    'Return corrected JSON with keys "sql" and "explanation" only.'
-                ),
+                "content": _sql_retry_prompt(err_text),
             }
         )
 

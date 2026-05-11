@@ -9,9 +9,14 @@ import pytest
 from app.config import Settings
 from app.models.api import AgentAskRequest, AgentAskResponse
 from app.services.agent import (
+    OLLAMA_SQL_DRAFT_FORMAT,
+    OLLAMA_SUMMARY_FORMAT,
+    _empty_result_retry_prompt,
     _ollama_error_body,
     _pragma_column_summaries,
     _result_preview_for_summary,
+    _should_retry_empty_result,
+    _sql_retry_prompt,
     build_dataset_context,
     ollama_chat,
     parse_sql_draft,
@@ -72,10 +77,24 @@ def test_parse_sql_draft_ok() -> None:
     assert d and d.sql == "SELECT 1"
 
 
+def test_parse_sql_draft_extracts_wrapped_json() -> None:
+    d, err = parse_sql_draft(
+        '<think>skip this</think>\n{"sql":"SELECT 1","explanation":"x"}'
+    )
+    assert err is None
+    assert d and d.sql == "SELECT 1"
+
+
 def test_parse_sql_draft_bad_json() -> None:
     d, err = parse_sql_draft("not-json")
     assert d is None
     assert err and "json" in err.lower()
+
+
+def test_parse_sql_draft_empty_response() -> None:
+    d, err = parse_sql_draft("")
+    assert d is None
+    assert err and "empty response" in err
 
 
 def test_parse_sql_draft_not_object() -> None:
@@ -92,6 +111,12 @@ def test_parse_sql_draft_validation_error() -> None:
 
 def test_parse_summary_answer_ok() -> None:
     a, err = parse_summary_answer('{"answer":"hello"}')
+    assert err is None
+    assert a == "hello"
+
+
+def test_parse_summary_answer_extracts_wrapped_json() -> None:
+    a, err = parse_summary_answer('text before {"answer":"hello"}')
     assert err is None
     assert a == "hello"
 
@@ -113,6 +138,19 @@ def test_result_preview_for_summary_truncates() -> None:
     s = _result_preview_for_summary(big, max_chars=50)
     assert "truncated" in s
     assert len(s) <= 50
+
+
+def test_sql_retry_prompt_explains_group_by_aggregate_error() -> None:
+    prompt = _sql_retry_prompt("Binder Error: GROUP BY clause cannot contain aggregates!")
+    assert "aggregate functions in GROUP BY" in prompt
+    assert "raw dimension columns" in prompt
+
+
+def test_empty_result_retry_helpers() -> None:
+    assert _should_retry_empty_result("SELECT * FROM t WHERE x IS NOT NULL")
+    assert _should_retry_empty_result("SELECT x FROM t HAVING COUNT(*) > 1")
+    assert not _should_retry_empty_result("SELECT * FROM t")
+    assert "remove them" in _empty_result_retry_prompt()
 
 
 def test_ollama_chat_parses_message(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -327,6 +365,72 @@ def test_ollama_chat_model_not_found_includes_hint(monkeypatch: pytest.MonkeyPat
     assert "DCC_LLM_MODEL" in msg
 
 
+def test_ollama_chat_sends_generation_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings(
+        llm_base_url="http://ollama.test",
+        llm_sql_num_predict=123,
+        llm_summary_num_predict=45,
+        llm_temperature=0.2,
+    )
+    seen: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, *a, **k) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json=None):  # noqa: ANN001
+            seen["json"] = json
+            req = httpx.Request("POST", url)
+            return httpx.Response(
+                200,
+                request=req,
+                json={"message": {"content": "{}"}},
+            )
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: FakeClient())
+    ollama_chat(settings, [{"role": "user", "content": "hi"}], OLLAMA_SQL_DRAFT_FORMAT)
+    body = seen["json"]
+    assert isinstance(body, dict)
+    assert body["think"] is False
+    assert body["options"] == {"temperature": 0.2, "num_predict": 123}
+
+
+def test_ollama_chat_sends_summary_num_predict(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings(llm_base_url="http://ollama.test", llm_summary_num_predict=45)
+    seen: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, *a, **k) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json=None):  # noqa: ANN001
+            seen["json"] = json
+            req = httpx.Request("POST", url)
+            return httpx.Response(
+                200,
+                request=req,
+                json={"message": {"content": "{}"}},
+            )
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: FakeClient())
+    ollama_chat(settings, [{"role": "user", "content": "hi"}], OLLAMA_SUMMARY_FORMAT)
+    body = seen["json"]
+    assert isinstance(body, dict)
+    assert body["options"]["num_predict"] == 45
+
+
 def test_pragma_column_summaries_truncates(registry_csv: DatasetRegistry) -> None:
     cols = [f"c{i}" for i in range(85)]
     header = ",".join(cols)
@@ -372,6 +476,23 @@ def test_run_agent_no_datasets(tmp_path: Path) -> None:
     assert out.error and "No datasets" in out.error
 
 
+def test_run_agent_ollama_connection_error_has_hint(registry_csv: DatasetRegistry) -> None:
+    settings = Settings(llm_base_url="http://ollama.test", llm_model="qwen3:4b")
+
+    def fake_ollama(s, messages, format_schema=None):  # noqa: ANN001
+        raise httpx.ConnectError("refused")
+
+    out = run_agent_ask(
+        registry_csv,
+        settings,
+        AgentAskRequest(question="x"),
+        ollama_call=fake_ollama,
+    )
+    assert out.error
+    assert "not reachable" in out.error
+    assert "ollama pull qwen3:4b" in out.error
+
+
 def test_run_agent_happy_path(registry_csv: DatasetRegistry) -> None:
     settings = Settings()
     vw = registry_csv.list_all()[0].view_name
@@ -393,7 +514,7 @@ def test_run_agent_happy_path(registry_csv: DatasetRegistry) -> None:
     assert out.answer and "2" in out.answer
     assert out.sql and vw in (out.sql or "")
     assert out.query_result and out.query_result.row_count >= 1
-    assert len(calls) == 2
+    assert len(calls) == 1
 
 
 def test_run_agent_sql_retry_then_success(registry_csv: DatasetRegistry) -> None:
@@ -436,6 +557,54 @@ def test_run_agent_sql_fails_exhausted(registry_csv: DatasetRegistry) -> None:
     assert out.query_result and out.query_result.error
 
 
+def test_run_agent_retries_empty_filtered_result(registry_csv: DatasetRegistry) -> None:
+    settings = Settings(agent_sql_attempts=2)
+    vw = registry_csv.list_all()[0].view_name
+    n = 0
+
+    def fake_ollama(s, messages, format_schema=None):  # noqa: ANN001
+        nonlocal n
+        n += 1
+        if n == 1:
+            return (
+                f'{{"sql":"SELECT val FROM {vw} WHERE id IS NULL",'
+                '"explanation":"filtered"}}'
+            )
+        assert "returned 0 rows" in messages[-1]["content"]
+        return f'{{"sql":"SELECT val FROM {vw}","explanation":"unfiltered"}}'
+
+    out = run_agent_ask(
+        registry_csv,
+        settings,
+        AgentAskRequest(question="show values"),
+        ollama_call=fake_ollama,
+    )
+    assert not out.error
+    assert out.sql == f"SELECT val FROM {vw}"
+    assert out.query_result and out.query_result.row_count == 2
+
+
+def test_run_agent_does_not_retry_empty_unfiltered_result(registry_csv: DatasetRegistry) -> None:
+    settings = Settings(agent_sql_attempts=2)
+    vw = registry_csv.list_all()[0].view_name
+    calls = 0
+
+    def fake_ollama(s, messages, format_schema=None):  # noqa: ANN001
+        nonlocal calls
+        calls += 1
+        return f'{{"sql":"SELECT val FROM {vw} LIMIT 0","explanation":"empty"}}'
+
+    out = run_agent_ask(
+        registry_csv,
+        settings,
+        AgentAskRequest(question="show no rows"),
+        ollama_call=fake_ollama,
+    )
+    assert not out.error
+    assert out.query_result and out.query_result.row_count == 0
+    assert calls == 1
+
+
 def test_run_agent_invalid_json_retries(registry_csv: DatasetRegistry) -> None:
     settings = Settings(agent_sql_attempts=2)
     vw = registry_csv.list_all()[0].view_name
@@ -474,7 +643,7 @@ def test_run_agent_http_error(registry_csv: DatasetRegistry) -> None:
     settings = Settings()
 
     def boom(*a, **k):  # noqa: ANN001
-        raise httpx.ConnectError("nope")
+        raise httpx.ReadTimeout("slow")
 
     out = run_agent_ask(
         registry_csv,
@@ -501,7 +670,7 @@ def test_run_agent_generic_exception(registry_csv: DatasetRegistry) -> None:
 
 
 def test_run_agent_summary_bad_json(registry_csv: DatasetRegistry) -> None:
-    settings = Settings()
+    settings = Settings(agent_summarize_with_llm=True)
     vw = registry_csv.list_all()[0].view_name
     n = 0
 
@@ -523,7 +692,7 @@ def test_run_agent_summary_bad_json(registry_csv: DatasetRegistry) -> None:
 
 
 def test_run_agent_summary_http_error(registry_csv: DatasetRegistry) -> None:
-    settings = Settings()
+    settings = Settings(agent_summarize_with_llm=True)
     vw = registry_csv.list_all()[0].view_name
     n = 0
 
@@ -545,7 +714,7 @@ def test_run_agent_summary_http_error(registry_csv: DatasetRegistry) -> None:
 
 
 def test_run_agent_summary_oserror_fallback(registry_csv: DatasetRegistry) -> None:
-    settings = Settings()
+    settings = Settings(agent_summarize_with_llm=True)
     vw = registry_csv.list_all()[0].view_name
     n = 0
 

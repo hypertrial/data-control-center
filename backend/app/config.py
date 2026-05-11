@@ -26,9 +26,15 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://127.0.0.1:11434"
     llm_model: str = "qwen3:4b"
     llm_timeout_seconds: float = 120.0
+    llm_sql_num_predict: int = Field(default=320, ge=16, le=4096)
+    llm_summary_num_predict: int = Field(default=180, ge=16, le=4096)
+    llm_temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    llm_think: bool = False
+    agent_context_max_columns: int = Field(default=40, ge=1, le=500)
     agent_max_rows: int = Field(default=500, ge=1, le=100_000)
     agent_sql_attempts: int = Field(default=2, ge=1, le=10)
-    agent_summarize_max_json_chars: int = Field(default=12_000, ge=500)
+    agent_summarize_with_llm: bool = False
+    agent_summarize_max_json_chars: int = Field(default=4_000, ge=500)
 
 
 def get_settings() -> Settings:
