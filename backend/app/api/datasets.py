@@ -90,8 +90,21 @@ async def upload_datasets(
 
 
 @router.get("", response_model=list[DatasetSummary])
-def list_datasets(registry: RegistryDep) -> list[DatasetSummary]:
-    return [registry.to_summary(ds) for ds in registry.list_all()]
+def list_datasets(registry: RegistryDep, workspace: WorkspaceDep) -> list[DatasetSummary]:
+    out: list[DatasetSummary] = []
+    for ds in registry.list_all():
+        s = registry.to_summary(ds)
+        qs: int | None = None
+        cached = workspace.load_profile_cache(ds.dataset_id)
+        if isinstance(cached, dict):
+            raw = cached.get("quality_score")
+            if raw is not None:
+                try:
+                    qs = int(raw)
+                except (TypeError, ValueError):
+                    qs = None
+        out.append(s.model_copy(update={"quality_score": qs}))
+    return out
 
 
 @router.post("/register-file", response_model=DatasetSummary)
@@ -187,6 +200,8 @@ def sample_rows(
     view = ds.view_name
     safe_view = sanitize_sql_identifier(view)
     try:
+        count_row = con.execute(f"SELECT COUNT(*) AS c FROM {safe_view}").fetchone()
+        total_rows = int(count_row[0]) if count_row else 0
         res = con.execute(f"SELECT * FROM {safe_view} LIMIT {int(ps)} OFFSET {int(offset)}")
         cols_meta = res.description or []
         colnames = [c[0] for c in cols_meta]
@@ -196,6 +211,7 @@ def sample_rows(
             "page": page,
             "page_size": ps,
             "row_count": len(rows),
+            "total_rows": total_rows,
             "columns": colnames,
             "rows": rows,
         }

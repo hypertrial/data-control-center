@@ -1,7 +1,17 @@
 import type { ReactNode } from 'react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useEffect } from 'react'
-import { BrowserRouter, Link, NavLink, Route, Routes } from 'react-router-dom'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import {
+  AlertCircle,
+  GitBranch,
+  LayoutDashboard,
+  Rows3,
+  Table2,
+  Terminal,
+} from 'lucide-react'
+import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
+import { api } from '@/api/client'
+import { CardSkeleton } from '@/components/ui/skeleton'
+import { QueryErrorBanner } from '@/components/ui/query-error-banner'
 import { DatasetSidebar } from '@/features/datasets/DatasetSidebar'
 import { OverviewPage } from '@/features/overview/OverviewPage'
 import { ColumnsPage } from '@/features/columns/ColumnsPage'
@@ -9,44 +19,61 @@ import { QualityPage } from '@/features/quality/QualityPage'
 import { SamplesPage } from '@/features/samples/SamplesPage'
 import { QueryPage } from '@/features/query/QueryPage'
 import { RelationshipsPage } from '@/features/relationships/RelationshipsPage'
-import { useUiStore } from '@/store/uiStore'
-import { useQuery } from '@tanstack/react-query'
-import { api } from '@/api/client'
+import { DatasetContextStrip } from '@/features/shell/DatasetContextStrip'
+import { UiUrlSync } from '@/hooks/UiUrlSync'
 import { cn } from '@/lib/utils'
 
 const queryClient = new QueryClient()
+
+const NAV: Array<{ to: string; label: string; icon: typeof LayoutDashboard; end?: boolean }> = [
+  { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
+  { to: '/columns', label: 'Columns', icon: Table2 },
+  { to: '/quality', label: 'Quality', icon: AlertCircle },
+  { to: '/samples', label: 'Samples', icon: Rows3 },
+  { to: '/sql', label: 'SQL', icon: Terminal },
+  { to: '/relationships', label: 'Relationships', icon: GitBranch },
+]
 
 function Shell({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden">
       <DatasetSidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-          <div className="text-sm font-semibold">Data Control Center</div>
-          <Link to="/" className="text-xs text-[hsl(var(--muted))] hover:text-white">
-            Home
-          </Link>
+        <header className="shrink-0 border-b border-white/10 px-4 py-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold tracking-tight">Data Control Center</div>
+            <div className="flex items-center gap-2 text-[10px] text-[hsl(var(--muted))]">
+              <span className="hidden sm:inline" title="Theme toggle coming soon">
+                Theme
+              </span>
+            </div>
+          </div>
         </header>
-        <nav className="flex flex-wrap gap-1 border-b border-white/10 px-4 py-2 text-sm">
-          {[
-            ['/', 'Overview'],
-            ['/columns', 'Columns'],
-            ['/quality', 'Quality'],
-            ['/samples', 'Samples'],
-            ['/sql', 'SQL'],
-            ['/relationships', 'Relationships'],
-          ].map(([to, label]) => (
+        <DatasetContextStrip />
+        <nav
+          className="flex shrink-0 flex-wrap gap-1 border-b border-white/10 px-3 py-2"
+          aria-label="Primary"
+        >
+          {NAV.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
+              end={end}
               className={({ isActive }) =>
                 cn(
-                  'rounded-md px-3 py-1.5 transition',
-                  isActive ? 'bg-white/10 text-white' : 'text-[hsl(var(--muted))] hover:text-white',
+                  'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition',
+                  isActive
+                    ? 'bg-white/12 text-white shadow-sm'
+                    : 'text-[hsl(var(--muted))] hover:bg-white/5 hover:text-white',
                 )
               }
             >
-              {label}
+              {({ isActive }) => (
+                <>
+                  <Icon className="h-3.5 w-3.5 opacity-80" aria-hidden />
+                  <span className={cn(isActive && 'font-medium')}>{label}</span>
+                </>
+              )}
             </NavLink>
           ))}
         </nav>
@@ -56,16 +83,62 @@ function Shell({ children }: { children: ReactNode }) {
   )
 }
 
-function AutoSelectFirstDataset() {
-  const q = useQuery({ queryKey: ['datasets'], queryFn: api.listDatasets })
-  const active = useUiStore((s) => s.activeDatasetId)
-  const setActive = useUiStore((s) => s.setActiveDatasetId)
-  useEffect(() => {
-    if (active) return
-    const first = q.data?.[0]?.dataset_id
-    if (first) setActive(first)
-  }, [active, q.data, setActive])
-  return null
+function EmptyWorkspaceHero() {
+  return (
+    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 px-6 py-12 text-center">
+      <LayoutDashboard className="h-10 w-10 text-[hsl(var(--muted))]" aria-hidden />
+      <h1 className="text-2xl font-semibold tracking-tight">Welcome to Data Control Center</h1>
+      <p className="max-w-md text-sm leading-relaxed text-[hsl(var(--muted))]">
+        Drop a <span className="font-mono text-white/90">.parquet</span>,{' '}
+        <span className="font-mono text-white/90">.csv</span>, or{' '}
+        <span className="font-mono text-white/90">.json</span> file in the sidebar (or choose a folder)
+        to register a dataset and explore its profile, quality issues, and sample rows.
+      </p>
+    </div>
+  )
+}
+
+function RoutedPages() {
+  return (
+    <Routes>
+      <Route path="/" element={<OverviewPage />} />
+      <Route path="/columns" element={<ColumnsPage />} />
+      <Route path="/quality" element={<QualityPage />} />
+      <Route path="/samples" element={<SamplesPage />} />
+      <Route path="/sql" element={<QueryPage />} />
+      <Route path="/relationships" element={<RelationshipsPage />} />
+    </Routes>
+  )
+}
+
+function MainBody() {
+  const dq = useQuery({ queryKey: ['datasets'], queryFn: api.listDatasets })
+
+  if (dq.isLoading) {
+    return (
+      <div className="space-y-3 p-6">
+        <CardSkeleton />
+        <CardSkeleton />
+      </div>
+    )
+  }
+
+  if (dq.isError) {
+    return (
+      <div className="p-6">
+        <QueryErrorBanner
+          message={(dq.error as Error).message}
+          onRetry={() => void dq.refetch()}
+        />
+      </div>
+    )
+  }
+
+  if (!dq.data?.length) {
+    return <EmptyWorkspaceHero />
+  }
+
+  return <RoutedPages />
 }
 
 export default function App() {
@@ -73,15 +146,8 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Shell>
-          <AutoSelectFirstDataset />
-          <Routes>
-            <Route path="/" element={<OverviewPage />} />
-            <Route path="/columns" element={<ColumnsPage />} />
-            <Route path="/quality" element={<QualityPage />} />
-            <Route path="/samples" element={<SamplesPage />} />
-            <Route path="/sql" element={<QueryPage />} />
-            <Route path="/relationships" element={<RelationshipsPage />} />
-          </Routes>
+          <UiUrlSync />
+          <MainBody />
         </Shell>
       </BrowserRouter>
     </QueryClientProvider>

@@ -17,6 +17,43 @@ def test_list_datasets_empty(client):
     assert r.json() == []
 
 
+def test_list_datasets_includes_quality_score_from_profile_cache(client, tmp_path):
+    csv = tmp_path / "q.csv"
+    csv.write_text("id\n1\n")
+    reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
+    assert reg.status_code == 200
+    did = reg.json()["dataset_id"]
+    pr = client.get(f"/api/datasets/{did}/profile")
+    assert pr.status_code == 200
+    expected_qs = pr.json()["quality_score"]
+    lst = client.get("/api/datasets").json()
+    row = next(d for d in lst if d["dataset_id"] == did)
+    assert row.get("quality_score") == int(expected_qs)
+
+
+def test_list_datasets_invalid_cached_quality_score_ignored(client, tmp_path, monkeypatch):
+    csv = tmp_path / "q.csv"
+    csv.write_text("id\n1\n")
+    reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
+    did = reg.json()["dataset_id"]
+    client.get(f"/api/datasets/{did}/profile")
+
+    from app.services.workspace import Workspace
+
+    real = Workspace.load_profile_cache
+
+    def bad_load(self, dataset_id):
+        if dataset_id == did:
+            return {"quality_score": "not-a-number"}
+        return real(self, dataset_id)
+
+    monkeypatch.setattr(Workspace, "load_profile_cache", bad_load)
+
+    lst = client.get("/api/datasets").json()
+    row = next(d for d in lst if d["dataset_id"] == did)
+    assert row.get("quality_score") is None
+
+
 def test_register_file_not_found(client):
     r = client.post("/api/datasets/register-file", json={"path": "/no/such/file.csv"})
     assert r.status_code == 404
@@ -117,7 +154,9 @@ def test_sample_pagination_and_bounds(client, tmp_path):
     did = r.json()["dataset_id"]
     s1 = client.get(f"/api/datasets/{did}/sample?page=1&page_size=10")
     assert s1.status_code == 200
-    assert len(s1.json()["rows"]) == 10
+    j1 = s1.json()
+    assert len(j1["rows"]) == 10
+    assert j1.get("total_rows") == 30
     sdef = client.get(f"/api/datasets/{did}/sample?page=1")
     assert sdef.status_code == 200
     too_big = client.get(f"/api/datasets/{did}/sample?page=1&page_size=99999")

@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 
+export type ColumnQualityFilter = 'all' | 'has_flags' | 'critical_only'
+
 type UiState = {
   activeDatasetId: string | null
   setActiveDatasetId: (id: string | null) => void
@@ -13,9 +15,16 @@ type UiState = {
   setSemanticFilter: (s: string) => void
   qualitySeverityFilter: string
   setQualitySeverityFilter: (s: string) => void
+  columnQualityFilter: ColumnQualityFilter
+  setColumnQualityFilter: (s: ColumnQualityFilter) => void
+  pendingQuery: string | null
+  setPendingQuery: (q: string | null) => void
+  takePendingQuery: () => string | null
+  /** Bumps when a non-null SQL snippet is queued for the editor (same-route navigation). */
+  sqlInjectTick: number
 }
 
-export const useUiStore = create<UiState>((set) => ({
+export const useUiStore = create<UiState>((set, get) => ({
   activeDatasetId: null,
   setActiveDatasetId: (id) => set({ activeDatasetId: id }),
   selectedColumn: null,
@@ -28,4 +37,18 @@ export const useUiStore = create<UiState>((set) => ({
   setSemanticFilter: (s) => set({ semanticFilter: s }),
   qualitySeverityFilter: 'all',
   setQualitySeverityFilter: (s) => set({ qualitySeverityFilter: s }),
+  columnQualityFilter: 'all',
+  setColumnQualityFilter: (s) => set({ columnQualityFilter: s }),
+  pendingQuery: null,
+  setPendingQuery: (q) =>
+    set((s) => ({
+      pendingQuery: q,
+      sqlInjectTick: q ? s.sqlInjectTick + 1 : s.sqlInjectTick,
+    })),
+  takePendingQuery: () => {
+    const q = get().pendingQuery
+    set({ pendingQuery: null })
+    return q
+  },
+  sqlInjectTick: 0,
 }))

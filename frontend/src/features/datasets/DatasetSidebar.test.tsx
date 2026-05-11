@@ -49,8 +49,8 @@ describe('DatasetSidebar', () => {
   it('lists datasets and selects', async () => {
     const user = userEvent.setup()
     wrap(<DatasetSidebar />)
-    await waitFor(() => expect(screen.getByText('a.csv')).toBeInTheDocument())
-    await user.click(screen.getByText('a.csv'))
+    await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
+    await user.click(screen.getByText(/^a$/))
   })
 
   it('loading and error', async () => {
@@ -67,7 +67,7 @@ describe('DatasetSidebar', () => {
   it('uploads a chosen CSV via file input', async () => {
     const user = userEvent.setup()
     const { container } = wrap(<DatasetSidebar />)
-    await waitFor(() => expect(screen.getByText('a.csv')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
 
     const fileInput = container.querySelector(
       'input[type="file"]:not([webkitdirectory])',
@@ -87,7 +87,7 @@ describe('DatasetSidebar', () => {
     const user = userEvent.setup()
     vi.mocked(api.uploadDatasets).mockRejectedValue(new Error('nf'))
     const { container } = wrap(<DatasetSidebar />)
-    await waitFor(() => expect(screen.getByText('a.csv')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
     const fileInput = container.querySelector(
       'input[type="file"]:not([webkitdirectory])',
     ) as HTMLInputElement
@@ -97,7 +97,7 @@ describe('DatasetSidebar', () => {
 
   it('rejects unsupported uploads from file input', async () => {
     const { container } = wrap(<DatasetSidebar />)
-    await waitFor(() => expect(screen.getByText('a.csv')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
     const fileInput = container.querySelector(
       'input[type="file"]:not([webkitdirectory])',
     ) as HTMLInputElement
@@ -109,7 +109,7 @@ describe('DatasetSidebar', () => {
 
   it('filters mixed file list to supported extensions only', async () => {
     const { container } = wrap(<DatasetSidebar />)
-    await waitFor(() => expect(screen.getByText('a.csv')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
     vi.mocked(api.uploadDatasets).mockClear()
     const fileInput = container.querySelector(
       'input[type="file"]:not([webkitdirectory])',
@@ -130,7 +130,7 @@ describe('DatasetSidebar', () => {
 
   it('shows error when file list is empty after picking', async () => {
     const { container } = wrap(<DatasetSidebar />)
-    await waitFor(() => expect(screen.getByText('a.csv')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
     const fileInput = container.querySelector(
       'input[type="file"]:not([webkitdirectory])',
     ) as HTMLInputElement
@@ -141,8 +141,8 @@ describe('DatasetSidebar', () => {
 
   it('drops supported files onto the drop zone', async () => {
     wrap(<DatasetSidebar />)
-    await waitFor(() => expect(screen.getByText('a.csv')).toBeInTheDocument())
-    const zone = screen.getByRole('button', { name: /Drop files here/i })
+    await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
+    const zone = screen.getByRole('button', { name: /Upload files/ })
     const file = new File(['a'], 'dropped.csv', { type: 'text/csv' })
     const dt = new DataTransfer()
     dt.items.add(file)
@@ -157,7 +157,7 @@ describe('DatasetSidebar', () => {
 
   it('normalizes backslashes in webkitRelativePath', async () => {
     const { container } = wrap(<DatasetSidebar />)
-    await waitFor(() => expect(screen.getByText('a.csv')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
     vi.mocked(api.uploadDatasets).mockClear()
     const folderInput = container.querySelector('input[webkitdirectory]') as HTMLInputElement
     const f = new File(['1'], 'leaf.csv', { type: 'text/csv' })
@@ -176,12 +176,12 @@ describe('DatasetSidebar', () => {
   it('activates file picker from keyboard on drop zone', async () => {
     const user = userEvent.setup()
     const { container } = wrap(<DatasetSidebar />)
-    await waitFor(() => expect(screen.getByText('a.csv')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
     const fileInput = container.querySelector(
       'input[type="file"]:not([webkitdirectory])',
     ) as HTMLInputElement
     const clickSpy = vi.spyOn(fileInput, 'click').mockImplementation(() => {})
-    const zone = screen.getByRole('button', { name: /Drop files here/i })
+    const zone = screen.getByRole('button', { name: /Upload files/ })
     zone.focus()
     await user.keyboard('{Enter}')
     expect(clickSpy).toHaveBeenCalled()
@@ -194,7 +194,7 @@ describe('DatasetSidebar', () => {
     const user = userEvent.setup()
     vi.mocked(api.uploadDatasets).mockImplementation(() => new Promise(() => {}))
     const { container } = wrap(<DatasetSidebar />)
-    await waitFor(() => expect(screen.getByText('a.csv')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
     const fileInput = container.querySelector(
       'input[type="file"]:not([webkitdirectory])',
     ) as HTMLInputElement

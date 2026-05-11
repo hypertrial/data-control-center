@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -15,7 +16,9 @@ vi.mock('echarts', () => ({
 describe('ColumnDetailDrawer', () => {
   it('returns null without column', () => {
     const { container } = render(
-      <ColumnDetailDrawer open onOpenChange={vi.fn()} column={null} />,
+      <MemoryRouter>
+        <ColumnDetailDrawer open onOpenChange={vi.fn()} column={null} datasetId={null} />
+      </MemoryRouter>,
     )
     expect(container.firstChild).toBeNull()
   })
@@ -33,7 +36,11 @@ describe('ColumnDetailDrawer', () => {
       unique_count: null,
       cardinality: null,
     })
-    render(<ColumnDetailDrawer open onOpenChange={onOpenChange} column={col} />)
+    render(
+      <MemoryRouter>
+        <ColumnDetailDrawer open onOpenChange={onOpenChange} column={col} datasetId="ds_001" />
+      </MemoryRouter>,
+    )
     expect(screen.getByText('col_a')).toBeInTheDocument()
     window.dispatchEvent(new Event('resize'))
     await user.click(screen.getByRole('button', { name: 'Close' }))

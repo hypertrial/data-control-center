@@ -22,5 +22,13 @@ describe('uiStore', () => {
 
     useUiStore.getState().setQualitySeverityFilter('warning')
     expect(useUiStore.getState().qualitySeverityFilter).toBe('warning')
+
+    useUiStore.getState().setColumnQualityFilter('has_flags')
+    expect(useUiStore.getState().columnQualityFilter).toBe('has_flags')
+
+    useUiStore.getState().setPendingQuery('SELECT 1')
+    expect(useUiStore.getState().pendingQuery).toBe('SELECT 1')
+    expect(useUiStore.getState().takePendingQuery()).toBe('SELECT 1')
+    expect(useUiStore.getState().pendingQuery).toBeNull()
   })
 })

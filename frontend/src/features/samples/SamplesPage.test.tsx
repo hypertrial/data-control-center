@@ -5,12 +5,16 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SamplesPage } from '@/features/samples/SamplesPage'
 import { useUiStore } from '@/store/uiStore'
+import { mkProfile } from '@/test/profileFixtures'
 
-const h = vi.hoisted(() => ({ getSample: vi.fn() }))
+const h = vi.hoisted(() => ({ getSample: vi.fn(), getProfile: vi.fn() }))
 
 vi.mock('@/api/client', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/api/client')>()
-  return { ...mod, api: { ...mod.api, getSample: h.getSample } }
+  return {
+    ...mod,
+    api: { ...mod.api, getSample: h.getSample, getProfile: h.getProfile },
+  }
 })
 
 function wrap(ui: React.ReactElement) {
@@ -23,6 +27,7 @@ function wrap(ui: React.ReactElement) {
 describe('SamplesPage', () => {
   beforeEach(() => {
     h.getSample.mockReset()
+    h.getProfile.mockResolvedValue(mkProfile({ column_profiles: [] }))
   })
 
   it('no dataset', () => {
@@ -34,7 +39,7 @@ describe('SamplesPage', () => {
     useUiStore.setState({ activeDatasetId: 'ds_1' })
     h.getSample.mockImplementation(() => new Promise(() => {}))
     const { unmount } = wrap(<SamplesPage />)
-    expect(screen.getByText(/Loading sample/)).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: /loading table/i })).toBeInTheDocument()
     unmount()
 
     h.getSample.mockRejectedValue(new Error('se'))
@@ -49,6 +54,7 @@ describe('SamplesPage', () => {
         page: 1,
         page_size: 100,
         row_count: 100,
+        total_rows: 150,
         columns: ['a', 'b'],
         rows: [{ a: 1, b: { x: 1 } }],
       })
@@ -56,6 +62,7 @@ describe('SamplesPage', () => {
         page: 2,
         page_size: 100,
         row_count: 50,
+        total_rows: 150,
         columns: ['a', 'b'],
         rows: [],
       })
@@ -64,7 +71,7 @@ describe('SamplesPage', () => {
     await waitFor(() => expect(screen.getByText(/\{"x":1\}/)).toBeInTheDocument())
 
     await user.click(screen.getByRole('button', { name: 'Next' }))
-    await waitFor(() => expect(screen.getByText(/Page 2/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/101-150/)).toBeInTheDocument())
     expect(screen.getByRole('button', { name: 'Previous' })).not.toBeDisabled()
   })
 })
