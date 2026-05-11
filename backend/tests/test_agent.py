@@ -9,6 +9,7 @@ import pytest
 from app.config import Settings
 from app.models.api import AgentAskRequest, AgentAskResponse
 from app.services.agent import (
+    _ollama_error_body,
     _pragma_column_summaries,
     _result_preview_for_summary,
     build_dataset_context,
@@ -288,6 +289,42 @@ def test_ollama_chat_http_status_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(httpx, "Client", lambda **kwargs: FakeClient())
     with pytest.raises(httpx.HTTPStatusError):
         ollama_chat(settings, [{"role": "user", "content": "hi"}], None)
+
+
+def test_ollama_error_body_non_json_response_text() -> None:
+    req = httpx.Request("POST", "http://x")
+    r = httpx.Response(500, request=req, content=b"upstream refused")
+    assert _ollama_error_body(r) == "upstream refused"
+
+
+def test_ollama_chat_model_not_found_includes_hint(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings(llm_base_url="http://ollama.test", llm_model="qwen3:8b")
+    req = httpx.Request("POST", "http://ollama.test/api/chat")
+
+    class FakeClient:
+        def __init__(self, *a, **k) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json=None):  # noqa: ANN001
+            return httpx.Response(
+                404,
+                request=req,
+                json={"error": "model 'qwen3:8b' not found"},
+            )
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: FakeClient())
+    with pytest.raises(httpx.HTTPStatusError) as err:
+        ollama_chat(settings, [{"role": "user", "content": "hi"}], None)
+    msg = str(err.value)
+    assert "model 'qwen3:8b' not found" in msg
+    assert "ollama pull" in msg
+    assert "DCC_LLM_MODEL" in msg
 
 
 def test_pragma_column_summaries_truncates(registry_csv: DatasetRegistry) -> None:

@@ -238,7 +238,7 @@ def run_agent_ask(
             logger.exception("Ollama HTTP error")
             return AgentAskResponse(
                 model=model_name,
-                error=f"Could not reach Ollama at {settings.llm_base_url}: {e}",
+                error=f"Ollama at {settings.llm_base_url} failed: {e}",
             )
         except Exception as e:  # noqa: BLE001
             logger.exception("Ollama request failed")
