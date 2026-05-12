@@ -111,3 +111,62 @@ export type SampleResponse = {
   columns: string[]
   rows: Record<string, unknown>[]
 }
+
+export type ProfileHistoryEntry = {
+  history_id: string
+  dataset_id: string
+  created_at: string
+  quality_score: number | null
+  rows: number | null
+  columns: number | null
+  missing_cell_pct: number | null
+}
+
+export type NullPctChange = {
+  column: string
+  before: number
+  after: number
+  delta: number
+}
+
+export type ProfileDiffResponse = {
+  history_id_a: string
+  history_id_b: string
+  created_at_a: string
+  created_at_b: string
+  new_columns: string[]
+  removed_columns: string[]
+  null_pct_changes: NullPctChange[]
+  quality_score_delta: number | null
+}
+
+export type SavedQuery = {
+  saved_id: string
+  name: string
+  sql: string
+  created_at: string
+  updated_at: string
+}
+
+export type SavedQueryCreate = {
+  name: string
+  sql: string
+}
+
+export type SavedQueryPatch = {
+  name?: string | null
+  sql?: string | null
+}
+
+/** SSE payloads from `POST /api/agent/ask/stream`. */
+export type AgentStreamEvent =
+  | { type: 'meta'; data: Record<string, unknown> }
+  | { type: 'sql'; data: { sql: string; explanation?: string | null } }
+  | { type: 'query_result'; data: QueryResult }
+  | { type: 'token'; data: { text: string } }
+  | { type: 'answer'; data: { answer: string } }
+  | {
+      type: 'error'
+      data: { message: string; sql?: string | null; explanation?: string | null; query_result?: QueryResult }
+    }
+  | { type: 'done'; data: Record<string, unknown> }

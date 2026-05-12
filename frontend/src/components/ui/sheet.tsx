@@ -4,18 +4,26 @@ import { cn } from '@/lib/utils'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
+const SIZE_CLASS = {
+  md: 'max-w-lg',
+  lg: 'max-w-xl',
+  xl: 'max-w-2xl',
+} as const
+
 export function Sheet({
   open,
   onOpenChange,
   title,
   children,
   className,
+  size = 'md',
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   title: string
   children: React.ReactNode
   className?: string
+  size?: keyof typeof SIZE_CLASS
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
   const prevFocus = useRef<HTMLElement | null>(null)
@@ -74,12 +82,13 @@ export function Sheet({
         aria-modal
         aria-labelledby="dcc-sheet-title"
         className={cn(
-          'absolute right-0 top-0 z-10 flex h-full w-full max-w-lg flex-col border-l border-white/10 bg-[hsl(var(--background))] shadow-xl',
+          'absolute right-0 top-0 z-10 flex h-full w-full flex-col border-l border-border-default bg-bg-1 shadow-xl',
+          SIZE_CLASS[size],
           className,
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
+        <div className="flex shrink-0 items-center justify-between border-b border-border-default px-4 py-3">
           <div id="dcc-sheet-title" className="truncate text-sm font-semibold">
             {title}
           </div>

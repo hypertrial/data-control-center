@@ -1,99 +1,58 @@
 import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
-import {
-  AlertCircle,
-  LayoutDashboard,
-  MessageCircle,
-  Rows3,
-  Table2,
-  Terminal,
-} from 'lucide-react'
-import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
+import { LayoutDashboard } from 'lucide-react'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { api } from '@/api/client'
 import { CardSkeleton } from '@/components/ui/skeleton'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
+import { Toaster } from '@/components/ui/toaster'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { DatasetSidebar } from '@/features/datasets/DatasetSidebar'
+import { DatasetDropzone } from '@/features/datasets/DatasetDropzone'
 import { OverviewPage } from '@/features/overview/OverviewPage'
 import { AskPage } from '@/features/ask/AskPage'
 import { ColumnsPage } from '@/features/columns/ColumnsPage'
 import { QualityPage } from '@/features/quality/QualityPage'
 import { SamplesPage } from '@/features/samples/SamplesPage'
 import { QueryPage } from '@/features/query/QueryPage'
-import { DatasetContextStrip } from '@/features/shell/DatasetContextStrip'
+import { CommandPalette } from '@/features/shell/CommandPalette'
+import { ShortcutCheatsheet } from '@/features/shell/ShortcutCheatsheet'
+import { TopBar } from '@/features/shell/TopBar'
+import { useGlobalShortcuts } from '@/hooks/useGlobalShortcuts'
 import { UiUrlSync } from '@/hooks/UiUrlSync'
-import { cn } from '@/lib/utils'
 
 const queryClient = new QueryClient()
-
-const NAV: Array<{ to: string; label: string; icon: typeof LayoutDashboard; end?: boolean }> = [
-  { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
-  { to: '/columns', label: 'Columns', icon: Table2 },
-  { to: '/quality', label: 'Quality', icon: AlertCircle },
-  { to: '/samples', label: 'Samples', icon: Rows3 },
-  { to: '/ask', label: 'Ask', icon: MessageCircle },
-  { to: '/sql', label: 'SQL', icon: Terminal },
-]
 
 function Shell({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden">
       <DatasetSidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="shrink-0 border-b border-white/10 px-4 py-2.5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-semibold tracking-tight">Data Control Center</div>
-            <div className="flex items-center gap-2 text-[10px] text-[hsl(var(--muted))]">
-              <span className="hidden sm:inline" title="Theme toggle coming soon">
-                Theme
-              </span>
-            </div>
-          </div>
-        </header>
-        <DatasetContextStrip />
-        <nav
-          className="flex shrink-0 flex-wrap gap-1 border-b border-white/10 px-3 py-2"
-          aria-label="Primary"
-        >
-          {NAV.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                cn(
-                  'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition',
-                  isActive
-                    ? 'bg-white/12 text-white shadow-sm'
-                    : 'text-[hsl(var(--muted))] hover:bg-white/5 hover:text-white',
-                )
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <Icon className="h-3.5 w-3.5 opacity-80" aria-hidden />
-                  <span className={cn(isActive && 'font-medium')}>{label}</span>
-                </>
-              )}
-            </NavLink>
-          ))}
-        </nav>
+        <TopBar />
         <main className="min-h-0 flex-1 overflow-auto">{children}</main>
       </div>
     </div>
   )
 }
 
+function ShortcutListener() {
+  useGlobalShortcuts()
+  return null
+}
+
 function EmptyWorkspaceHero() {
   return (
-    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 px-6 py-12 text-center">
-      <LayoutDashboard className="h-10 w-10 text-[hsl(var(--muted))]" aria-hidden />
-      <h1 className="text-2xl font-semibold tracking-tight">Welcome to Data Control Center</h1>
-      <p className="max-w-md text-sm leading-relaxed text-[hsl(var(--muted))]">
-        Drop a <span className="font-mono text-white/90">.parquet</span>,{' '}
-        <span className="font-mono text-white/90">.csv</span>, or{' '}
-        <span className="font-mono text-white/90">.json</span> file in the sidebar (or choose a folder)
-        to register a dataset and explore its profile, quality issues, and sample rows.
-      </p>
+    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 px-6 py-12 text-center">
+      <LayoutDashboard className="h-10 w-10 text-fg-muted" aria-hidden />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">Welcome to Data Control Center</h1>
+        <p className="mt-2 max-w-lg text-sm leading-relaxed text-fg-muted">
+          Drop a dataset below or choose a folder. Press <kbd className="rounded border border-border-default px-1 font-mono text-xs">⌘K</kbd> anytime to search datasets and jump between views.
+        </p>
+      </div>
+      <div className="w-full max-w-md">
+        <DatasetDropzone />
+      </div>
     </div>
   )
 }
@@ -144,12 +103,18 @@ function MainBody() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Shell>
-          <UiUrlSync />
-          <MainBody />
-        </Shell>
-      </BrowserRouter>
+      <TooltipProvider delayDuration={280}>
+        <Toaster />
+        <BrowserRouter>
+          <ShortcutListener />
+          <Shell>
+            <UiUrlSync />
+            <CommandPalette />
+            <ShortcutCheatsheet />
+            <MainBody />
+          </Shell>
+        </BrowserRouter>
+      </TooltipProvider>
     </QueryClientProvider>
   )
 }

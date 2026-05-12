@@ -119,3 +119,84 @@ def test_jobs_insert_and_finish(tmp_path: Path) -> None:
         assert row == ("failed", "oops")
     finally:
         ws.close()
+
+
+def test_profile_history_pruned_to_fifty(tmp_path: Path) -> None:
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    try:
+        for i in range(55):
+            ws.save_profile_cache(
+                "ds_x",
+                {
+                    "rows": i,
+                    "columns": 1,
+                    "quality_score": float(i),
+                    "missing_cell_pct": 1.0,
+                    "column_profiles": [],
+                },
+            )
+        hist = ws.list_profile_history("ds_x", 100)
+        assert len(hist) == 50
+        assert hist[0]["rows"] == 54
+    finally:
+        ws.close()
+
+
+def test_saved_query_crud(tmp_path: Path) -> None:
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    try:
+        sid = ws.insert_saved_query("n1", "SELECT 1")
+        row = ws.get_saved_query(sid)
+        assert row and row["name"] == "n1" and row["sql"] == "SELECT 1"
+        assert ws.update_saved_query(sid, name="n2", sql="SELECT 2")
+        row2 = ws.get_saved_query(sid)
+        assert row2 and row2["name"] == "n2" and row2["sql"] == "SELECT 2"
+        assert ws.delete_saved_query(sid)
+        assert ws.get_saved_query(sid) is None
+        assert not ws.delete_saved_query(sid)
+    finally:
+        ws.close()
+
+
+def test_get_profile_history_meta(tmp_path: Path) -> None:
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    try:
+        ws.save_profile_cache("ds_y", {"rows": 1, "columns": 0, "column_profiles": []})
+        h = ws.list_profile_history("ds_y", 1)
+        hid = h[0]["history_id"]
+        m = ws.get_profile_history_meta(hid)
+        assert m and m["dataset_id"] == "ds_y"
+    finally:
+        ws.close()
+
+
+def test_load_profile_history_blob_missing(tmp_path: Path) -> None:
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    try:
+        assert ws.load_profile_history_blob("missing_id") is None
+    finally:
+        ws.close()
+
+
+def test_update_saved_query_sql_only(tmp_path: Path) -> None:
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    try:
+        sid = ws.insert_saved_query("n", "SELECT 1")
+        assert ws.update_saved_query(sid, sql="SELECT 2")
+        assert ws.get_saved_query(sid)["sql"] == "SELECT 2"
+    finally:
+        ws.close()
+
+
+def test_update_saved_query_missing_returns_false(tmp_path: Path) -> None:
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    try:
+        assert not ws.update_saved_query("nope", sql="SELECT 1")
+    finally:
+        ws.close()

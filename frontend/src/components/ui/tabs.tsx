@@ -30,7 +30,7 @@ export function TabsList({ className, ...props }: React.HTMLAttributes<HTMLDivEl
   return (
     <div
       className={cn(
-        'inline-flex h-10 items-center gap-1 rounded-lg border border-white/10 bg-black/20 p-1',
+        'inline-flex h-10 items-center gap-1 rounded-lg border border-border-default bg-surface-1/80 p-1',
         className,
       )}
       {...props}
@@ -56,7 +56,7 @@ export function TabsTrigger({
       onClick={() => ctx.onValueChange(value)}
       className={cn(
         'rounded-md px-3 py-1.5 text-sm transition',
-        active ? 'bg-white/10 text-white' : 'text-[hsl(var(--muted))] hover:text-white',
+        active ? 'bg-surface-2 text-fg shadow-sm' : 'text-fg-muted hover:text-fg',
         className,
       )}
     >
@@ -76,6 +76,15 @@ export function TabsContent({
 }) {
   const ctx = React.useContext(TabsCtx)
   if (!ctx) throw new Error('TabsContent outside Tabs')
-  if (ctx.value !== value) return null
-  return <div className={cn('mt-4', className)}>{children}</div>
+  const active = ctx.value === value
+  return (
+    <div
+      role="tabpanel"
+      hidden={!active}
+      aria-hidden={!active}
+      className={cn('mt-4', !active && 'hidden', className)}
+    >
+      {children}
+    </div>
+  )
 }

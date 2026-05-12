@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
+from typing import Any, Iterator
 
 import httpx
 from pydantic import ValidationError
@@ -197,6 +197,59 @@ def ollama_chat(
         return ""
     content = msg.get("content")
     return content if isinstance(content, str) else ""
+
+
+def ollama_chat_stream(
+    settings: Settings,
+    messages: list[dict[str, str]],
+    format_schema: dict[str, Any] | None = None,
+) -> Iterator[str]:
+    """Stream assistant content chunks from Ollama /api/chat (stream=True)."""
+    url = f"{settings.llm_base_url.rstrip('/')}/api/chat"
+    body: dict[str, Any] = {
+        "model": settings.llm_model,
+        "messages": messages,
+        "stream": True,
+        "think": settings.llm_think,
+        "options": {
+            "temperature": settings.llm_temperature,
+            "num_predict": settings.llm_summary_num_predict,
+        },
+    }
+    if format_schema is not None:
+        body["format"] = format_schema
+
+    timeout = httpx.Timeout(settings.llm_timeout_seconds)
+    with httpx.Client(timeout=timeout) as client:
+        with client.stream("POST", url, json=body) as r:
+            try:
+                r.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                detail = _ollama_error_body(e.response)
+                if detail:
+                    raise httpx.HTTPStatusError(
+                        f"{e} — {detail}",
+                        request=e.request,
+                        response=e.response,
+                    ) from e
+                raise
+            for line in r.iter_lines():
+                if not line:
+                    continue
+                try:
+                    obj: Any = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                err = obj.get("error")
+                if isinstance(err, str) and err.strip():
+                    raise httpx.HTTPError(err.strip())
+                msg_obj = obj.get("message")
+                if isinstance(msg_obj, dict):
+                    c = msg_obj.get("content")
+                    if isinstance(c, str) and c:
+                        yield c
 
 
 def _load_json_object(content: str) -> Any:
@@ -442,3 +495,177 @@ def run_agent_ask(
         )
 
     raise AssertionError("run_agent_ask: expected all paths to return")  # pragma: no cover
+
+
+def run_agent_ask_stream(
+    registry: DatasetRegistry,
+    settings: Settings,
+    req: AgentAskRequest,
+    ollama_call=ollama_chat,
+    ollama_stream=ollama_chat_stream,
+) -> Iterator[dict[str, Any]]:
+    """Yield event dicts for SSE: meta, error, sql, query_result, token, answer, done."""
+    model_name = settings.llm_model
+    yield {"type": "meta", "data": {"model": model_name}}
+
+    ctx, ctx_err = build_dataset_context(
+        registry,
+        registry.workspace,
+        req.dataset_ids,
+        settings.agent_context_max_columns,
+    )
+    if ctx_err:
+        yield {"type": "error", "data": {"message": ctx_err}}
+        yield {"type": "done", "data": {}}
+        return
+
+    cap = min(settings.agent_max_rows, settings.query_max_rows)
+    limit = min(req.max_rows or cap, cap)
+
+    user_block = (
+        f"Datasets and schema:\n{ctx}\n\n"
+        f"User question:\n{req.question.strip()}\n\n"
+        'Return JSON object with keys "sql" (string) and "explanation" (string). /no_think'
+    )
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": _system_prompt()},
+        {"role": "user", "content": user_block},
+    ]
+
+    last_content_err: str | None = None
+
+    for attempt in range(max(1, settings.agent_sql_attempts)):
+        try:
+            content = ollama_call(settings, messages, OLLAMA_SQL_DRAFT_FORMAT)
+        except httpx.ConnectError as e:
+            logger.warning("Ollama connection failed: %s", e)
+            yield {
+                "type": "error",
+                "data": {
+                    "message": (
+                        f"Ollama is not reachable at {settings.llm_base_url}. "
+                        f"Start Ollama and run `ollama pull {settings.llm_model}` "
+                        "if the model is not installed."
+                    ),
+                },
+            }
+            yield {"type": "done", "data": {}}
+            return
+        except httpx.HTTPError as e:
+            logger.warning("Ollama HTTP error: %s", e)
+            yield {"type": "error", "data": {"message": f"Ollama at {settings.llm_base_url} failed: {e}"}}
+            yield {"type": "done", "data": {}}
+            return
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Ollama request failed")
+            yield {"type": "error", "data": {"message": f"Ollama request failed: {e}"}}
+            yield {"type": "done", "data": {}}
+            return
+
+        draft, parse_err = parse_sql_draft(content)
+        if parse_err or draft is None:
+            last_content_err = parse_err or "Unknown parse error"
+            if attempt + 1 >= settings.agent_sql_attempts:
+                yield {"type": "error", "data": {"message": last_content_err}}
+                yield {"type": "done", "data": {}}
+                return
+            messages.append({"role": "assistant", "content": content})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"Your previous reply was invalid: {last_content_err}. "
+                        'Reply with only JSON: {{"sql":"...","explanation":"..."}}.'
+                    ),
+                },
+            )
+            continue
+
+        qres = execute_query(
+            registry,
+            settings,
+            QueryRequest(sql=draft.sql, max_rows=limit),
+        )
+        if not qres.error:
+            if (
+                qres.row_count == 0
+                and attempt + 1 < settings.agent_sql_attempts
+                and _should_retry_empty_result(draft.sql)
+            ):
+                messages.append({"role": "assistant", "content": content})
+                messages.append({"role": "user", "content": _empty_result_retry_prompt()})
+                continue
+
+            yield {
+                "type": "sql",
+                "data": {"sql": draft.sql, "explanation": draft.explanation or None},
+            }
+            yield {"type": "query_result", "data": qres.model_dump(mode="json")}
+
+            if not settings.agent_summarize_with_llm:
+                yield {
+                    "type": "answer",
+                    "data": {"answer": _default_answer(draft, qres)},
+                }
+                yield {"type": "done", "data": {}}
+                return
+
+            summary_messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "Summarize the query result for the user in clear language. "
+                        'Be concise. Return JSON {"answer": "..."} only.'
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Question: {req.question.strip()}\n"
+                        f"SQL used: {draft.sql}\n"
+                        f"Explanation from model: {draft.explanation}\n"
+                        "Result preview (JSON):\n"
+                        f"{_result_preview_for_summary(qres.model_dump(mode='json'), settings.agent_summarize_max_json_chars)}"
+                    ),
+                },
+            ]
+            acc = ""
+            try:
+                for chunk in ollama_stream(settings, summary_messages, OLLAMA_SUMMARY_FORMAT):
+                    acc += chunk
+                    yield {"type": "token", "data": {"text": chunk}}
+                parsed_ans, serr = parse_summary_answer(acc)
+                answer = parsed_ans or (
+                    f"{draft.explanation}\n\n(Summarization issue: {serr})".strip()
+                    if serr
+                    else (draft.explanation or "Query completed.")
+                )
+            except (httpx.HTTPError, OSError) as e:
+                answer = f"{draft.explanation}\n\n(Summarization unavailable: {e})".strip()
+            yield {"type": "answer", "data": {"answer": answer}}
+            yield {"type": "done", "data": {}}
+            return
+
+        err_text = qres.error or "Unknown SQL error"
+        if attempt + 1 >= settings.agent_sql_attempts:
+            yield {
+                "type": "error",
+                "data": {
+                    "message": err_text,
+                    "sql": draft.sql,
+                    "explanation": draft.explanation or None,
+                    "query_result": qres.model_dump(mode="json"),
+                },
+            }
+            yield {"type": "done", "data": {}}
+            return
+
+        messages.append({"role": "assistant", "content": content})
+        messages.append(
+            {
+                "role": "user",
+                "content": _sql_retry_prompt(err_text),
+            }
+        )
+
+    raise AssertionError("run_agent_ask_stream: expected all paths to return")  # pragma: no cover

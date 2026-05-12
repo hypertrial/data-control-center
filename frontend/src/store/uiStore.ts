@@ -22,6 +22,18 @@ type UiState = {
   takePendingQuery: () => string | null
   /** Bumps when a non-null SQL snippet is queued for the editor (same-route navigation). */
   sqlInjectTick: number
+  commandPaletteOpen: boolean
+  setCommandPaletteOpen: (v: boolean) => void
+  shortcutSheetOpen: boolean
+  setShortcutSheetOpen: (v: boolean) => void
+  sidebarCollapsed: boolean
+  setSidebarCollapsed: (v: boolean) => void
+  sidebarMobileOpen: boolean
+  setSidebarMobileOpen: (v: boolean) => void
+  /** Table column ids (accessor keys) hidden in Columns explorer; keyed by dataset id. */
+  columnsTableHidden: Record<string, string[]>
+  toggleColumnTableVisibility: (datasetId: string, columnId: string) => void
+  setColumnsTableHidden: (datasetId: string, ids: string[]) => void
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
@@ -51,4 +63,26 @@ export const useUiStore = create<UiState>((set, get) => ({
     return q
   },
   sqlInjectTick: 0,
+  commandPaletteOpen: false,
+  setCommandPaletteOpen: (v) => set({ commandPaletteOpen: v }),
+  shortcutSheetOpen: false,
+  setShortcutSheetOpen: (v) => set({ shortcutSheetOpen: v }),
+  sidebarCollapsed: false,
+  setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
+  sidebarMobileOpen: false,
+  setSidebarMobileOpen: (v) => set({ sidebarMobileOpen: v }),
+  columnsTableHidden: {},
+  toggleColumnTableVisibility: (datasetId, columnId) =>
+    set((s) => {
+      const cur = s.columnsTableHidden[datasetId] ?? []
+      const has = cur.includes(columnId)
+      const next = has ? cur.filter((x) => x !== columnId) : [...cur, columnId]
+      return {
+        columnsTableHidden: { ...s.columnsTableHidden, [datasetId]: next },
+      }
+    }),
+  setColumnsTableHidden: (datasetId, ids) =>
+    set((s) => ({
+      columnsTableHidden: { ...s.columnsTableHidden, [datasetId]: ids },
+    })),
 }))

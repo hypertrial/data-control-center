@@ -52,7 +52,7 @@ export function DatasetContextStrip() {
 
   if (!activeId) {
     return (
-      <div className="flex flex-wrap items-center gap-2 border-b border-white/10 bg-[hsl(var(--card))]/40 px-4 py-2 text-xs text-[hsl(var(--muted))]">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border-default bg-[hsl(var(--card))]/40 px-4 py-2 text-xs text-[hsl(var(--muted))]">
         Select a dataset from the sidebar to load context.
       </div>
     )
@@ -67,7 +67,7 @@ export function DatasetContextStrip() {
   const updated = profileQ.dataUpdatedAt
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-white/10 bg-[hsl(var(--card))]/50 px-4 py-2.5">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border-default bg-[hsl(var(--card))]/50 px-4 py-2.5">
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold tracking-tight" title={name}>
           {name}

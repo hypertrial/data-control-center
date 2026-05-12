@@ -74,6 +74,6 @@ describe('QualityPage', () => {
     await user.click(screen.getByRole('button', { name: /Warning \(1\)/ }))
     expect(screen.queryByText('Critical thing')).toBeNull()
     expect(screen.getByText('Warn thing')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Apply in SQL/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Open in SQL/i })).toBeInTheDocument()
   })
 })

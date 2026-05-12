@@ -1,26 +1,95 @@
 @import "tailwindcss";
 
+@theme {
+  /* Hypertrial Venture Studio — map to Tailwind utilities */
+  --color-bg-1: hsl(240 39% 19%);
+  --color-bg-2: hsl(222 44% 24%);
+  --color-bg-3: hsl(212 46% 31%);
+  --color-surface-1: hsl(222 44% 26%);
+  --color-surface-2: hsl(215 45% 28%);
+  --color-surface-elevated: hsl(212 46% 33%);
+  --color-fg: hsl(0 0% 100%);
+  --color-fg-soft: hsl(210 10% 99%);
+  --color-fg-muted: hsl(221 12% 74%);
+  --color-fg-subtle: hsl(205 11% 44%);
+  --color-fg-inverse: hsl(240 39% 19%);
+  --color-accent: hsl(210 68% 66%);
+  --color-accent-hover: hsl(210 75% 71%);
+  --color-accent-active: hsl(210 58% 59%);
+  --color-accent-orange: hsl(29 89% 61%);
+  --color-accent-cyan: hsl(196 89% 61%);
+  --color-accent-green: hsl(139 75% 53%);
+  --color-border-default: hsl(0 0% 100% / 12%);
+  --color-border-muted: hsl(0 0% 100% / 8%);
+  --color-border-accent: hsl(210 68% 66%);
+  --color-status-success: hsl(139 75% 53%);
+  --color-status-info: hsl(196 89% 61%);
+  --color-status-warning: hsl(29 89% 61%);
+  --color-status-error: hsl(350 100% 68%);
+}
+
 @layer base {
   :root {
     color-scheme: dark;
-    --background: 222 47% 7%;
-    --foreground: 210 40% 98%;
-    --card: 222 40% 10%;
-    --muted: 215 20% 55%;
-    --border: 217 25% 18%;
-    --accent: 221 83% 53%;
-    /* Severity (aligned with Badge / charts) */
-    --severity-critical: 0 72% 50%;
-    --severity-warning: 38 92% 50%;
-    --severity-info: 199 89% 48%;
-    --severity-ok: 142 71% 40%;
-    /* Quality score bar (low → high) */
+    /* Backgrounds (HSL triples for hsl(var(...))) */
+    --bg-1: 240 39% 19%;
+    --bg-2: 222 44% 24%;
+    --bg-3: 212 46% 31%;
+    --surface-1: 222 44% 26%;
+    --surface-2: 215 45% 28%;
+    --surface-elevated: 212 46% 33%;
+    --surface-overlay: 240 39% 19% / 0.72;
+    /* Text */
+    --fg: 0 0% 100%;
+    --fg-soft: 210 10% 99%;
+    --fg-muted: 221 12% 74%;
+    --fg-subtle: 205 11% 44%;
+    --fg-inverse: 240 39% 19%;
+    /* Accents */
+    --accent: 210 68% 66%;
+    --accent-hover: 210 75% 71%;
+    --accent-active: 210 58% 59%;
+    --accent-orange: 29 89% 61%;
+    --accent-orange-hover: 24 100% 66%;
+    --accent-orange-active: 27 74% 53%;
+    --accent-cyan: 196 89% 61%;
+    --accent-green: 139 75% 53%;
+    /* Borders (token triples for charts / raw hsl) */
+    --border-triple: 0 0% 100%;
+    --border-alpha: 0.12;
+    --border-muted-alpha: 0.08;
+    --border-accent: 210 68% 66%;
+    /* Status */
+    --status-success: 139 75% 53%;
+    --status-info: 196 89% 61%;
+    --status-warning: 29 89% 61%;
+    --status-error: 350 100% 68%;
+    /* Legacy aliases (used by existing components) */
+    --background: var(--bg-1);
+    --foreground: var(--fg);
+    --card: var(--surface-1);
+    --muted: var(--fg-muted);
+    --border: var(--border-triple);
+    --severity-critical: var(--status-error);
+    --severity-warning: var(--status-warning);
+    --severity-info: var(--status-info);
+    --severity-ok: var(--status-success);
     --quality-low: var(--severity-critical);
     --quality-mid: var(--severity-warning);
     --quality-high: var(--severity-ok);
   }
+
   body {
-    @apply bg-[hsl(var(--background))] text-[hsl(var(--foreground))] antialiased min-h-screen;
+    background:
+      linear-gradient(
+        180deg,
+        hsl(var(--bg-1)) 0%,
+        hsl(var(--bg-2)) 52%,
+        hsl(var(--bg-3)) 100%
+      )
+      fixed;
+    color: hsl(var(--fg));
+    @apply antialiased min-h-screen;
     font-family:
       system-ui,
       -apple-system,
@@ -29,6 +98,7 @@
       sans-serif;
     font-variant-numeric: tabular-nums;
   }
+
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
@@ -36,7 +106,7 @@
   .dcc-md {
     font-size: 0.875rem;
     line-height: 1.65;
-    color: hsl(var(--foreground) / 0.92);
+    color: hsl(var(--fg) / 0.92);
   }
   .dcc-md p {
     margin-bottom: 0.75rem;
@@ -46,12 +116,12 @@
   }
   .dcc-md strong {
     font-weight: 600;
-    color: hsl(var(--foreground));
+    color: hsl(var(--fg));
   }
   .dcc-md code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.85em;
-    background: rgb(255 255 255 / 0.06);
+    background: hsl(var(--border-triple) / 0.08);
     padding: 0.1em 0.35em;
     border-radius: 4px;
   }

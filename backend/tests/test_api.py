@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.services.workspace import Workspace
+
 
 def test_health(client):
     r = client.get("/api/health")
@@ -390,3 +392,164 @@ def test_refresh_profile_build_failure(client, tmp_path, monkeypatch):
     pr = client.post(f"/api/datasets/{did}/profile/refresh")
     assert pr.status_code == 500
 
+
+def test_profile_history_and_diff(client, tmp_path) -> None:
+    csv = tmp_path / "h.csv"
+    csv.write_text("a,b\n1,\n")
+    reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
+    did = reg.json()["dataset_id"]
+    client.get(f"/api/datasets/{did}/profile")
+    client.post(f"/api/datasets/{did}/profile/refresh")
+    h = client.get(f"/api/datasets/{did}/profile/history")
+    assert h.status_code == 200
+    assert len(h.json()) >= 2
+    diff = client.get(f"/api/datasets/{did}/profile/diff")
+    assert diff.status_code == 200
+    body = diff.json()
+    assert "new_columns" in body
+    assert "history_id_a" in body
+
+
+def test_profile_diff_requires_two_snapshots(client, tmp_path) -> None:
+    csv = tmp_path / "one.csv"
+    csv.write_text("x\n1\n")
+    reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
+    did = reg.json()["dataset_id"]
+    client.get(f"/api/datasets/{did}/profile")
+    assert client.get(f"/api/datasets/{did}/profile/diff").status_code == 404
+
+
+def test_profile_diff_unknown_history(client, tmp_path) -> None:
+    csv = tmp_path / "z.csv"
+    csv.write_text("x\n1\n")
+    reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
+    did = reg.json()["dataset_id"]
+    client.get(f"/api/datasets/{did}/profile")
+    client.post(f"/api/datasets/{did}/profile/refresh")
+    assert (
+        client.get(f"/api/datasets/{did}/profile/diff?a=nope&b=alsono").status_code == 404
+    )
+
+
+def test_saved_queries_http(client) -> None:
+    assert client.get("/api/saved-queries").json() == []
+    c = client.post("/api/saved-queries", json={"name": "q1", "sql": "SELECT 1"})
+    assert c.status_code == 200
+    sid = c.json()["saved_id"]
+    assert len(client.get("/api/saved-queries").json()) == 1
+    p = client.patch(f"/api/saved-queries/{sid}", json={"name": "q2"})
+    assert p.status_code == 200
+    assert client.patch(f"/api/saved-queries/{sid}", json={}).status_code == 400
+    assert client.delete(f"/api/saved-queries/{sid}").status_code == 204
+    assert client.delete(f"/api/saved-queries/{sid}").status_code == 404
+    assert client.get("/api/saved-queries").json() == []
+
+
+def test_patch_saved_query_unknown_id(client) -> None:
+    assert (
+        client.patch("/api/saved-queries/sq_missing", json={"name": "x"}).status_code == 404
+    )
+
+
+def test_agent_ask_stream_route(client, monkeypatch) -> None:
+    def fake_stream(*_a, **_k):
+        yield {"type": "meta", "data": {"model": "m"}}
+        yield {"type": "done", "data": {}}
+
+    monkeypatch.setattr("app.api.agent.run_agent_ask_stream", fake_stream)
+    r = client.post("/api/agent/ask/stream", json={"question": "hello"})
+    assert r.status_code == 200
+    assert "data:" in r.text
+
+
+def test_profile_history_404(client) -> None:
+    assert client.get("/api/datasets/ds_missing/profile/history").status_code == 404
+
+
+def test_profile_diff_explicit_ids(client, tmp_path) -> None:
+    csv = tmp_path / "e.csv"
+    csv.write_text("a\n1\n")
+    reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
+    did = reg.json()["dataset_id"]
+    client.get(f"/api/datasets/{did}/profile")
+    client.post(f"/api/datasets/{did}/profile/refresh")
+    h = client.get(f"/api/datasets/{did}/profile/history").json()
+    assert len(h) >= 2
+    ha, hb = h[1]["history_id"], h[0]["history_id"]
+    d = client.get(f"/api/datasets/{did}/profile/diff?a={ha}&b={hb}")
+    assert d.status_code == 200
+    assert d.json()["history_id_a"] == ha
+
+
+def test_profile_diff_blobs_missing(client, tmp_path, monkeypatch) -> None:
+    csv = tmp_path / "m.csv"
+    csv.write_text("x\n1\n")
+    reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
+    did = reg.json()["dataset_id"]
+    client.get(f"/api/datasets/{did}/profile")
+    client.post(f"/api/datasets/{did}/profile/refresh")
+    monkeypatch.setattr(
+        Workspace,
+        "load_profile_history_blob",
+        lambda self, hid: None,
+    )
+    assert client.get(f"/api/datasets/{did}/profile/diff").status_code == 404
+
+
+def test_create_saved_query_get_fails(client, monkeypatch) -> None:
+    monkeypatch.setattr(Workspace, "get_saved_query", lambda self, sid: None)
+    r = client.post("/api/saved-queries", json={"name": "n", "sql": "SELECT 1"})
+    assert r.status_code == 500
+
+
+def test_patch_saved_query_missing_after_update(client, monkeypatch) -> None:
+    c = client.post("/api/saved-queries", json={"name": "n", "sql": "SELECT 1"})
+    sid = c.json()["saved_id"]
+    monkeypatch.setattr(Workspace, "get_saved_query", lambda self, x: None)
+    assert client.patch(f"/api/saved-queries/{sid}", json={"name": "x"}).status_code == 404
+
+
+def test_profile_diff_history_from_other_dataset(client, tmp_path) -> None:
+    a = tmp_path / "a.csv"
+    a.write_text("x\n1\n")
+    b = tmp_path / "b.csv"
+    b.write_text("y\n2\n")
+    d1 = client.post("/api/datasets/register-file", json={"path": str(a)}).json()["dataset_id"]
+    d2 = client.post("/api/datasets/register-file", json={"path": str(b)}).json()["dataset_id"]
+    client.get(f"/api/datasets/{d2}/profile")
+    hid = client.get(f"/api/datasets/{d2}/profile/history").json()[0]["history_id"]
+    assert (
+        client.get(f"/api/datasets/{d1}/profile/diff?a={hid}&b={hid}").status_code == 404
+    )
+
+
+def test_profile_diff_dataset_not_found(client) -> None:
+    assert client.get("/api/datasets/ds_missing/profile/diff").status_code == 404
+
+
+def test_profile_diff_b_from_other_dataset(client, tmp_path) -> None:
+    a = tmp_path / "a.csv"
+    a.write_text("x\n1\n")
+    b = tmp_path / "b.csv"
+    b.write_text("y\n2\n")
+    d1 = client.post("/api/datasets/register-file", json={"path": str(a)}).json()["dataset_id"]
+    d2 = client.post("/api/datasets/register-file", json={"path": str(b)}).json()["dataset_id"]
+    client.get(f"/api/datasets/{d1}/profile")
+    client.get(f"/api/datasets/{d2}/profile")
+    ha = client.get(f"/api/datasets/{d1}/profile/history").json()[0]["history_id"]
+    hb = client.get(f"/api/datasets/{d2}/profile/history").json()[0]["history_id"]
+    assert client.get(f"/api/datasets/{d1}/profile/diff?a={ha}&b={hb}").status_code == 404
+
+
+def test_profile_diff_explicit_ids_missing_blobs(client, tmp_path, monkeypatch) -> None:
+    csv = tmp_path / "e2.csv"
+    csv.write_text("a\n1\n")
+    did = client.post("/api/datasets/register-file", json={"path": str(csv)}).json()["dataset_id"]
+    client.get(f"/api/datasets/{did}/profile")
+    client.post(f"/api/datasets/{did}/profile/refresh")
+    h = client.get(f"/api/datasets/{did}/profile/history").json()
+    ha, hb = h[1]["history_id"], h[0]["history_id"]
+    monkeypatch.setattr(Workspace, "load_profile_history_blob", lambda self, _hid: None)
+    assert (
+        client.get(f"/api/datasets/{did}/profile/diff?a={ha}&b={hb}").status_code == 404
+    )

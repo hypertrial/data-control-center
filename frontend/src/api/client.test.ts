@@ -148,6 +148,65 @@ describe('api client', () => {
     })
   })
 
+  it('getProfileHistory GET', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk([]))
+    vi.stubGlobal('fetch', fetchMock)
+    await api.getProfileHistory('ds_1', 5)
+    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/profile/history?limit=5')
+  })
+
+  it('getProfileDiff GET with snapshot ids', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonOk({
+        history_id_a: 'a',
+        history_id_b: 'b',
+        created_at_a: 't1',
+        created_at_b: 't2',
+        new_columns: [],
+        removed_columns: [],
+        null_pct_changes: [],
+        quality_score_delta: null,
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await api.getProfileDiff('ds_1', 'a', 'b')
+    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/profile/diff?a=a&b=b')
+  })
+
+  it('saved queries CRUD', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonOk([]))
+      .mockResolvedValueOnce(
+        jsonOk({
+          saved_id: 'sq_1',
+          name: 'q',
+          sql: 'SELECT 1',
+          created_at: 'c',
+          updated_at: 'u',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonOk({
+          saved_id: 'sq_1',
+          name: 'q2',
+          sql: 'SELECT 2',
+          created_at: 'c',
+          updated_at: 'u2',
+        }),
+      )
+      .mockResolvedValueOnce({ ok: true, statusText: 'No Content', text: () => Promise.resolve('') } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    await api.listSavedQueries()
+    await api.createSavedQuery({ name: 'q', sql: 'SELECT 1' })
+    await api.patchSavedQuery('sq_1', { name: 'q2' })
+    await api.deleteSavedQuery('sq_1')
+    expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries')
+    expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries/sq_1', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries/sq_1', { method: 'DELETE' })
+  })
+
   it('askAgent POST', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonOk({

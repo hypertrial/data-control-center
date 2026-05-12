@@ -2,12 +2,12 @@ import * as React from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { OverviewPage } from '@/features/overview/OverviewPage'
 import { useUiStore } from '@/store/uiStore'
 import { mkProfile } from '@/test/profileFixtures'
 
-const h = vi.hoisted(() => ({ getProfile: vi.fn() }))
+const h = vi.hoisted(() => ({ getProfile: vi.fn(), getProfileHistory: vi.fn() }))
 
 vi.mock('echarts', () => ({
   init: vi.fn(() => ({
@@ -21,7 +21,7 @@ vi.mock('echarts', () => ({
 
 vi.mock('@/api/client', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/api/client')>()
-  return { ...mod, api: { ...mod.api, getProfile: h.getProfile } }
+  return { ...mod, api: { ...mod.api, getProfile: h.getProfile, getProfileHistory: h.getProfileHistory } }
 })
 
 function wrap(ui: React.ReactElement) {
@@ -36,6 +36,13 @@ function wrap(ui: React.ReactElement) {
 }
 
 describe('OverviewPage', () => {
+  beforeEach(() => {
+    h.getProfileHistory.mockResolvedValue([
+      { history_id: 'h1', dataset_id: 'ds_001', created_at: 't', quality_score: 90, rows: 1, columns: 1, missing_cell_pct: 0 },
+      { history_id: 'h2', dataset_id: 'ds_001', created_at: 't2', quality_score: 88, rows: 1, columns: 1, missing_cell_pct: 0 },
+    ])
+  })
+
   it('prompts when no dataset', () => {
     wrap(<OverviewPage />)
     expect(screen.getByText(/Select a dataset from the sidebar/i)).toBeInTheDocument()
@@ -45,7 +52,7 @@ describe('OverviewPage', () => {
     h.getProfile.mockResolvedValue(mkProfile({ file_size_bytes: 100, narrative: '**Hello** world' }))
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     wrap(<OverviewPage />)
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Demo' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/100 B/)).toBeInTheDocument())
     expect(screen.getByRole('heading', { level: 2, name: 'Profile snapshot' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'Quality focus' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Column mix' })).toBeInTheDocument()
