@@ -12,9 +12,11 @@ import { useQuery } from '@tanstack/react-query'
 import {
   Calendar,
   CaseSensitive,
+  Eye,
   Hash,
   HelpCircle,
   KeyRound,
+  Search,
   Tags,
   ToggleLeft,
 } from 'lucide-react'
@@ -29,6 +31,15 @@ import { useUiStore } from '@/store/uiStore'
 import { ColumnDetailDrawer } from '@/features/columns/ColumnDetailDrawer'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 const colHelper = createColumnHelper<ColumnProfile>()
 
@@ -47,6 +58,16 @@ const CQ_OPTIONS: Array<{ value: 'all' | 'has_flags' | 'critical_only'; label: s
   { value: 'all', label: 'Any' },
   { value: 'has_flags', label: 'Has flags' },
   { value: 'critical_only', label: 'Critical flags' },
+]
+
+const COLUMN_TOOLBAR_IDS: Array<{ id: string; label: string }> = [
+  { id: 'name', label: 'Column' },
+  { id: 'physical_type', label: 'Physical type' },
+  { id: 'semantic_type', label: 'Semantic' },
+  { id: 'null_pct', label: 'Null %' },
+  { id: 'quality_flags', label: 'Flags' },
+  { id: 'unique_count', label: 'Unique' },
+  { id: 'cardinality', label: 'Cardinality' },
 ]
 
 function TypeIcon({ sem }: { sem: SemanticType }) {
@@ -86,6 +107,8 @@ function NullBar({ pct }: { pct: number }) {
   )
 }
 
+const EMPTY_HIDDEN: string[] = []
+
 export function ColumnsPage() {
   const activeId = useUiStore((s) => s.activeDatasetId)
   const columnSearch = useUiStore((s) => s.columnSearch)
@@ -98,6 +121,9 @@ export function ColumnsPage() {
   const setSelectedColumn = useUiStore((s) => s.setSelectedColumn)
   const drawerOpen = useUiStore((s) => s.columnDrawerOpen)
   const setDrawerOpen = useUiStore((s) => s.setColumnDrawerOpen)
+  const hiddenMap = useUiStore((s) => s.columnsTableHidden)
+  const hiddenCols = activeId ? (hiddenMap[activeId] ?? EMPTY_HIDDEN) : EMPTY_HIDDEN
+  const toggleColVis = useUiStore((s) => s.toggleColumnTableVisibility)
 
   const [sorting, setSorting] = useState<SortingState>([{ id: 'null_pct', desc: true }])
 
@@ -113,7 +139,7 @@ export function ColumnsPage() {
     [datasetsQ.data, activeId],
   )
 
-  const columns = useMemo(
+  const allColumnDefs = useMemo(
     () => [
       colHelper.accessor('name', {
         header: 'Column',
@@ -156,6 +182,11 @@ export function ColumnsPage() {
       }),
     ],
     [],
+  )
+
+  const columns = useMemo(
+    () => allColumnDefs.filter((c) => !hiddenCols.includes(String(c.id))),
+    [allColumnDefs, hiddenCols],
   )
 
   const data = useMemo(() => {
@@ -221,19 +252,21 @@ export function ColumnsPage() {
   return (
     <PageContainer>
       <div className="space-y-3">
-        <div>
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
-            Search
+        <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-end">
+          <div className="min-w-[220px] flex-1">
+            <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+              Filter
+            </div>
+            <div className="relative max-w-md">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" aria-hidden />
+              <Input
+                placeholder="Column name…"
+                value={columnSearch}
+                onChange={(e) => setColumnSearch(e.target.value)}
+                className="max-w-md pl-9"
+              />
+            </div>
           </div>
-          <Input
-            placeholder="Filter by column name…"
-            value={columnSearch}
-            onChange={(e) => setColumnSearch(e.target.value)}
-            className="max-w-md"
-          />
-        </div>
-
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <div className="min-w-0 flex-1">
             <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
               Semantic type
@@ -278,6 +311,27 @@ export function ColumnsPage() {
               ))}
             </div>
           </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="sm" className="gap-1">
+                <Eye className="h-3.5 w-3.5" />
+                Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Visible in table</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {COLUMN_TOOLBAR_IDS.map(({ id, label }) => (
+                <DropdownMenuCheckboxItem
+                  key={id}
+                  checked={!hiddenCols.includes(id)}
+                  onCheckedChange={() => toggleColVis(activeId, id)}
+                >
+                  {label}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -286,8 +340,16 @@ export function ColumnsPage() {
           <THead className="sticky top-0 z-10 bg-[hsl(var(--background))]/95 backdrop-blur">
             {table.getHeaderGroups().map((hg) => (
               <TR key={hg.id}>
-                {hg.headers.map((h) => (
-                  <TH key={h.id} scope="col">
+                {hg.headers.map((h) => {
+                  const sorted = h.column.getIsSorted()
+                  return (
+                    <TH
+                      key={h.id}
+                      scope="col"
+                      aria-sort={
+                        sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'
+                      }
+                    >
                     {h.isPlaceholder ? null : (
                       <button
                         type="button"
@@ -302,7 +364,8 @@ export function ColumnsPage() {
                       </button>
                     )}
                   </TH>
-                ))}
+                  )
+                })}
               </TR>
             ))}
           </THead>
@@ -311,6 +374,15 @@ export function ColumnsPage() {
               <TR
                 key={row.id}
                 className="cursor-pointer"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    const name = row.original.name
+                    setSelectedColumn(name)
+                    setDrawerOpen(true)
+                  }
+                }}
                 onClick={() => {
                   const name = row.original.name
                   setSelectedColumn(name)

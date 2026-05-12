@@ -30,5 +30,13 @@ describe('uiStore', () => {
     expect(useUiStore.getState().pendingQuery).toBe('SELECT 1')
     expect(useUiStore.getState().takePendingQuery()).toBe('SELECT 1')
     expect(useUiStore.getState().pendingQuery).toBeNull()
+
+    useUiStore.getState().setCommandPaletteOpen(true)
+    expect(useUiStore.getState().commandPaletteOpen).toBe(true)
+
+    useUiStore.getState().toggleColumnTableVisibility('ds_x', 'name')
+    expect(useUiStore.getState().columnsTableHidden.ds_x).toContain('name')
+    useUiStore.getState().toggleColumnTableVisibility('ds_x', 'name')
+    expect(useUiStore.getState().columnsTableHidden.ds_x).not.toContain('name')
   })
 })

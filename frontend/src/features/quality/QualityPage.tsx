@@ -5,6 +5,7 @@ import type { QualityIssue } from '@/api/types'
 import { ActionInSql } from '@/components/ActionInSql'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { PageContainer, Section } from '@/components/ui/section'
 import { CardSkeleton } from '@/components/ui/skeleton'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
@@ -83,7 +84,7 @@ function IssueCard({
   openCol: (c: string) => void
 }) {
   return (
-    <Card className="border-white/10">
+    <Card className="border-border-default">
       <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
         <div className="min-w-0">
           <CardTitle className="text-base font-medium leading-snug">{issue.title}</CardTitle>
@@ -91,32 +92,51 @@ function IssueCard({
         </div>
         <Badge variant={sevVariant(issue.severity)}>{issue.severity}</Badge>
       </CardHeader>
-      <CardContent className="space-y-3 text-sm">
+      <CardContent className="space-y-2 text-sm">
         <p className="text-[hsl(var(--foreground))]/90">{issue.description}</p>
-        <details className="rounded-md border border-white/10 bg-white/[0.02] p-3 text-xs">
-          <summary className="cursor-pointer font-medium text-[hsl(var(--muted))]">Why it matters</summary>
-          <p className="mt-2 text-[hsl(var(--foreground))]/90">{issue.why_it_matters}</p>
-        </details>
-        {issue.affected_columns.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {issue.affected_columns.map((c) => (
-              <button
-                key={c}
-                type="button"
-                className="rounded-md bg-white/5 px-2 py-0.5 font-mono text-xs hover:bg-white/10"
-                onClick={() => openCol(c)}
-              >
-                {c}
-              </button>
-            ))}
+        <details className="rounded-md border border-border-default bg-white/[0.02] p-3 text-xs">
+          <summary className="cursor-pointer font-medium text-[hsl(var(--muted))]">
+            Details & suggested actions
+          </summary>
+          <div className="mt-3 space-y-3">
+            <div>
+              <div className="font-medium text-fg-muted">Why it matters</div>
+              <p className="mt-1 text-[hsl(var(--foreground))]/90">{issue.why_it_matters}</p>
+            </div>
+            {issue.affected_columns.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {issue.affected_columns.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className="rounded-md bg-white/5 px-2 py-0.5 font-mono text-xs hover:bg-white/10"
+                    onClick={() => openCol(c)}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            )}
+            <ExamplesList examples={issue.examples} />
+            {issue.suggested_sql ? (
+              <div className="flex flex-wrap gap-2">
+                <ActionInSql sql={issue.suggested_sql} variant="outline" size="sm">
+                  Open in SQL
+                </ActionInSql>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(issue.suggested_sql!)
+                  }}
+                >
+                  Copy SQL
+                </Button>
+              </div>
+            ) : null}
           </div>
-        )}
-        <ExamplesList examples={issue.examples} />
-        {issue.suggested_sql ? (
-          <ActionInSql sql={issue.suggested_sql} variant="outline" size="sm">
-            Apply in SQL
-          </ActionInSql>
-        ) : null}
+        </details>
       </CardContent>
     </Card>
   )

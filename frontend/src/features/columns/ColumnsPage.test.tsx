@@ -1,7 +1,7 @@
 import { MemoryRouter } from 'react-router-dom'
 import * as React from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ColumnsPage } from '@/features/columns/ColumnsPage'
@@ -36,6 +36,7 @@ function wrap(ui: React.ReactElement) {
 
 describe('ColumnsPage', () => {
   beforeEach(() => {
+    useUiStore.setState({ columnsTableHidden: {} })
     h.listDatasets.mockResolvedValue([
       {
         dataset_id: 'ds_1',
@@ -83,7 +84,7 @@ describe('ColumnsPage', () => {
     wrap(<ColumnsPage />)
     await waitFor(() => expect(screen.getAllByText('alpha')[0]).toBeInTheDocument())
 
-    const search = screen.getByPlaceholderText(/Filter by column name/)
+    const search = screen.getByPlaceholderText(/Column name/)
     await user.type(search, 'alp')
     expect(screen.queryByText('beta')).toBeNull()
 
@@ -92,7 +93,8 @@ describe('ColumnsPage', () => {
     expect(screen.queryByText('alpha')).toBeNull()
 
     await user.click(screen.getByRole('button', { name: 'All types' }))
-    const sortBtn = screen.getByRole('button', { name: /Column/ })
+    const grid = screen.getByRole('table')
+    const sortBtn = within(grid).getByRole('button', { name: /^Column/ })
     await user.click(sortBtn)
 
     const row = screen.getByText('beta').closest('tr')

@@ -116,6 +116,52 @@ class QueryResult(BaseModel):
     error: str | None = None
 
 
+class ProfileHistoryEntry(BaseModel):
+    history_id: str
+    dataset_id: str
+    created_at: str
+    quality_score: float | None = None
+    rows: int | None = None
+    columns: int | None = None
+    missing_cell_pct: float | None = None
+
+
+class NullPctChange(BaseModel):
+    column: str
+    before: float
+    after: float
+    delta: float
+
+
+class ProfileDiffResponse(BaseModel):
+    history_id_a: str
+    history_id_b: str
+    created_at_a: str
+    created_at_b: str
+    new_columns: list[str] = Field(default_factory=list)
+    removed_columns: list[str] = Field(default_factory=list)
+    null_pct_changes: list[NullPctChange] = Field(default_factory=list)
+    quality_score_delta: float | None = None
+
+
+class SavedQuery(BaseModel):
+    saved_id: str
+    name: str
+    sql: str
+    created_at: str
+    updated_at: str
+
+
+class SavedQueryCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    sql: str = Field(..., min_length=1, max_length=500_000)
+
+
+class SavedQueryPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    sql: str | None = Field(default=None, min_length=1, max_length=500_000)
+
+
 class AgentAskRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=10_000)
     dataset_ids: list[str] | None = Field(

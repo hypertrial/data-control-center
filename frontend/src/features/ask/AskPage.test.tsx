@@ -8,14 +8,14 @@ import { AskPage } from '@/features/ask/AskPage'
 import { useUiStore } from '@/store/uiStore'
 
 const h = vi.hoisted(() => ({
-  askAgent: vi.fn(),
+  askAgentStream: vi.fn(),
 }))
 
 vi.mock('@/api/client', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/api/client')>()
   return {
     ...mod,
-    api: { ...mod.api, askAgent: h.askAgent },
+    askAgentStream: h.askAgentStream,
   }
 })
 
@@ -30,14 +30,22 @@ function wrap(ui: React.ReactElement) {
   )
 }
 
+function mockStream(events: Array<{ type: string; data?: unknown }>) {
+  h.askAgentStream.mockImplementation(async (_body, onEvent) => {
+    for (const ev of events) {
+      onEvent(ev as never)
+    }
+  })
+}
+
 describe('AskPage', () => {
   beforeEach(() => {
-    h.askAgent.mockReset()
+    h.askAgentStream.mockReset()
   })
 
   it('disables ask when question empty', () => {
     wrap(<AskPage />)
-    expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Ask \(stream\)/ })).toBeDisabled()
   })
 
   it('shows active dataset in scope hint', () => {
@@ -48,99 +56,109 @@ describe('AskPage', () => {
 
   it('submits and renders answer and opens SQL via store', async () => {
     const user = userEvent.setup()
-    h.askAgent.mockResolvedValue({
-      answer: 'There are **2** rows.',
-      sql: 'SELECT COUNT(*) AS n FROM t',
-      explanation: 'Counted rows.',
-      model: 'qwen3:4b',
-      query_result: {
-        columns: [{ name: 'n', type: null }],
-        rows: [{ n: 2 }],
-        row_count: 1,
-        truncated: false,
-        error: null,
+    mockStream([
+      { type: 'meta', data: { model: 'qwen3:4b' } },
+      {
+        type: 'sql',
+        data: { sql: 'SELECT COUNT(*) AS n FROM t', explanation: 'Counted rows.' },
       },
-    })
+      {
+        type: 'query_result',
+        data: {
+          columns: [{ name: 'n', type: 'INTEGER' }],
+          rows: [{ n: 2 }],
+          row_count: 1,
+          truncated: false,
+          error: null,
+        },
+      },
+      { type: 'answer', data: { answer: 'There are **2** rows.' } },
+      { type: 'done', data: {} },
+    ])
     wrap(<AskPage />)
     await user.type(screen.getByPlaceholderText(/plain language/i), 'How many rows?')
-    await user.click(screen.getByRole('button', { name: 'Ask' }))
+    await user.click(screen.getByRole('button', { name: /Ask \(stream\)/i }))
     await waitFor(() => expect(screen.getByText(/There are/)).toBeInTheDocument())
-    expect(h.askAgent).toHaveBeenCalledWith(
-      expect.objectContaining({ question: 'How many rows?' }),
-    )
+    expect(h.askAgentStream).toHaveBeenCalled()
+    const arg = h.askAgentStream.mock.calls[0]![0] as { question: string }
+    expect(arg.question).toBe('How many rows?')
     await user.click(screen.getByRole('button', { name: 'Open in SQL' }))
     expect(useUiStore.getState().pendingQuery).toBe('SELECT COUNT(*) AS n FROM t')
   })
 
   it('submits question on Meta+Enter from textarea', async () => {
-    h.askAgent.mockResolvedValue({ answer: 'ok', model: 'm' })
+    mockStream([
+      { type: 'meta', data: { model: 'm' } },
+      { type: 'answer', data: { answer: 'ok' } },
+      { type: 'done', data: {} },
+    ])
     wrap(<AskPage />)
     const ta = screen.getByPlaceholderText(/plain language/i)
     fireEvent.change(ta, { target: { value: 'Why?' } })
     fireEvent.keyDown(ta, { key: 'Enter', metaKey: true, bubbles: true })
-    await waitFor(() =>
-      expect(h.askAgent).toHaveBeenCalledWith(
-        expect.objectContaining({ question: 'Why?' }),
-      ),
-    )
+    await waitFor(() => expect(h.askAgentStream).toHaveBeenCalled())
+    const body = h.askAgentStream.mock.calls[0]![0] as { question: string }
+    expect(body.question).toBe('Why?')
   })
 
   it('submits question on Ctrl+Enter from textarea', async () => {
-    h.askAgent.mockResolvedValue({ answer: 'ok', model: 'm' })
+    mockStream([
+      { type: 'meta', data: { model: 'm' } },
+      { type: 'answer', data: { answer: 'ok' } },
+      { type: 'done', data: {} },
+    ])
     wrap(<AskPage />)
     const ta = screen.getByPlaceholderText(/plain language/i)
     fireEvent.change(ta, { target: { value: 'Why?' } })
     fireEvent.keyDown(ta, { key: 'Enter', ctrlKey: true, bubbles: true })
-    await waitFor(() =>
-      expect(h.askAgent).toHaveBeenCalledWith(
-        expect.objectContaining({ question: 'Why?' }),
-      ),
-    )
+    await waitFor(() => expect(h.askAgentStream).toHaveBeenCalled())
   })
 
-  it('shows banner for API result error', async () => {
+  it('shows banner for stream error event', async () => {
     const user = userEvent.setup()
-    h.askAgent.mockResolvedValue({
-      model: 'qwen3:4b',
-      error: 'Could not reach Ollama',
-    })
+    mockStream([{ type: 'error', data: { message: 'Could not reach Ollama' } }, { type: 'done', data: {} }])
     wrap(<AskPage />)
     await user.type(screen.getByPlaceholderText(/plain language/i), 'x')
-    await user.click(screen.getByRole('button', { name: 'Ask' }))
+    await user.click(screen.getByRole('button', { name: /Ask \(stream\)/i }))
     await waitFor(() => expect(screen.getByText(/Ollama/)).toBeInTheDocument())
   })
 
   it('shows SQL block without explanation', async () => {
     const user = userEvent.setup()
-    h.askAgent.mockResolvedValue({
-      answer: 'Done.',
-      sql: 'SELECT 1',
-      model: 'm',
-    })
+    mockStream([
+      { type: 'meta', data: { model: 'm' } },
+      { type: 'sql', data: { sql: 'SELECT 1', explanation: null } },
+      { type: 'answer', data: { answer: 'Done.' } },
+      { type: 'done', data: {} },
+    ])
     wrap(<AskPage />)
     await user.type(screen.getByPlaceholderText(/plain language/i), 'q')
-    await user.click(screen.getByRole('button', { name: 'Ask' }))
-    await waitFor(() => expect(screen.getByText('SELECT 1')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /Ask \(stream\)/i }))
+    await waitFor(() => expect(document.body.textContent).toContain('SELECT 1'))
     expect(screen.queryByText(/Model note/i)).not.toBeInTheDocument()
   })
 
   it('shows query_result error banner', async () => {
     const user = userEvent.setup()
-    h.askAgent.mockResolvedValue({
-      model: 'm',
-      answer: 'Partial.',
-      sql: 'SELECT bad',
-      query_result: {
-        columns: [],
-        rows: [],
-        row_count: 0,
-        truncated: false,
-        error: 'Binder error',
+    mockStream([
+      { type: 'meta', data: { model: 'm' } },
+      { type: 'sql', data: { sql: 'SELECT bad' } },
+      {
+        type: 'query_result',
+        data: {
+          columns: [],
+          rows: [],
+          row_count: 0,
+          truncated: false,
+          error: 'Binder error',
+        },
       },
-    })
+      { type: 'answer', data: { answer: 'Partial.' } },
+      { type: 'done', data: {} },
+    ])
     wrap(<AskPage />)
     await user.type(screen.getByPlaceholderText(/plain language/i), 'q')
-    await user.click(screen.getByRole('button', { name: 'Ask' }))
+    await user.click(screen.getByRole('button', { name: /Ask \(stream\)/i }))
     await waitFor(() => expect(screen.getByText(/Binder error/)).toBeInTheDocument())
   })
 })

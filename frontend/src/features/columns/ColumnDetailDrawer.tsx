@@ -18,7 +18,7 @@ const FLAG_HELP: Record<string, string> = {
 function SqlSnippet({ label, sql }: { label: string; sql: string }) {
   const open = useOpenInSql()
   return (
-    <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-xs">
+    <div className="rounded-lg border border-border-default bg-black/20 p-3 text-xs">
       <div className="mb-1 text-[hsl(var(--muted))]">{label}</div>
       <pre className="mb-2 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-white/90">
         {sql}
@@ -141,7 +141,7 @@ export function ColumnDetailDrawer({
           ) : (
             <ul className="space-y-2">
               {column.quality_flags.map((f) => (
-                <li key={f} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                <li key={f} className="rounded-lg border border-border-default bg-white/[0.03] p-3">
                   <div className="font-mono text-xs text-amber-100">{f}</div>
                   <p className="mt-1 text-xs text-[hsl(var(--muted))]">
                     {FLAG_HELP[f] ?? 'See profiler output for details.'}

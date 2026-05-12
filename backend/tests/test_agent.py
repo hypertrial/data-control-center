@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
 import httpx
 import pytest
 
@@ -20,9 +22,11 @@ from app.services.agent import (
     _system_prompt,
     build_dataset_context,
     ollama_chat,
+    ollama_chat_stream,
     parse_sql_draft,
     parse_summary_answer,
     run_agent_ask,
+    run_agent_ask_stream,
 )
 from app.services.registry import DatasetRegistry
 from app.services.workspace import Workspace
@@ -751,3 +755,469 @@ def test_agent_ask_http_endpoint(client, tmp_path, monkeypatch) -> None:
     r = client.post("/api/agent/ask", json={"question": "hello"})
     assert r.status_code == 200
     assert r.json()["answer"] == "ok"
+
+
+def test_ollama_chat_stream_yields_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
+    class StreamCtx:
+        def __enter__(self) -> StreamCtx:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def raise_for_status(self) -> None:
+            pass
+
+        def iter_lines(self):
+            yield json.dumps({"message": {"content": "x"}})
+
+    class ClientCtx:
+        def __enter__(self) -> ClientCtx:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def stream(self, method: str, url: str, json: object | None = None) -> StreamCtx:
+            return StreamCtx()
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: ClientCtx())
+    settings = Settings()
+    assert list(ollama_chat_stream(settings, [{"role": "user", "content": "z"}], None)) == [
+        "x",
+    ]
+
+
+def test_run_agent_ask_stream_no_datasets(tmp_path: Path) -> None:
+    settings = Settings(workspace_db_path=tmp_path / "empty.duckdb")
+    ws = Workspace(settings)
+    reg = DatasetRegistry(ws)
+    events = list(
+        run_agent_ask_stream(reg, settings, AgentAskRequest(question="q")),
+    )
+    assert [e["type"] for e in events] == ["meta", "error", "done"]
+
+
+def test_run_agent_ask_stream_happy(registry_csv: DatasetRegistry) -> None:
+    settings = Settings(agent_summarize_with_llm=False)
+    vw = registry_csv.list_all()[0].view_name
+
+    def fake_ollama(s, m, f=None):  # noqa: ANN001
+        return json.dumps(
+            {"sql": f"SELECT * FROM {vw} LIMIT 1", "explanation": "e"},
+        )
+
+    ev = list(
+        run_agent_ask_stream(
+            registry_csv,
+            settings,
+            AgentAskRequest(question="q"),
+            ollama_call=fake_ollama,
+        ),
+    )
+    assert [e["type"] for e in ev] == ["meta", "sql", "query_result", "answer", "done"]
+
+
+def test_run_agent_ask_stream_summary_tokens(registry_csv: DatasetRegistry) -> None:
+    settings = Settings(agent_summarize_with_llm=True)
+    vw = registry_csv.list_all()[0].view_name
+    n = 0
+
+    def fake_ollama(s, m, f=None):  # noqa: ANN001
+        nonlocal n
+        n += 1
+        if f == OLLAMA_SQL_DRAFT_FORMAT:
+            return json.dumps(
+                {"sql": f"SELECT * FROM {vw} LIMIT 1", "explanation": "e"},
+            )
+        return '{"answer": "fallback"}'
+
+    def fake_stream(s, m, f=None):  # noqa: ANN001
+        yield '{"answer": "fromstream"}'
+
+    evty = [e["type"] for e in run_agent_ask_stream(
+        registry_csv,
+        settings,
+        AgentAskRequest(question="q"),
+        ollama_call=fake_ollama,
+        ollama_stream=fake_stream,
+    )]
+    assert "token" in evty
+    assert "answer" in evty
+
+
+def test_ollama_chat_stream_http_no_detail(monkeypatch: pytest.MonkeyPatch) -> None:
+    class StreamCtx:
+        def __enter__(self) -> StreamCtx:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def raise_for_status(self) -> None:
+            req = httpx.Request("POST", "http://127.0.0.1/x")
+            resp = httpx.Response(500, request=req, text="")
+            raise httpx.HTTPStatusError("err", request=req, response=resp)
+
+        def iter_lines(self):
+            yield ""
+
+    class ClientCtx:
+        def __enter__(self) -> ClientCtx:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def stream(self, method: str, url: str, json: object | None = None) -> StreamCtx:
+            return StreamCtx()
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: ClientCtx())
+    settings = Settings()
+    with pytest.raises(httpx.HTTPStatusError):
+        list(ollama_chat_stream(settings, [{"role": "user", "content": "z"}], None))
+
+
+def test_ollama_chat_stream_error_field(monkeypatch: pytest.MonkeyPatch) -> None:
+    class StreamCtx:
+        def __enter__(self) -> StreamCtx:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def raise_for_status(self) -> None:
+            pass
+
+        def iter_lines(self):
+            yield json.dumps({"error": "model missing"})
+
+    class ClientCtx:
+        def __enter__(self) -> ClientCtx:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def stream(self, method: str, url: str, json: object | None = None) -> StreamCtx:
+            return StreamCtx()
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: ClientCtx())
+    settings = Settings()
+    with pytest.raises(httpx.HTTPError):
+        list(ollama_chat_stream(settings, [{"role": "user", "content": "z"}], None))
+
+
+def test_ollama_chat_stream_skips_garbage_and_non_dict(monkeypatch: pytest.MonkeyPatch) -> None:
+    class StreamCtx:
+        def __enter__(self) -> StreamCtx:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def raise_for_status(self) -> None:
+            pass
+
+        def iter_lines(self):
+            yield "not-json"
+            yield "[1, 2]"
+            yield json.dumps({"message": {"content": "ok"}})
+
+    class ClientCtx:
+        def __enter__(self) -> ClientCtx:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def stream(self, method: str, url: str, json: object | None = None) -> StreamCtx:
+            return StreamCtx()
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: ClientCtx())
+    settings = Settings()
+    assert list(ollama_chat_stream(settings, [{"role": "user", "content": "z"}], None)) == ["ok"]
+
+
+def test_run_agent_ask_stream_connect_error(registry_csv: DatasetRegistry) -> None:
+    settings = Settings()
+
+    def boom(*a, **k):  # noqa: ANN001
+        raise httpx.ConnectError("nope")
+
+    ev = list(
+        run_agent_ask_stream(
+            registry_csv,
+            settings,
+            AgentAskRequest(question="q"),
+            ollama_call=boom,
+        ),
+    )
+    assert ev[1]["type"] == "error"
+
+
+def test_run_agent_ask_stream_http_error(registry_csv: DatasetRegistry) -> None:
+    settings = Settings()
+
+    def boom(*a, **k):  # noqa: ANN001
+        raise httpx.ReadTimeout("slow")
+
+    ev = list(
+        run_agent_ask_stream(
+            registry_csv,
+            settings,
+            AgentAskRequest(question="q"),
+            ollama_call=boom,
+        ),
+    )
+    assert "Ollama" in ev[1]["data"]["message"]
+
+
+def test_run_agent_ask_stream_generic_error(registry_csv: DatasetRegistry) -> None:
+    settings = Settings()
+
+    def boom(*a, **k):  # noqa: ANN001
+        raise RuntimeError("boom")
+
+    ev = list(
+        run_agent_ask_stream(
+            registry_csv,
+            settings,
+            AgentAskRequest(question="q"),
+            ollama_call=boom,
+        ),
+    )
+    assert ev[1]["type"] == "error"
+    assert "boom" in ev[1]["data"]["message"]
+
+
+def test_run_agent_ask_stream_bad_json_final(registry_csv: DatasetRegistry) -> None:
+    settings = Settings(agent_sql_attempts=1)
+
+    def bad(*a, **k):  # noqa: ANN001
+        return "not-json"
+
+    ev = list(
+        run_agent_ask_stream(
+            registry_csv,
+            settings,
+            AgentAskRequest(question="q"),
+            ollama_call=bad,
+        ),
+    )
+    assert ev[-2]["type"] == "error"
+
+
+def test_run_agent_ask_stream_sql_error(registry_csv: DatasetRegistry) -> None:
+    settings = Settings(agent_sql_attempts=1)
+
+    def bad(*a, **k):  # noqa: ANN001
+        return json.dumps({"sql": "SELECT * FROM totally_missing_view LIMIT 1", "explanation": ""})
+
+    ev = list(
+        run_agent_ask_stream(
+            registry_csv,
+            settings,
+            AgentAskRequest(question="q"),
+            ollama_call=bad,
+        ),
+    )
+    assert ev[-2]["type"] == "error"
+    assert "message" in ev[-2]["data"]
+
+
+def test_run_agent_ask_stream_empty_then_ok(registry_csv: DatasetRegistry) -> None:
+    settings = Settings(agent_sql_attempts=2, agent_summarize_with_llm=False)
+    vw = registry_csv.list_all()[0].view_name
+    n = 0
+
+    def fake(s, m, f=None):  # noqa: ANN001
+        nonlocal n
+        n += 1
+        if n == 1:
+            return json.dumps(
+                {"sql": f"SELECT * FROM {vw} WHERE 1 = 0", "explanation": ""},
+            )
+        return json.dumps({"sql": f"SELECT * FROM {vw} LIMIT 1", "explanation": ""})
+
+    evty = [e["type"] for e in run_agent_ask_stream(
+        registry_csv,
+        settings,
+        AgentAskRequest(question="q"),
+        ollama_call=fake,
+    )]
+    assert evty == ["meta", "sql", "query_result", "answer", "done"]
+
+
+def test_run_agent_ask_stream_summary_http_error(registry_csv: DatasetRegistry) -> None:
+    settings = Settings(agent_summarize_with_llm=True)
+    vw = registry_csv.list_all()[0].view_name
+    n = 0
+
+    def fake_ollama(s, m, f=None):  # noqa: ANN001
+        nonlocal n
+        n += 1
+        if f == OLLAMA_SQL_DRAFT_FORMAT:
+            return json.dumps({"sql": f"SELECT * FROM {vw} LIMIT 1", "explanation": "e"})
+        return '{"answer": "x"}'
+
+    def bad_stream(*a, **k):  # noqa: ANN001
+        raise httpx.ReadTimeout("s")
+
+    ev = list(
+        run_agent_ask_stream(
+            registry_csv,
+            settings,
+            AgentAskRequest(question="q"),
+            ollama_call=fake_ollama,
+            ollama_stream=bad_stream,
+        ),
+    )
+    assert ev[-2]["type"] == "answer"
+    assert "unavailable" in ev[-2]["data"]["answer"]
+
+
+def test_ollama_chat_stream_passes_format_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class StreamCtx:
+        def __enter__(self) -> StreamCtx:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def raise_for_status(self) -> None:
+            pass
+
+        def iter_lines(self):
+            yield json.dumps({"message": {"content": "z"}})
+
+    class ClientCtx:
+        def __enter__(self) -> ClientCtx:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def stream(self, method: str, url: str, json: object | None = None) -> StreamCtx:
+            captured["body"] = json or {}
+            return StreamCtx()
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: ClientCtx())
+    settings = Settings()
+    fmt = {"type": "object", "properties": {"answer": {"type": "string"}}}
+    assert list(ollama_chat_stream(settings, [{"role": "user", "content": "z"}], fmt)) == ["z"]
+    assert isinstance(captured["body"], dict)
+    assert captured["body"].get("format") == fmt
+
+
+def test_ollama_chat_stream_http_error_includes_json_detail(monkeypatch: pytest.MonkeyPatch) -> None:
+    class StreamCtx:
+        def __enter__(self) -> StreamCtx:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def raise_for_status(self) -> None:
+            req = httpx.Request("POST", "http://127.0.0.1/x")
+            resp = httpx.Response(
+                404,
+                request=req,
+                json={"error": "pull the model first"},
+            )
+            raise httpx.HTTPStatusError("err", request=req, response=resp)
+
+        def iter_lines(self):
+            yield ""
+
+    class ClientCtx:
+        def __enter__(self) -> ClientCtx:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def stream(self, method: str, url: str, json: object | None = None) -> StreamCtx:
+            return StreamCtx()
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: ClientCtx())
+    settings = Settings()
+    with pytest.raises(httpx.HTTPStatusError) as ei:
+        list(ollama_chat_stream(settings, [{"role": "user", "content": "z"}], None))
+    assert "pull the model first" in str(ei.value)
+
+
+def test_ollama_chat_stream_skips_blank_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+    class StreamCtx:
+        def __enter__(self) -> StreamCtx:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def raise_for_status(self) -> None:
+            pass
+
+        def iter_lines(self):
+            yield ""
+            yield json.dumps({"message": {"content": "hi"}})
+
+    class ClientCtx:
+        def __enter__(self) -> ClientCtx:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def stream(self, method: str, url: str, json: object | None = None) -> StreamCtx:
+            return StreamCtx()
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: ClientCtx())
+    settings = Settings()
+    assert list(ollama_chat_stream(settings, [{"role": "user", "content": "z"}], None)) == ["hi"]
+
+
+def test_run_agent_ask_stream_parse_retry_then_ok(registry_csv: DatasetRegistry) -> None:
+    settings = Settings(agent_sql_attempts=2, agent_summarize_with_llm=False)
+    vw = registry_csv.list_all()[0].view_name
+    n = 0
+
+    def fake(s, m, f=None):  # noqa: ANN001
+        nonlocal n
+        n += 1
+        if n == 1:
+            return "not-json"
+        return json.dumps({"sql": f"SELECT * FROM {vw} LIMIT 1", "explanation": ""})
+
+    evty = [e["type"] for e in run_agent_ask_stream(
+        registry_csv,
+        settings,
+        AgentAskRequest(question="q"),
+        ollama_call=fake,
+    )]
+    assert evty == ["meta", "sql", "query_result", "answer", "done"]
+
+
+def test_run_agent_ask_stream_sql_retry_then_ok(registry_csv: DatasetRegistry) -> None:
+    settings = Settings(agent_sql_attempts=2, agent_summarize_with_llm=False)
+    vw = registry_csv.list_all()[0].view_name
+    n = 0
+
+    def fake(s, m, f=None):  # noqa: ANN001
+        nonlocal n
+        n += 1
+        if n == 1:
+            return json.dumps(
+                {"sql": "SELECT * FROM totally_missing_view LIMIT 1", "explanation": ""},
+            )
+        return json.dumps({"sql": f"SELECT * FROM {vw} LIMIT 1", "explanation": "fixed"})
+
+    evty = [e["type"] for e in run_agent_ask_stream(
+        registry_csv,
+        settings,
+        AgentAskRequest(question="q"),
+        ollama_call=fake,
+    )]
+    assert evty == ["meta", "sql", "query_result", "answer", "done"]

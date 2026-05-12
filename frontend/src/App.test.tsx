@@ -23,6 +23,9 @@ vi.mock('@/api/client', () => ({
     getSample: vi.fn(),
     runQuery: vi.fn(),
     askAgent: vi.fn(),
+    getProfileHistory: vi.fn(),
+    getProfileDiff: vi.fn(),
+    listSavedQueries: vi.fn(),
   },
 }))
 
@@ -65,6 +68,8 @@ describe('App', () => {
       model: 'qwen3:4b',
       answer: 'Mock answer',
     })
+    vi.mocked(api.getProfileHistory).mockResolvedValue([])
+    vi.mocked(api.listSavedQueries).mockResolvedValue([])
     vi.mocked(api.uploadDatasets).mockResolvedValue([])
   })
 
@@ -78,7 +83,7 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Run query' })).toBeInTheDocument())
 
     await user.click(screen.getByRole('link', { name: /Columns/i }))
-    await waitFor(() => expect(screen.getByPlaceholderText(/Filter by column name/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByPlaceholderText(/Column name/)).toBeInTheDocument())
 
     await user.click(screen.getByRole('link', { name: /Ask/i }))
     await waitFor(() => expect(screen.getByPlaceholderText(/plain language/i)).toBeInTheDocument())

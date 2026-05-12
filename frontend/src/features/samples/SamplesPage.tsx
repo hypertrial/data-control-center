@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { ActionInSql } from '@/components/ActionInSql'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { PageContainer } from '@/components/ui/section'
 import { TableSkeleton } from '@/components/ui/skeleton'
@@ -18,6 +19,7 @@ export function SamplesPage() {
   const activeId = useUiStore((s) => s.activeDatasetId)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<(typeof PAGE_OPTIONS)[number]>(100)
+  const [jump, setJump] = useState('')
 
   const profileQ = useQuery({
     queryKey: ['profile', activeId],
@@ -66,6 +68,7 @@ export function SamplesPage() {
   const res = q.data!
   const cols = res.columns
   const total = res.total_rows
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const start = total > 0 ? (res.page - 1) * res.page_size + 1 : 0
   const end = start + res.row_count - 1
 
@@ -79,13 +82,31 @@ export function SamplesPage() {
           </span>{' '}
           of <span className="tabular-nums text-white/90">{formatCount(total)}</span>
           <span className="mx-2 text-white/15">·</span>
-          Page <span className="tabular-nums">{res.page}</span>
+          Page <span className="tabular-nums">{res.page}</span> of{' '}
+          <span className="tabular-nums">{totalPages}</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1 text-xs text-[hsl(var(--muted))]">
+            Go to
+            <Input
+              className="h-8 w-16 px-2 text-xs"
+              value={jump}
+              placeholder="#"
+              onChange={(e) => setJump(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return
+                const n = Number(jump)
+                if (!Number.isFinite(n)) return
+                const p = Math.min(totalPages, Math.max(1, Math.floor(n)))
+                setPage(p)
+                setJump('')
+              }}
+            />
+          </label>
           <label className="flex items-center gap-2 text-xs text-[hsl(var(--muted))]">
             Page size
             <select
-              className="h-9 rounded-md border border-white/15 bg-black/30 px-2 text-sm"
+              className="h-9 rounded-md border border-border-default bg-black/30 px-2 text-sm"
               value={pageSize}
               onChange={(e) => {
                 setPage(1)
@@ -112,7 +133,7 @@ export function SamplesPage() {
         </div>
       </div>
 
-      <div className="relative overflow-x-auto rounded-xl border border-white/10">
+      <div className="relative overflow-x-auto rounded-xl border border-border-default">
         <table className="w-full min-w-max text-left text-sm">
           <caption className="sr-only">Sample rows</caption>
           <THead>
@@ -147,22 +168,24 @@ export function SamplesPage() {
                   : null
               return (
                 <TR key={i} className="group">
-                  <TD className="sticky left-0 z-10 bg-[hsl(var(--background))]/98 font-mono text-xs text-[hsl(var(--muted))] shadow-[2px_0_8px_rgba(0,0,0,0.25)]">
-                    <div className="flex items-center gap-2">
+                  <TD className="sticky left-0 z-10 bg-[hsl(var(--background))]/98 text-xs text-[hsl(var(--muted))] shadow-[2px_0_8px_rgba(0,0,0,0.25)]">
+                    <div className="flex items-center gap-1.5 font-mono">
                       {globalIdx}
                       {whereSql && (
-                        <span className="opacity-0 transition group-hover:opacity-100">
-                          <ActionInSql sql={whereSql} variant="ghost" size="sm" className="h-7 px-2 text-[10px]">
-                            SQL
-                          </ActionInSql>
-                        </span>
+                        <ActionInSql sql={whereSql} variant="ghost" size="sm" className="h-7 px-1.5 text-[10px]">
+                          SQL
+                        </ActionInSql>
                       )}
                     </div>
                   </TD>
                   {cols.map((c) => (
                     <TD
                       key={c}
-                      className="max-w-[24ch] truncate font-mono text-xs"
+                      className={
+                        typeByCol[c] === 'numeric'
+                          ? 'max-w-[24ch] truncate font-mono text-xs'
+                          : 'max-w-[24ch] truncate text-xs'
+                      }
                       title={formatCell(row[c])}
                     >
                       {formatCell(row[c])}

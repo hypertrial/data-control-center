@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react'
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { ChevronRight } from 'lucide-react'
 import { api } from '@/api/client'
 import type { DatasetProfile, QualityIssue } from '@/api/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { PageContainer, Section } from '@/components/ui/section'
 import { CardSkeleton } from '@/components/ui/skeleton'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
@@ -14,13 +16,8 @@ import { formatBytes, formatCount, formatPercent } from '@/lib/format'
 import { qualityScoreSeverity } from '@/lib/tokens'
 import { useUiStore } from '@/store/uiStore'
 import { cn } from '@/lib/utils'
-
-/** Theme tokens in `index.css` are space-separated HSL triples; ECharts canvas ignores `var()`, so resolve here. */
-function hslFromRootVar(name: string, alpha?: number): string {
-  const triple = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-  if (!triple) return alpha != null ? 'hsla(0, 0%, 45%, 0.35)' : 'hsl(0, 0%, 45%)'
-  return alpha != null ? `hsl(${triple} / ${alpha})` : `hsl(${triple})`
-}
+import { hslFromRootVar, chartPalette, chartGrid, chartTooltip } from '@/lib/chartTheme'
+import { ProfileDiffDialog } from '@/features/overview/DiffDialog'
 
 function HeroMetric({
   label,
@@ -32,7 +29,7 @@ function HeroMetric({
   hint?: ReactNode
 }) {
   return (
-    <Card className="border-white/10">
+    <Card className="border-border-default">
       <CardHeader className="pb-2">
         <CardTitle className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
           {label}
@@ -46,7 +43,13 @@ function HeroMetric({
   )
 }
 
-function QualityHero({ score }: { score: number | null | undefined }) {
+function QualityHero({
+  score,
+  trend,
+}: {
+  score: number | null | undefined
+  trend?: number | null
+}) {
   if (score == null) {
     return <HeroMetric label="Quality score" value="—" hint="Run refresh after first profile" />
   }
@@ -59,16 +62,27 @@ function QualityHero({ score }: { score: number | null | undefined }) {
         ? 'bg-[hsl(var(--severity-warning))]'
         : 'bg-[hsl(var(--severity-ok))]'
   return (
-    <Card className="border-white/10">
+    <Card className="border-border-default">
       <CardHeader className="pb-2">
         <CardTitle className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
           Quality score
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
-        <div className="flex items-baseline gap-1 tabular-nums">
+        <div className="flex items-baseline gap-2 tabular-nums">
           <span className="text-2xl font-semibold">{score}</span>
           <span className="text-sm text-[hsl(var(--muted))]">/100</span>
+          {trend != null && Number.isFinite(trend) && Math.abs(trend) >= 0.05 ? (
+            <span
+              className={cn(
+                'text-xs font-medium',
+                trend > 0 ? 'text-[hsl(var(--severity-ok))]' : 'text-[hsl(var(--severity-critical))]',
+              )}
+              title="Change vs previous profile snapshot"
+            >
+              {trend > 0 ? '▲' : '▼'} {Math.abs(trend).toFixed(1)}
+            </span>
+          ) : null}
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-white/10">
           <div className={cn('h-full rounded-full transition-all', bar)} style={{ width: `${pct}%` }} />
@@ -90,14 +104,14 @@ function FigureCard({
   className?: string
 }) {
   return (
-    <Card className={cn('border-white/10', className)}>
+    <Card className={cn('border-border-default flex h-full flex-col', className)}>
       <CardHeader className="space-y-1 pb-2">
         <CardTitle className="text-sm font-semibold leading-tight">{title}</CardTitle>
         {description ? (
           <p className="text-xs leading-snug text-[hsl(var(--muted))]">{description}</p>
         ) : null}
       </CardHeader>
-      <CardContent className="pt-0">{children}</CardContent>
+      <CardContent className="flex flex-1 flex-col pt-0">{children}</CardContent>
     </Card>
   )
 }
@@ -130,24 +144,19 @@ function ColumnMixDonut({
     ref,
     totalColumns > 0,
     () => {
-      const palette = [
-        hslFromRootVar('--accent'),
-        hslFromRootVar('--severity-info'),
-        hslFromRootVar('--severity-warning'),
-        hslFromRootVar('--muted'),
-      ]
+      const pal = chartPalette()
       return {
-        color: palette,
-        tooltip: { trigger: 'item', valueFormatter: (v: number) => `${v} cols` },
+        color: pal,
+        tooltip: { trigger: 'item' as const, valueFormatter: (v: number) => `${v} cols`, ...chartTooltip() },
         legend: {
-          orient: 'horizontal',
+          orient: 'horizontal' as const,
           bottom: 0,
           textStyle: { color: hslFromRootVar('--muted'), fontSize: 11 },
         },
         series: [
           {
             type: 'pie',
-            radius: ['42%', '68%'],
+            radius: ['45%', '72%'],
             center: ['50%', '46%'],
             avoidLabelOverlap: true,
             label: {
@@ -245,7 +254,7 @@ function MissingnessMiniChart({ names, values }: { names: string[]; values: numb
       const warn = hslFromRootVar('--severity-warning')
       const info = hslFromRootVar('--severity-info')
       return {
-        grid: { left: 8, right: 16, top: 8, bottom: 8, containLabel: true },
+        grid: { ...chartGrid },
         xAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
         yAxis: { type: 'category', data: names, inverse: true, axisLabel: { width: 90, overflow: 'truncate' } },
         series: [
@@ -258,7 +267,11 @@ function MissingnessMiniChart({ names, values }: { names: string[]; values: numb
             },
           },
         ],
-        tooltip: { trigger: 'axis', valueFormatter: (v: number) => `${v.toFixed(2)}%` },
+        tooltip: {
+          trigger: 'axis',
+          valueFormatter: (v: number) => `${v.toFixed(2)}%`,
+          ...chartTooltip(),
+        },
       }
     },
     [names, values],
@@ -291,7 +304,7 @@ function IssuesImpactChart({
       const sevColor = (s: string) => (s === 'critical' ? crit : s === 'warning' ? warn : info)
 
       return {
-        grid: { left: 8, right: 28, top: 8, bottom: 8, containLabel: true },
+        grid: { ...chartGrid, right: 28 },
         xAxis: { type: 'value', max: maxImpact * 1.08, splitLine: { lineStyle: { opacity: 0.2 } } },
         yAxis: {
           type: 'category',
@@ -371,7 +384,7 @@ function chipCols(
           <button
             key={c}
             type="button"
-            className="rounded-md border border-white/15 bg-white/[0.04] px-2 py-0.5 font-mono text-xs text-white/90 hover:bg-white/10"
+            className="rounded-md border border-border-default bg-white/[0.04] px-2 py-0.5 font-mono text-xs text-white/90 hover:bg-white/10"
             onClick={() => onPick(c)}
           >
             {c}
@@ -390,32 +403,32 @@ function StructureSummary({ profile, onPick }: { profile: DatasetProfile; onPick
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-2 text-center">
+        <div className="rounded-lg border border-border-default bg-white/[0.03] px-2 py-2 text-center">
           <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">Date</div>
           <div className="mt-0.5 truncate font-mono text-xs text-white" title={profile.primary_date_column ?? ''}>
             {profile.primary_date_column ?? '—'}
           </div>
         </div>
-        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-2 text-center">
+        <div className="rounded-lg border border-border-default bg-white/[0.03] px-2 py-2 text-center">
           <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">IDs</div>
           <div className="mt-0.5 tabular-nums text-lg font-semibold text-white">{idCount}</div>
         </div>
-        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-2 text-center">
+        <div className="rounded-lg border border-border-default bg-white/[0.03] px-2 py-2 text-center">
           <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">Keys</div>
           <div className="mt-0.5 tabular-nums text-lg font-semibold text-white">{keyCount}</div>
         </div>
-        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-2 text-center">
+        <div className="rounded-lg border border-border-default bg-white/[0.03] px-2 py-2 text-center">
           <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">Measures</div>
           <div className="mt-0.5 tabular-nums text-lg font-semibold text-white">{measureCount}</div>
         </div>
       </div>
       {profile.likely_grain ? (
-        <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+        <div className="rounded-lg border border-border-default bg-white/[0.02] px-3 py-2">
           <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">Grain</div>
           <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-white/90">{profile.likely_grain}</p>
         </div>
       ) : null}
-      <div className="space-y-2.5 border-t border-white/10 pt-3">
+      <div className="space-y-2.5 border-t border-border-default pt-3">
         {profile.primary_date_column
           ? chipCols('Primary date', [profile.primary_date_column], onPick)
           : null}
@@ -432,12 +445,28 @@ export function OverviewPage() {
   const location = useLocation()
   const openCol = useOpenColumnDrawer()
   const searchSuffix = location.search.startsWith('?') ? location.search.slice(1) : location.search
+  const [diffOpen, setDiffOpen] = useState(false)
 
   const q = useQuery({
     queryKey: ['profile', activeId],
     queryFn: () => api.getProfile(activeId!),
     enabled: !!activeId,
   })
+
+  const histQ = useQuery({
+    queryKey: ['profile-history', activeId],
+    queryFn: () => api.getProfileHistory(activeId!, 10),
+    enabled: !!activeId,
+  })
+
+  const trend = useMemo(() => {
+    const h = histQ.data
+    if (!h || h.length < 2) return null
+    const a = h[0]?.quality_score
+    const b = h[1]?.quality_score
+    if (a == null || b == null) return null
+    return a - b
+  }, [histQ.data])
 
   const topNull = useMemo(() => {
     const cols = q.data?.column_profiles ?? []
@@ -492,24 +521,15 @@ export function OverviewPage() {
 
   return (
     <PageContainer>
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight" title={p.dataset_id}>
-          {p.name}
-        </h1>
-        <p className="mt-1 font-mono text-xs text-[hsl(var(--muted))]" title="Dataset id">
-          {p.dataset_id}
-        </p>
-      </div>
-
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <HeroMetric label="Rows" value={formatCount(p.rows)} hint="Since last profile" />
         <HeroMetric label="Columns" value={formatCount(p.columns)} hint={typeDots} />
         <HeroMetric label="File size" value={formatBytes(p.file_size_bytes)} />
-        <QualityHero score={p.quality_score} />
+        <QualityHero score={p.quality_score} trend={trend} />
       </div>
 
       <Section title="Profile snapshot" description="Column mix, completeness, and inferred structure at a glance.">
-        <div className="grid gap-3 lg:grid-cols-3">
+        <div className="grid gap-3 lg:grid-cols-3 lg:items-stretch">
           <FigureCard
             title="Column mix"
             description="How inferred types split across the schema."
@@ -540,15 +560,21 @@ export function OverviewPage() {
         title="Quality focus"
         description="Largest score drivers and columns with the most nulls in the profile sample."
         action={
-          <Link
-            to={{ pathname: '/quality', search: searchSuffix }}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-white/15 bg-transparent px-3 text-xs font-medium hover:bg-white/5"
-          >
-            All issues
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setDiffOpen(true)}>
+              What changed?
+            </Button>
+            <Link
+              to={{ pathname: '/quality', search: searchSuffix }}
+              className="inline-flex h-8 items-center gap-1 rounded-md border border-border-default bg-transparent px-3 text-xs font-medium hover:bg-white/5"
+            >
+              All issues
+              <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+            </Link>
+          </div>
         }
       >
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid gap-3 lg:grid-cols-2 lg:items-stretch">
           <FigureCard title="Issue impact" description="Highest score impact first (max five).">
             <IssuesImpactChart issues={topIssues} openCol={openCol} />
           </FigureCard>
@@ -560,6 +586,7 @@ export function OverviewPage() {
           </FigureCard>
         </div>
       </Section>
+      <ProfileDiffDialog datasetId={activeId} open={diffOpen} onOpenChange={setDiffOpen} />
     </PageContainer>
   )
 }

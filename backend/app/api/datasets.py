@@ -13,10 +13,14 @@ from app.models.api import (
     ColumnProfile,
     DatasetProfile,
     DatasetSummary,
+    NullPctChange,
+    ProfileDiffResponse,
+    ProfileHistoryEntry,
     QualityIssue,
     RegisterFileRequest,
     RegisterFolderRequest,
 )
+from app.services.profile_diff import diff_profile_dicts
 from app.services.profiler import build_profile
 from app.services.registry import SUPPORTED_EXTENSIONS
 from app.services.workspace import sanitize_sql_identifier
@@ -178,6 +182,75 @@ def refresh_profile(
     except Exception as e:
         workspace.job_finish(job_id, "failed", str(e))
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/{dataset_id}/profile/history", response_model=list[ProfileHistoryEntry])
+def profile_history(
+    dataset_id: str,
+    registry: RegistryDep,
+    workspace: WorkspaceDep,
+    limit: int = Query(10, ge=1, le=50),
+) -> list[ProfileHistoryEntry]:
+    if not registry.get(dataset_id):
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    rows = workspace.list_profile_history(dataset_id, limit)
+    return [ProfileHistoryEntry(**r) for r in rows]
+
+
+@router.get("/{dataset_id}/profile/diff", response_model=ProfileDiffResponse)
+def profile_diff_route(
+    dataset_id: str,
+    registry: RegistryDep,
+    workspace: WorkspaceDep,
+    a: str | None = Query(None),
+    b: str | None = Query(None),
+) -> ProfileDiffResponse:
+    if not registry.get(dataset_id):
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    hist = workspace.list_profile_history(dataset_id, 50)
+    if a and b:
+        ma = workspace.get_profile_history_meta(a)
+        mb = workspace.get_profile_history_meta(b)
+        if not ma or ma["dataset_id"] != dataset_id:
+            raise HTTPException(status_code=404, detail="Unknown history snapshot a")
+        if not mb or mb["dataset_id"] != dataset_id:
+            raise HTTPException(status_code=404, detail="Unknown history snapshot b")
+        blob_a = workspace.load_profile_history_blob(a)
+        blob_b = workspace.load_profile_history_blob(b)
+        if not blob_a or not blob_b:
+            raise HTTPException(status_code=404, detail="Profile snapshot not found")
+        diff = diff_profile_dicts(blob_a, blob_b)
+        return ProfileDiffResponse(
+            history_id_a=a,
+            history_id_b=b,
+            created_at_a=ma["created_at"],
+            created_at_b=mb["created_at"],
+            new_columns=diff["new_columns"],
+            removed_columns=diff["removed_columns"],
+            null_pct_changes=[NullPctChange(**x) for x in diff["null_pct_changes"]],
+            quality_score_delta=diff["quality_score_delta"],
+        )
+    if len(hist) < 2:
+        raise HTTPException(
+            status_code=404,
+            detail="At least two profile snapshots are required for diff",
+        )
+    id_new, id_old = hist[0]["history_id"], hist[1]["history_id"]
+    blob_new = workspace.load_profile_history_blob(id_new)
+    blob_old = workspace.load_profile_history_blob(id_old)
+    if not blob_new or not blob_old:
+        raise HTTPException(status_code=404, detail="Profile snapshot not found")
+    diff = diff_profile_dicts(blob_old, blob_new)
+    return ProfileDiffResponse(
+        history_id_a=id_old,
+        history_id_b=id_new,
+        created_at_a=hist[1]["created_at"],
+        created_at_b=hist[0]["created_at"],
+        new_columns=diff["new_columns"],
+        removed_columns=diff["removed_columns"],
+        null_pct_changes=[NullPctChange(**x) for x in diff["null_pct_changes"]],
+        quality_score_delta=diff["quality_score_delta"],
+    )
 
 
 @router.get("/{dataset_id}/columns", response_model=list[ColumnProfile])

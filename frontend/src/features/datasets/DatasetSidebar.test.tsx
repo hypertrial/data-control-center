@@ -6,6 +6,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api/client'
 import { DatasetSidebar } from '@/features/datasets/DatasetSidebar'
 
+const toastMock = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
+
+vi.mock('sonner', () => ({ toast: toastMock }))
+
 vi.mock('@/api/client', () => ({
   api: {
     listDatasets: vi.fn(),
@@ -22,6 +26,8 @@ function wrap(ui: React.ReactElement) {
 
 describe('DatasetSidebar', () => {
   beforeEach(() => {
+    toastMock.error.mockReset()
+    toastMock.success.mockReset()
     vi.mocked(api.listDatasets).mockResolvedValue([
       {
         dataset_id: 'ds_001',
@@ -94,7 +100,7 @@ describe('DatasetSidebar', () => {
       'input[type="file"]:not([webkitdirectory])',
     ) as HTMLInputElement
     await user.upload(fileInput, new File(['1'], 'y.csv', { type: 'text/csv' }))
-    await waitFor(() => expect(screen.getByText('nf')).toBeInTheDocument())
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith('nf'))
   })
 
   it('rejects unsupported uploads from file input', async () => {
@@ -106,7 +112,11 @@ describe('DatasetSidebar', () => {
     const bad = new File(['x'], 'bad.exe', { type: 'application/octet-stream' })
     Object.defineProperty(fileInput, 'files', { value: [bad], configurable: true })
     fireEvent.change(fileInput)
-    await waitFor(() => expect(screen.getByText(/No supported files/)).toBeInTheDocument())
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith(
+        expect.stringMatching(/No supported files/),
+      ),
+    )
   })
 
   it('filters mixed file list to supported extensions only', async () => {
@@ -138,13 +148,18 @@ describe('DatasetSidebar', () => {
     ) as HTMLInputElement
     Object.defineProperty(fileInput, 'files', { value: [], configurable: true })
     fireEvent.change(fileInput)
-    await waitFor(() => expect(screen.getByText(/No supported files/)).toBeInTheDocument())
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith(
+        expect.stringMatching(/No supported files/),
+      ),
+    )
   })
 
   it('drops supported files onto the drop zone', async () => {
     wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
-    const zone = screen.getByRole('button', { name: /Upload files/ })
+    const btn = screen.getByRole('button', { name: /Upload files/ })
+    const zone = btn.parentElement!
     const file = new File(['a'], 'dropped.csv', { type: 'text/csv' })
     const dt = new DataTransfer()
     dt.items.add(file)
@@ -202,7 +217,7 @@ describe('DatasetSidebar', () => {
     ) as HTMLInputElement
     void user.upload(fileInput, new File(['x'], 'p.csv'))
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /Choose folder/ })).toBeDisabled(),
+      expect(screen.getByRole('button', { name: 'Folder' })).toBeDisabled(),
     )
   })
 })
