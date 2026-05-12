@@ -84,20 +84,23 @@ export function AskPage() {
   }
 
   return (
-    <PageContainer>
-      <div className="flex min-h-[calc(100vh-8rem)] flex-1 flex-col gap-3 md:flex-row md:items-stretch">
+    <PageContainer className="flex h-full min-h-0 flex-col space-y-0 overflow-hidden">
+      <div className="flex h-full min-h-0 flex-1 flex-col gap-3 overflow-hidden md:flex-row md:items-stretch">
         <ConversationList />
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-          <div className="text-xs text-fg-muted">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden">
+          <div className="shrink-0 text-xs text-fg-muted">
             Chats are saved in the workspace DB. Follow-up questions reuse recent turns for context.
           </div>
 
           {profile && (!activeConversationId || turns.length === 0) ? (
-            <SuggestedPrompts profile={profile} onPick={setComposerText} />
+            <div className="shrink-0">
+              <SuggestedPrompts profile={profile} onPick={setComposerText} />
+            </div>
           ) : null}
 
           <AskThread
+            conversationId={activeConversationId}
             turns={turns}
             streamingQuestion={streamQuestion}
             streaming={current}

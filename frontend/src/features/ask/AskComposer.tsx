@@ -80,7 +80,7 @@ export function AskComposer({
   }
 
   return (
-    <div className="sticky bottom-0 z-10 border-t border-border-default bg-surface-1/95 pb-3 pt-3 backdrop-blur md:border-t-0 md:pt-2">
+    <div className="shrink-0 border-t border-border-default bg-surface-1/95 pb-3 pt-3 backdrop-blur md:pt-2">
       <div className="space-y-2">
         <label htmlFor="dcc-ask-q" className="sr-only">
           Question
