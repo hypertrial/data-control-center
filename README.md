@@ -56,7 +56,7 @@ Open `http://localhost:5173`. The dev server proxies `/api` to the backend.
 
 ## Usage notes
 
-- In the **web UI**, add datasets by **uploading files** (drag-and-drop or folder selection). The API stores copies under **`.dcc_uploads/`** (relative to the backend cwd unless overridden), then registers them; tune size limits with **`DCC_UPLOAD_MAX_BYTES_PER_FILE`** (default 250 MiB).
+- In the **web UI**, add datasets by **uploading files** (drag-and-drop or folder selection). The API stores copies under **`.dcc_uploads/`** (relative to the backend cwd unless overridden), then registers them; tune size limits with **`DCC_UPLOAD_MAX_BYTES_PER_FILE`** (default 2 GiB).
 - You can still register datasets via the API using **absolute file paths** (CSV, Parquet, JSON / JSON Lines, TSV) or a **folder** of those files.
 - DuckDB creates one internal **view per dataset** whose SQL name is derived from the **file stem** (e.g. `player_ratings_2006_2026.parquet` → `player_ratings_2006_2026`). If two files share the same stem, the later registration gets a suffix such as `ratings_ds_002`. Reserved SQL-like names get a `_dcc` suffix. **`GET /api/datasets`** includes **`view_name`** on each summary so the UI can quote it correctly. Ad-hoc SQL must reference at least one registered view when datasets exist. On startup, the API **renames legacy views** of the form `v_{dataset_id}` (e.g. `v_ds_001`) to the current stem-based rule when the source file is still present.
 - In the **SQL** tab, **⌘+Enter** (macOS) or **Ctrl+Enter** runs the current query (same as **Run query**).
