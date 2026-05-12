@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     sample_default_page_size: int = 100
     # Browser uploads are copied here, then registered with DuckDB
     upload_dir: Path = Path(".dcc_uploads")
-    upload_max_bytes_per_file: int = 250 * 1024 * 1024  # 250 MiB
+    upload_max_bytes_per_file: int = 2 * 1024 * 1024 * 1024  # 2 GiB
     # Local LLM (Ollama default)
     llm_base_url: str = "http://127.0.0.1:11434"
     llm_model: str = "qwen3:4b"
