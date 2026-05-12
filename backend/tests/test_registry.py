@@ -265,3 +265,30 @@ def test_register_path_reserved_keyword_stem(tmp_path: Path) -> None:
     p.write_text("a\n1\n")
     ds = reg.register_path(p)
     assert ds.view_name == "order_dcc"
+
+
+def test_unregister_removes_dataset_view_and_profile_state(tmp_path: Path) -> None:
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    reg = DatasetRegistry(ws)
+    p = tmp_path / "gone.csv"
+    p.write_text("a\n1\n")
+    ds = reg.register_path(p)
+    ws.save_profile_cache(ds.dataset_id, {"rows": 1, "columns": 1, "column_profiles": []})
+    ws.job_insert("job_1", "profile_refresh", ds.dataset_id, "running")
+
+    assert reg.unregister(ds.dataset_id)
+    assert reg.get(ds.dataset_id) is None
+    assert not reg.unregister(ds.dataset_id)
+    assert ws.load_profile_cache(ds.dataset_id) is None
+    assert ws.list_profile_history(ds.dataset_id) == []
+    assert ws.connection.execute(
+        "SELECT dataset_id FROM dcc_datasets WHERE dataset_id = ?",
+        [ds.dataset_id],
+    ).fetchone() is None
+    assert ws.connection.execute(
+        "SELECT job_id FROM dcc_jobs WHERE dataset_id = ?",
+        [ds.dataset_id],
+    ).fetchone() is None
+    with pytest.raises(Exception):
+        ws.connection.execute(f"SELECT COUNT(*) FROM {sanitize_sql_identifier(ds.view_name)}")

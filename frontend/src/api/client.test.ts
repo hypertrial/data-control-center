@@ -108,6 +108,17 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/profile')
   })
 
+  it('deleteDataset DELETE', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      statusText: 'No Content',
+      text: () => Promise.resolve(''),
+    } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    await api.deleteDataset('ds_1')
+    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1', { method: 'DELETE' })
+  })
+
   it('refreshProfile POST', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonOk({ dataset_id: 'ds_1' }))
     vi.stubGlobal('fetch', fetchMock)

@@ -273,6 +273,28 @@ class DatasetRegistry:
                 continue
         return out
 
+    def unregister(self, dataset_id: str) -> bool:
+        with self._lock:
+            ds = self._by_id.get(dataset_id)
+            if not ds:
+                return False
+            self._workspace.drop_view_if_exists(ds.view_name)
+            self._workspace.delete_profile_cache(dataset_id)
+            self._workspace.connection.execute(
+                "DELETE FROM dcc_profile_history WHERE dataset_id = ?",
+                [dataset_id],
+            )
+            self._workspace.connection.execute(
+                "DELETE FROM dcc_jobs WHERE dataset_id = ?",
+                [dataset_id],
+            )
+            self._workspace.connection.execute(
+                "DELETE FROM dcc_datasets WHERE dataset_id = ?",
+                [dataset_id],
+            )
+            self._by_id.pop(dataset_id, None)
+            return True
+
     def get(self, dataset_id: str) -> RegisteredDataset | None:
         return self._by_id.get(dataset_id)
 

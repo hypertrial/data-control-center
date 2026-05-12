@@ -6,7 +6,7 @@ import { DatasetDropzone } from '@/features/datasets/DatasetDropzone'
 import { ACCEPT_ATTR, filterSupportedFiles } from '@/features/datasets/uploadFiles'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
-import { Database, Loader2, PanelLeftClose, PanelLeft, Upload, X, FolderOpen } from 'lucide-react'
+import { Database, Loader2, PanelLeftClose, PanelLeft, Upload, X, FolderOpen, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { formatBytes, formatCount, formatDatasetFormat, stripFileExtension } from '@/lib/format'
@@ -77,6 +77,25 @@ export function DatasetSidebar() {
       }
     },
     [qc, setActiveDatasetId],
+  )
+
+  const removeDataset = useCallback(
+    async (datasetId: string, name: string) => {
+      if (!window.confirm(`Remove ${name} from this workspace? The source file will not be deleted.`)) {
+        return
+      }
+      try {
+        await api.deleteDataset(datasetId)
+        if (activeDatasetId === datasetId) setActiveDatasetId(null)
+        await qc.invalidateQueries({ queryKey: ['datasets'] })
+        await qc.invalidateQueries({ queryKey: ['profile', datasetId] })
+        await qc.invalidateQueries({ queryKey: ['profile-history', datasetId] })
+        toast.success(`Removed ${name}.`)
+      } catch (e) {
+        toast.error((e as Error).message)
+      }
+    },
+    [activeDatasetId, qc, setActiveDatasetId],
   )
 
   const emptyWorkspace = !q.isLoading && list.length === 0
@@ -316,7 +335,7 @@ export function DatasetSidebar() {
                         ? 'bg-[hsl(var(--severity-ok))]'
                         : 'bg-white/20'
                 return (
-                  <li key={d.dataset_id}>
+                  <li key={d.dataset_id} className="group relative">
                     <button
                       type="button"
                       title={`${d.dataset_id} — ${d.source_path}`}
@@ -330,6 +349,7 @@ export function DatasetSidebar() {
                         active ? 'border-border-default bg-white/10 shadow-inner' : 'hover:bg-white/5',
                         active && 'border-l-2 border-l-[hsl(var(--accent))] pl-[6px]',
                         narrow && 'items-center px-1 py-2',
+                        !narrow && 'pr-9',
                       )}
                     >
                       <div className={cn('flex items-center gap-2', narrow && 'justify-center')}>
@@ -359,6 +379,19 @@ export function DatasetSidebar() {
                         </div>
                       )}
                     </button>
+                    {!narrow && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-1 h-7 w-7 text-fg-muted opacity-0 hover:text-[hsl(var(--status-error))] focus:opacity-100 group-hover:opacity-100"
+                        aria-label={`Remove ${stripFileExtension(d.name)}`}
+                        title="Remove dataset"
+                        onClick={() => void removeDataset(d.dataset_id, d.name)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </li>
                 )
               })}

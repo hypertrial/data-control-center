@@ -117,7 +117,10 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
     names = schema.names()
     dtypes = [schema[n] for n in names]
 
-    row_count = int(lf.select(pl.len().alias("n")).collect()["n"][0])
+    stats_exprs = [pl.len().alias("_row_count")]
+    stats_exprs.extend(pl.col(col).null_count().alias(f"__nulls_{idx}") for idx, col in enumerate(names))
+    stats = lf.select(stats_exprs).collect()
+    row_count = int(stats["_row_count"][0])
     col_count = len(names)
 
     # Sample for inference (limit rows)
@@ -134,12 +137,8 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
     id_candidates: list[str] = []
     key_candidates: list[str] = []
 
-    for col, dtype in zip(names, dtypes, strict=False):
-        nulls_full = (
-            int(lf.select(pl.col(col).null_count().alias("_ncc")).collect()["_ncc"][0])
-            if row_count
-            else 0
-        )
+    for idx, (col, dtype) in enumerate(zip(names, dtypes, strict=False)):
+        nulls_full = int(stats[f"__nulls_{idx}"][0]) if row_count else 0
         null_pct = (nulls_full / row_count * 100) if row_count else 0.0
         null_cells += nulls_full
 

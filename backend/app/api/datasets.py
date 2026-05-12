@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile
 
 from app.api.deps import RegistryDep, SettingsDep, WorkspaceDep
 from app.models.api import (
@@ -139,6 +139,13 @@ def get_dataset(dataset_id: str, registry: RegistryDep) -> DatasetSummary:
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
     return registry.to_summary(ds)
+
+
+@router.delete("/{dataset_id}", status_code=204)
+def delete_dataset(dataset_id: str, registry: RegistryDep) -> Response:
+    if not registry.unregister(dataset_id):
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    return Response(status_code=204)
 
 
 def _cached_profile(dataset_id: str, registry: RegistryDep, workspace: WorkspaceDep) -> DatasetProfile:

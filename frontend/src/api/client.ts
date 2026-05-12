@@ -63,6 +63,14 @@ export const api = {
   getProfile: (datasetId: string) =>
     handle<DatasetProfile>(fetch(`${API}/datasets/${datasetId}/profile`)),
 
+  deleteDataset: async (datasetId: string) => {
+    const r = await fetch(`${API}/datasets/${encodeURIComponent(datasetId)}`, { method: 'DELETE' })
+    if (!r.ok) {
+      const text = await r.text()
+      throw new Error(text || r.statusText)
+    }
+  },
+
   refreshProfile: (datasetId: string) =>
     handle<DatasetProfile>(
       fetch(`${API}/datasets/${datasetId}/profile/refresh`, { method: 'POST' }),

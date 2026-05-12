@@ -109,6 +109,19 @@ def test_get_dataset_404(client):
     assert client.get("/api/datasets/ds_missing").status_code == 404
 
 
+def test_delete_dataset(client, tmp_path):
+    csv = tmp_path / "delete_me.csv"
+    csv.write_text("x\n1\n")
+    reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
+    did = reg.json()["dataset_id"]
+    client.get(f"/api/datasets/{did}/profile")
+
+    assert client.delete(f"/api/datasets/{did}").status_code == 204
+    assert client.get(f"/api/datasets/{did}").status_code == 404
+    assert client.get(f"/api/datasets/{did}/profile/history").status_code == 404
+    assert client.delete(f"/api/datasets/{did}").status_code == 404
+
+
 def test_profile_columns_quality_404(client):
     for path in (
         "/api/datasets/ds_missing/profile",

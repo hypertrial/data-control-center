@@ -14,6 +14,7 @@ vi.mock('@/api/client', () => ({
   api: {
     listDatasets: vi.fn(),
     uploadDatasets: vi.fn(),
+    deleteDataset: vi.fn(),
   },
 }))
 
@@ -28,6 +29,7 @@ describe('DatasetSidebar', () => {
   beforeEach(() => {
     toastMock.error.mockReset()
     toastMock.success.mockReset()
+    vi.mocked(api.deleteDataset).mockReset()
     vi.mocked(api.listDatasets).mockResolvedValue([
       {
         dataset_id: 'ds_001',
@@ -52,6 +54,7 @@ describe('DatasetSidebar', () => {
         file_size_bytes: 1,
       },
     ])
+    vi.mocked(api.deleteDataset).mockResolvedValue(undefined)
   })
 
   it('lists datasets and selects', async () => {
@@ -59,6 +62,32 @@ describe('DatasetSidebar', () => {
     wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
     await user.click(screen.getByText(/^a$/))
+  })
+
+  it('removes a dataset after confirmation', async () => {
+    const user = userEvent.setup()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    wrap(<DatasetSidebar />)
+    await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: 'Remove a' }))
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      'Remove a.csv from this workspace? The source file will not be deleted.',
+    )
+    await waitFor(() => expect(api.deleteDataset).toHaveBeenCalledWith('ds_001'))
+    expect(toastMock.success).toHaveBeenCalledWith('Removed a.csv.')
+  })
+
+  it('does not remove a dataset when confirmation is cancelled', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    wrap(<DatasetSidebar />)
+    await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: 'Remove a' }))
+
+    expect(api.deleteDataset).not.toHaveBeenCalled()
   })
 
   it('loading and error', async () => {

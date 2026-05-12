@@ -199,6 +199,39 @@ def test_build_profile_high_null_column_flag(tmp_path: Path) -> None:
     assert "high_missingness" in col_a.quality_flags
 
 
+def test_build_profile_collects_wide_null_counts_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "wide_nulls.csv"
+    columns = [f"c{i}" for i in range(12)]
+    rows = [",".join(columns)]
+    rows.extend(",".join("" if i % 3 == 0 else str(i) for i in range(len(columns))) for _ in range(5))
+    path.write_text("\n".join(rows))
+    ds = RegisteredDataset(
+        dataset_id="ds_wide_nulls",
+        source_path=path,
+        view_name="vw_nulls",
+        format="csv",
+        row_count=5,
+        column_count=len(columns),
+        file_size_bytes=path.stat().st_size,
+    )
+    select_calls = 0
+    real_select = pl.LazyFrame.select
+
+    def counting_select(self: pl.LazyFrame, *exprs, **named_exprs):  # noqa: ANN002, ANN003, ANN201
+        nonlocal select_calls
+        select_calls += 1
+        return real_select(self, *exprs, **named_exprs)
+
+    monkeypatch.setattr(pl.LazyFrame, "select", counting_select)
+
+    prof = build_profile(ds)
+
+    assert prof.columns == len(columns)
+    assert select_calls == 1
+
+
 def test_build_profile_utf8_text_top_values(tmp_path: Path) -> None:
     path = tmp_path / "textcol.csv"
     path.write_text("note\n" + "\n".join(f"unique-{i}" for i in range(80)))
