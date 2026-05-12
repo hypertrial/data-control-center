@@ -101,7 +101,7 @@ export function QueryPage() {
   }, [])
 
   const execRun = useCallback(() => {
-    runMutation.mutate({ sql: sqlText, max_rows: maxRows })
+    runMutation.mutate({ sql: sqlText, max_rows: maxRows > 0 ? maxRows : null })
     pushHistory(sqlText)
   }, [runMutation, sqlText, maxRows, pushHistory])
 

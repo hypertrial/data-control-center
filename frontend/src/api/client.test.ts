@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api } from '@/api/client'
+import { api, askAgentStream } from '@/api/client'
 
 function jsonOk(data: unknown): Response {
   return {
@@ -227,5 +227,40 @@ describe('api client', () => {
         max_rows: 50,
       }),
     })
+  })
+
+  it('askAgentStream parses SSE events across chunks', async () => {
+    const enc = new TextEncoder()
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(enc.encode('data: {"type":"meta","data":{"model":"m"}}\n'))
+        controller.enqueue(enc.encode('\ndata: {"type":"answer","data":{"answer":"ok"}}\n\n'))
+        controller.close()
+      },
+    })
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(stream, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const events: unknown[] = []
+    await askAgentStream({ question: 'q' }, (ev) => events.push(ev))
+
+    expect(events).toEqual([
+      { type: 'meta', data: { model: 'm' } },
+      { type: 'answer', data: { answer: 'ok' } },
+    ])
+    expect(fetchMock).toHaveBeenCalledWith('/api/agent/ask/stream', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('askAgentStream throws for HTTP and missing body errors', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(textErr('stream failed')))
+    await expect(askAgentStream({ question: 'q' }, () => {})).rejects.toThrow('stream failed')
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, body: null } as Response))
+    await expect(askAgentStream({ question: 'q' }, () => {})).rejects.toThrow('No response body')
   })
 })
