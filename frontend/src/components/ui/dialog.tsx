@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- Radix primitive wrappers intentionally re-export component parts. */
 import * as React from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
@@ -25,9 +26,10 @@ export const DialogContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
     title?: string
+    titleClassName?: string
     showClose?: boolean
   }
->(({ className, children, title, showClose = true, ...props }, ref) => (
+>(({ className, children, title, titleClassName, showClose = true, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
@@ -37,9 +39,12 @@ export const DialogContent = React.forwardRef<
         className,
       )}
       {...props}
+      aria-describedby={props['aria-describedby'] ?? undefined}
     >
       {title ? (
-        <DialogPrimitive.Title className="text-lg font-semibold tracking-tight">{title}</DialogPrimitive.Title>
+        <DialogPrimitive.Title className={cn('text-lg font-semibold tracking-tight', titleClassName)}>
+          {title}
+        </DialogPrimitive.Title>
       ) : null}
       {showClose && (
         <DialogPrimitive.Close asChild>

@@ -65,6 +65,9 @@ Open `http://localhost:5173`. The dev server proxies `/api` to the backend.
 - **`POST /api/datasets/{dataset_id}/profile/refresh`** recomputes the cached profile for one dataset (records an in-process job row in the workspace DB).
 - **`GET /api/datasets`** responses may include an optional **`quality_score`** (0–100) on each dataset when a cached profile exists for that id.
 - **`GET /api/datasets/{dataset_id}/sample`** includes **`total_rows`**: a full-table row count before `LIMIT` / `OFFSET` are applied.
+- Profile refreshes are retained as recent snapshots. Use **`GET /api/datasets/{dataset_id}/profile/history`** to list them and **`GET /api/datasets/{dataset_id}/profile/diff`** to compare the latest two snapshots.
+- Saved SQL snippets are persisted in the workspace DB via **`/api/saved-queries`** and are available from the SQL tab and command palette.
+- Global UI shortcuts: **⌘/Ctrl+K** opens the command palette, **?** opens the shortcuts sheet, **/** focuses dataset search, **g o/c/q/s/a/y** jumps to Overview/Columns/Quality/Samples/Ask/SQL, and **r** refreshes cached queries.
 
 ## Local LLM assistant (Ask tab)
 
@@ -79,7 +82,8 @@ Open `http://localhost:5173`. The dev server proxies `/api` to the backend.
 - Keep the Ollama app/daemon running, then run **`make dev`** as usual. Open the **Ask** tab, type a question in plain language, and optional **max_rows** for the result preview.
 - The backend calls Ollama at **`DCC_LLM_BASE_URL`** (default `http://127.0.0.1:11434`), asks the model for a single read-only **`SELECT`/`WITH`** statement, runs it through the same validation and row limits as **`POST /api/query`**, and returns a concise local answer from the executed result. Set **`DCC_AGENT_SUMMARIZE_WITH_LLM=true`** if you prefer a second model call to summarize the result. Generated SQL can be opened in the **SQL** tab.
 - Useful settings (all prefixed with **`DCC_`**): **`LLM_BASE_URL`**, **`LLM_MODEL`**, **`LLM_TIMEOUT_SECONDS`**, **`LLM_SQL_NUM_PREDICT`**, **`LLM_SUMMARY_NUM_PREDICT`**, **`LLM_TEMPERATURE`**, **`LLM_THINK`**, **`AGENT_CONTEXT_MAX_COLUMNS`**, **`AGENT_MAX_ROWS`**, **`AGENT_SQL_ATTEMPTS`**, **`AGENT_SUMMARIZE_WITH_LLM`**, **`AGENT_SUMMARIZE_MAX_JSON_CHARS`**. The default Ask path keeps prompts and generated answers bounded for responsive local inference.
-- **HTTP API:** `POST /api/agent/ask` with JSON body **`{ "question": "...", "dataset_ids": ["ds_001"] | null, "max_rows": 200 }`**. The UI sends **`dataset_ids: [active]`** when a dataset is selected in the strip, and **`null`** otherwise (all datasets in context).
+- **HTTP API:** `POST /api/agent/ask` with JSON body **`{ "question": "...", "dataset_ids": ["ds_001"] | null, "max_rows": 200 }`**. The UI sends **`dataset_ids: [active]`** by default when a dataset is selected, or **`null`** for all registered datasets.
+- **Streaming API:** `POST /api/agent/ask/stream` accepts the same body and returns Server-Sent Events (`meta`, `sql`, `query_result`, `token`, `answer`, `error`, `done`) for the Ask tab's live response.
 - **CI** does not run Ollama; backend tests **mock** the LLM HTTP calls.
 
 ## Tests

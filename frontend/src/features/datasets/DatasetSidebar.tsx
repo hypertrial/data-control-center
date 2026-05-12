@@ -2,11 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  ACCEPT_ATTR,
-  DatasetDropzone,
-  filterSupportedFiles,
-} from '@/features/datasets/DatasetDropzone'
+import { DatasetDropzone } from '@/features/datasets/DatasetDropzone'
+import { ACCEPT_ATTR, filterSupportedFiles } from '@/features/datasets/uploadFiles'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
 import { Database, Loader2, PanelLeftClose, PanelLeft, Upload, X, FolderOpen } from 'lucide-react'

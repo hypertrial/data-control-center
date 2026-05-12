@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
-export function isMacPlatform(): boolean {
+function isMacPlatform(): boolean {
   if (typeof navigator === 'undefined') return true
   return /Mac|iPhone|iPod|iPad/i.test(navigator.platform || navigator.userAgent)
 }

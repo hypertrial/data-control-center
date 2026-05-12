@@ -17,5 +17,10 @@ beforeEach(() => {
     qualitySeverityFilter: 'all',
     pendingQuery: null,
     sqlInjectTick: 0,
+    commandPaletteOpen: false,
+    shortcutSheetOpen: false,
+    sidebarCollapsed: false,
+    sidebarMobileOpen: false,
+    columnsTableHidden: {},
   })
 })

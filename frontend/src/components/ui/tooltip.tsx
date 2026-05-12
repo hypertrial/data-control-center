@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- Radix primitive wrappers intentionally re-export component parts. */
 import * as React from 'react'
 import * as TooltipPrimitive from '@radix-ui/react-tooltip'
 import { cn } from '@/lib/utils'

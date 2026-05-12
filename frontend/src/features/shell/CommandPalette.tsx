@@ -33,11 +33,11 @@ export function CommandPalette() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
-        title=""
+        title="Command palette"
+        titleClassName="sr-only"
         showClose
         className="max-w-lg overflow-hidden gap-0 p-0 sm:max-w-xl [&>button]:text-fg-muted"
       >
-        <div className="sr-only">Command palette</div>
         <Command
           className={cn(
             'bg-surface-1 text-fg',
