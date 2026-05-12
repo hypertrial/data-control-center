@@ -92,6 +92,8 @@ export type AgentAskRequest = {
   question: string
   dataset_ids?: string[] | null
   max_rows?: number | null
+  conversation_id?: string | null
+  use_history?: boolean
 }
 
 export type AgentAskResponse = {
@@ -158,9 +160,53 @@ export type SavedQueryPatch = {
   sql?: string | null
 }
 
+export type AskConversation = {
+  conversation_id: string
+  title: string
+  dataset_ids: string[] | null
+  created_at: string
+  updated_at: string
+}
+
+export type AskTurn = {
+  turn_id: string
+  conversation_id: string
+  seq: number
+  question: string
+  sql?: string | null
+  explanation?: string | null
+  answer?: string | null
+  error?: string | null
+  attempts: Record<string, unknown>[]
+  query_result?: QueryResult | null
+  model?: string | null
+  elapsed_ms?: number | null
+  created_at: string
+}
+
+export type AskConversationCreate = {
+  title?: string | null
+  dataset_ids?: string[] | null
+}
+
+export type AskConversationPatch = {
+  title?: string | null
+}
+
 /** SSE payloads from `POST /api/agent/ask/stream`. */
 export type AgentStreamEvent =
   | { type: 'meta'; data: Record<string, unknown> }
+  | {
+      type: 'stage'
+      data: {
+        name: 'context' | 'draft_sql' | 'execute' | 'retry' | 'summarize'
+        attempt?: number
+        elapsed_ms?: number
+      }
+    }
+  | { type: 'sql_attempt'; data: { sql: string; error?: string | null; attempt: number } }
+  | { type: 'timing'; data: { total_ms: number } }
+  | { type: 'turn'; data: { turn_id: string; conversation_id: string; seq: number } }
   | { type: 'sql'; data: { sql: string; explanation?: string | null } }
   | { type: 'query_result'; data: QueryResult }
   | { type: 'token'; data: { text: string } }

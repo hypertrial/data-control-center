@@ -2,6 +2,10 @@ import type {
   AgentAskRequest,
   AgentAskResponse,
   AgentStreamEvent,
+  AskConversation,
+  AskConversationCreate,
+  AskConversationPatch,
+  AskTurn,
   DatasetProfile,
   DatasetSummary,
   ProfileDiffResponse,
@@ -141,6 +145,54 @@ export const api = {
 
   deleteSavedQuery: async (savedId: string) => {
     const r = await fetch(`${API}/saved-queries/${encodeURIComponent(savedId)}`, { method: 'DELETE' })
+    if (!r.ok) {
+      const text = await r.text()
+      throw new Error(text || r.statusText)
+    }
+  },
+
+  listAskConversations: () => handle<AskConversation[]>(fetch(`${API}/ask/conversations`)),
+
+  createAskConversation: (body: AskConversationCreate) =>
+    handle<AskConversation>(
+      fetch(`${API}/ask/conversations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    ),
+
+  patchAskConversation: (conversationId: string, body: AskConversationPatch) =>
+    handle<AskConversation>(
+      fetch(`${API}/ask/conversations/${encodeURIComponent(conversationId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    ),
+
+  deleteAskConversation: async (conversationId: string) => {
+    const r = await fetch(`${API}/ask/conversations/${encodeURIComponent(conversationId)}`, {
+      method: 'DELETE',
+    })
+    if (!r.ok) {
+      const text = await r.text()
+      throw new Error(text || r.statusText)
+    }
+  },
+
+  listAskTurns: (conversationId: string, limit = 100) =>
+    handle<AskTurn[]>(
+      fetch(
+        `${API}/ask/conversations/${encodeURIComponent(conversationId)}/turns?limit=${encodeURIComponent(String(limit))}`,
+      ),
+    ),
+
+  deleteAskTurn: async (conversationId: string, turnId: string) => {
+    const r = await fetch(
+      `${API}/ask/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}`,
+      { method: 'DELETE' },
+    )
     if (!r.ok) {
       const text = await r.text()
       throw new Error(text || r.statusText)

@@ -100,6 +100,42 @@ class Workspace:
             );
             """
         )
+        self._con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dcc_ask_conversations (
+              conversation_id VARCHAR PRIMARY KEY,
+              title VARCHAR NOT NULL,
+              dataset_ids VARCHAR,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+        self._con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dcc_ask_turns (
+              turn_id VARCHAR PRIMARY KEY,
+              conversation_id VARCHAR NOT NULL,
+              seq INTEGER NOT NULL,
+              question VARCHAR NOT NULL,
+              sql VARCHAR,
+              explanation VARCHAR,
+              answer VARCHAR,
+              error VARCHAR,
+              attempts_json VARCHAR,
+              result_json VARCHAR,
+              model VARCHAR,
+              elapsed_ms INTEGER,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+        self._con.execute(
+            """
+            CREATE INDEX IF NOT EXISTS dcc_ask_turns_conv_seq
+            ON dcc_ask_turns (conversation_id, seq);
+            """
+        )
 
     @property
     def connection(self) -> duckdb.DuckDBPyConnection:

@@ -10,6 +10,7 @@ afterEach(() => {
 beforeEach(() => {
   useUiStore.setState({
     activeDatasetId: null,
+    activeConversationId: null,
     selectedColumn: null,
     columnDrawerOpen: false,
     columnSearch: '',

@@ -228,7 +228,13 @@ describe('api client', () => {
       }),
     )
     vi.stubGlobal('fetch', fetchMock)
-    await api.askAgent({ question: 'how many rows?', dataset_ids: ['ds_001'], max_rows: 50 })
+    await api.askAgent({
+      question: 'how many rows?',
+      dataset_ids: ['ds_001'],
+      max_rows: 50,
+      conversation_id: 'c1',
+      use_history: false,
+    })
     expect(fetchMock).toHaveBeenCalledWith('/api/agent/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -236,8 +242,59 @@ describe('api client', () => {
         question: 'how many rows?',
         dataset_ids: ['ds_001'],
         max_rows: 50,
+        conversation_id: 'c1',
+        use_history: false,
       }),
     })
+  })
+
+  it('ask conversations and turns API', async () => {
+    const conv = {
+      conversation_id: 'c1',
+      title: 'T',
+      dataset_ids: null as string[] | null,
+      created_at: 'a',
+      updated_at: 'b',
+    }
+    const turn = {
+      turn_id: 't1',
+      conversation_id: 'c1',
+      seq: 1,
+      question: 'q',
+      attempts: [],
+      created_at: 'x',
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonOk([conv]))
+      .mockResolvedValueOnce(jsonOk(conv))
+      .mockResolvedValueOnce(jsonOk(conv))
+      .mockResolvedValueOnce({
+        ok: true,
+        statusText: 'No Content',
+        text: () => Promise.resolve(''),
+      } as Response)
+      .mockResolvedValueOnce(jsonOk([turn]))
+      .mockResolvedValueOnce({
+        ok: true,
+        statusText: 'No Content',
+        text: () => Promise.resolve(''),
+      } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.listAskConversations()
+    await api.createAskConversation({ title: 'Hi' })
+    await api.patchAskConversation('c1', { title: 'Ren' })
+    await api.deleteAskConversation('c1')
+    await api.listAskTurns('c1', 50)
+    await api.deleteAskTurn('c1', 't1')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations')
+    expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations/c1', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations/c1', { method: 'DELETE' })
+    expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations/c1/turns?limit=50')
+    expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations/c1/turns/t1', { method: 'DELETE' })
   })
 
   it('askAgentStream parses SSE events across chunks', async () => {

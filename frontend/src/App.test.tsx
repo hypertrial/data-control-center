@@ -26,6 +26,7 @@ vi.mock('@/api/client', () => ({
     getProfileHistory: vi.fn(),
     getProfileDiff: vi.fn(),
     listSavedQueries: vi.fn(),
+    listAskConversations: vi.fn(),
   },
 }))
 
@@ -70,6 +71,7 @@ describe('App', () => {
     })
     vi.mocked(api.getProfileHistory).mockResolvedValue([])
     vi.mocked(api.listSavedQueries).mockResolvedValue([])
+    vi.mocked(api.listAskConversations).mockResolvedValue([])
     vi.mocked(api.uploadDatasets).mockResolvedValue([])
   })
 

@@ -795,7 +795,7 @@ def test_run_agent_ask_stream_no_datasets(tmp_path: Path) -> None:
     events = list(
         run_agent_ask_stream(reg, settings, AgentAskRequest(question="q")),
     )
-    assert [e["type"] for e in events] == ["meta", "error", "done"]
+    assert [e["type"] for e in events] == ["meta", "stage", "error", "timing", "done"]
 
 
 def test_run_agent_ask_stream_happy(registry_csv: DatasetRegistry) -> None:
@@ -815,7 +815,17 @@ def test_run_agent_ask_stream_happy(registry_csv: DatasetRegistry) -> None:
             ollama_call=fake_ollama,
         ),
     )
-    assert [e["type"] for e in ev] == ["meta", "sql", "query_result", "answer", "done"]
+    assert [e["type"] for e in ev] == [
+        "meta",
+        "stage",
+        "stage",
+        "stage",
+        "sql",
+        "query_result",
+        "answer",
+        "timing",
+        "done",
+    ]
 
 
 def test_run_agent_ask_stream_summary_tokens(registry_csv: DatasetRegistry) -> None:
@@ -953,7 +963,10 @@ def test_run_agent_ask_stream_connect_error(registry_csv: DatasetRegistry) -> No
             ollama_call=boom,
         ),
     )
-    assert ev[1]["type"] == "error"
+    err_ev = next(e for e in ev if e["type"] == "error")
+    assert "Ollama" in err_ev["data"]["message"]
+    assert ev[-1]["type"] == "done"
+    assert ev[-2]["type"] == "timing"
 
 
 def test_run_agent_ask_stream_http_error(registry_csv: DatasetRegistry) -> None:
@@ -970,7 +983,8 @@ def test_run_agent_ask_stream_http_error(registry_csv: DatasetRegistry) -> None:
             ollama_call=boom,
         ),
     )
-    assert "Ollama" in ev[1]["data"]["message"]
+    err_ev = next(e for e in ev if e["type"] == "error")
+    assert "Ollama" in err_ev["data"]["message"]
 
 
 def test_run_agent_ask_stream_generic_error(registry_csv: DatasetRegistry) -> None:
@@ -987,8 +1001,8 @@ def test_run_agent_ask_stream_generic_error(registry_csv: DatasetRegistry) -> No
             ollama_call=boom,
         ),
     )
-    assert ev[1]["type"] == "error"
-    assert "boom" in ev[1]["data"]["message"]
+    err_ev = next(e for e in ev if e["type"] == "error")
+    assert "boom" in err_ev["data"]["message"]
 
 
 def test_run_agent_ask_stream_bad_json_final(registry_csv: DatasetRegistry) -> None:
@@ -1005,7 +1019,9 @@ def test_run_agent_ask_stream_bad_json_final(registry_csv: DatasetRegistry) -> N
             ollama_call=bad,
         ),
     )
-    assert ev[-2]["type"] == "error"
+    assert ev[-1]["type"] == "done"
+    assert ev[-2]["type"] == "timing"
+    assert ev[-3]["type"] == "error"
 
 
 def test_run_agent_ask_stream_sql_error(registry_csv: DatasetRegistry) -> None:
@@ -1022,8 +1038,10 @@ def test_run_agent_ask_stream_sql_error(registry_csv: DatasetRegistry) -> None:
             ollama_call=bad,
         ),
     )
-    assert ev[-2]["type"] == "error"
-    assert "message" in ev[-2]["data"]
+    assert ev[-1]["type"] == "done"
+    assert ev[-2]["type"] == "timing"
+    assert ev[-3]["type"] == "error"
+    assert "message" in ev[-3]["data"]
 
 
 def test_run_agent_ask_stream_empty_then_ok(registry_csv: DatasetRegistry) -> None:
@@ -1046,7 +1064,10 @@ def test_run_agent_ask_stream_empty_then_ok(registry_csv: DatasetRegistry) -> No
         AgentAskRequest(question="q"),
         ollama_call=fake,
     )]
-    assert evty == ["meta", "sql", "query_result", "answer", "done"]
+    assert evty[0] == "meta"
+    assert "sql_attempt" in evty
+    assert evty[-2:] == ["timing", "done"]
+    assert evty[-3] == "answer"
 
 
 def test_run_agent_ask_stream_summary_http_error(registry_csv: DatasetRegistry) -> None:
@@ -1073,8 +1094,8 @@ def test_run_agent_ask_stream_summary_http_error(registry_csv: DatasetRegistry) 
             ollama_stream=bad_stream,
         ),
     )
-    assert ev[-2]["type"] == "answer"
-    assert "unavailable" in ev[-2]["data"]["answer"]
+    assert ev[-3]["type"] == "answer"
+    assert "unavailable" in ev[-3]["data"]["answer"]
 
 
 def test_ollama_chat_stream_passes_format_schema(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1197,7 +1218,8 @@ def test_run_agent_ask_stream_parse_retry_then_ok(registry_csv: DatasetRegistry)
         AgentAskRequest(question="q"),
         ollama_call=fake,
     )]
-    assert evty == ["meta", "sql", "query_result", "answer", "done"]
+    assert evty[:2] == ["meta", "stage"]
+    assert evty[-2:] == ["timing", "done"]
 
 
 def test_run_agent_ask_stream_sql_retry_then_ok(registry_csv: DatasetRegistry) -> None:
@@ -1220,4 +1242,270 @@ def test_run_agent_ask_stream_sql_retry_then_ok(registry_csv: DatasetRegistry) -
         AgentAskRequest(question="q"),
         ollama_call=fake,
     )]
-    assert evty == ["meta", "sql", "query_result", "answer", "done"]
+    assert "sql_attempt" in evty
+    assert evty[-2:] == ["timing", "done"]
+
+
+def test_run_agent_ask_stream_conversation_not_found(registry_csv: DatasetRegistry) -> None:
+    settings = Settings()
+    ev = list(
+        run_agent_ask_stream(
+            registry_csv,
+            settings,
+            AgentAskRequest(question="q", conversation_id="nope"),
+        ),
+    )
+    assert ev[1]["type"] == "error"
+    assert "Conversation" in ev[1]["data"]["message"]
+
+
+def test_run_agent_ask_conversation_not_found(registry_csv: DatasetRegistry) -> None:
+    settings = Settings(agent_summarize_with_llm=False)
+    out = run_agent_ask(
+        registry_csv,
+        settings,
+        AgentAskRequest(question="x", conversation_id="bad"),
+    )
+    assert out.error and "Conversation" in out.error
+
+
+def test_run_agent_ask_stream_emits_turn_when_persisting(registry_csv: DatasetRegistry) -> None:
+    from app.services import ask_store
+
+    con = registry_csv.workspace.connection
+    conv = ask_store.create_conversation(con)
+    cid = conv["conversation_id"]
+    settings = Settings(agent_summarize_with_llm=False)
+    vw = registry_csv.list_all()[0].view_name
+
+    def fake_ollama(s, m, f=None):  # noqa: ANN001
+        return json.dumps({"sql": f"SELECT * FROM {vw} LIMIT 1", "explanation": "e"})
+
+    ev = list(
+        run_agent_ask_stream(
+            registry_csv,
+            settings,
+            AgentAskRequest(question="hello", conversation_id=cid),
+            ollama_call=fake_ollama,
+        ),
+    )
+    assert any(e["type"] == "turn" for e in ev)
+    turns = ask_store.list_turns(con, cid)
+    assert len(turns) == 1
+    assert turns[0]["question"] == "hello"
+
+
+def test_run_agent_ask_second_turn_includes_history(registry_csv: DatasetRegistry) -> None:
+    from app.services import ask_store
+
+    settings = Settings(agent_summarize_with_llm=False)
+    con = registry_csv.workspace.connection
+    conv = ask_store.create_conversation(con)
+    cid = conv["conversation_id"]
+    vw = registry_csv.list_all()[0].view_name
+
+    def r1(s, m, f=None):  # noqa: ANN001
+        return json.dumps({"sql": f"SELECT * FROM {vw} LIMIT 1", "explanation": "a"})
+
+    out1 = run_agent_ask(
+        registry_csv,
+        settings,
+        AgentAskRequest(question="first question", conversation_id=cid),
+        ollama_call=r1,
+    )
+    assert not out1.error
+
+    captured: list[list[dict[str, str]]] = []
+
+    def r2(s, m, f=None):  # noqa: ANN001
+        captured.append(list(m))
+        return json.dumps({"sql": f"SELECT COUNT(*) AS n FROM {vw}", "explanation": "b"})
+
+    out2 = run_agent_ask(
+        registry_csv,
+        settings,
+        AgentAskRequest(question="second question", conversation_id=cid),
+        ollama_call=r2,
+    )
+    assert not out2.error
+    user_contents = [x["content"] for x in captured[0] if x["role"] == "user"]
+    assert any("first question" in uc for uc in user_contents)
+    assert any("Recent conversation" in uc or "Turn 1" in uc for uc in user_contents)
+
+
+def test_run_agent_ask_skips_history_when_disabled(registry_csv: DatasetRegistry) -> None:
+    from app.services import ask_store
+
+    settings = Settings(agent_summarize_with_llm=False)
+    con = registry_csv.workspace.connection
+    conv = ask_store.create_conversation(con)
+    cid = conv["conversation_id"]
+    vw = registry_csv.list_all()[0].view_name
+
+    def r1(s, m, f=None):  # noqa: ANN001
+        return json.dumps({"sql": f"SELECT * FROM {vw} LIMIT 1", "explanation": "a"})
+
+    run_agent_ask(
+        registry_csv,
+        settings,
+        AgentAskRequest(question="only turn", conversation_id=cid),
+        ollama_call=r1,
+    )
+
+    captured: list[list[dict[str, str]]] = []
+
+    def r2(s, m, f=None):  # noqa: ANN001
+        captured.append(list(m))
+        return json.dumps({"sql": f"SELECT COUNT(*) AS n FROM {vw}", "explanation": "b"})
+
+    run_agent_ask(
+        registry_csv,
+        settings,
+        AgentAskRequest(question="next", conversation_id=cid, use_history=False),
+        ollama_call=r2,
+    )
+    last_user = next(c["content"] for c in reversed(captured[0]) if c["role"] == "user")
+    assert "Recent conversation" not in last_user
+
+
+def test_run_agent_ask_stream_connect_error_persists_with_conversation(registry_csv: DatasetRegistry) -> None:
+    from app.services import ask_store
+
+    con = registry_csv.workspace.connection
+    conv = ask_store.create_conversation(con)
+    cid = conv["conversation_id"]
+
+    def boom(*a, **k):  # noqa: ANN001
+        raise httpx.ConnectError("nope")
+
+    ev = list(
+        run_agent_ask_stream(
+            registry_csv,
+            Settings(),
+            AgentAskRequest(question="q", conversation_id=cid),
+            ollama_call=boom,
+        ),
+    )
+    assert any(e["type"] == "turn" for e in ev)
+    turns = ask_store.list_turns(con, cid)
+    assert len(turns) == 1
+    assert turns[0]["error"]
+
+
+def test_run_agent_ask_stream_http_error_persists_with_conversation(registry_csv: DatasetRegistry) -> None:
+    from app.services import ask_store
+
+    con = registry_csv.workspace.connection
+    conv = ask_store.create_conversation(con)
+    cid = conv["conversation_id"]
+
+    def boom(*a, **k):  # noqa: ANN001
+        raise httpx.ReadTimeout("slow")
+
+    ev = list(
+        run_agent_ask_stream(
+            registry_csv,
+            Settings(),
+            AgentAskRequest(question="q", conversation_id=cid),
+            ollama_call=boom,
+        ),
+    )
+    assert any(e["type"] == "turn" for e in ev)
+    assert ask_store.list_turns(con, cid)[0]["error"]
+
+
+def test_run_agent_ask_stream_generic_error_persists_with_conversation(registry_csv: DatasetRegistry) -> None:
+    from app.services import ask_store
+
+    con = registry_csv.workspace.connection
+    conv = ask_store.create_conversation(con)
+    cid = conv["conversation_id"]
+
+    def boom(*a, **k):  # noqa: ANN001
+        raise RuntimeError("x")
+
+    list(
+        run_agent_ask_stream(
+            registry_csv,
+            Settings(),
+            AgentAskRequest(question="q", conversation_id=cid),
+            ollama_call=boom,
+        ),
+    )
+    assert ask_store.list_turns(con, cid)[0]["error"]
+
+
+def test_run_agent_ask_stream_bad_json_persists_with_conversation(registry_csv: DatasetRegistry) -> None:
+    from app.services import ask_store
+
+    con = registry_csv.workspace.connection
+    conv = ask_store.create_conversation(con)
+    cid = conv["conversation_id"]
+
+    def bad(*a, **k):  # noqa: ANN001
+        return "not-json"
+
+    list(
+        run_agent_ask_stream(
+            registry_csv,
+            Settings(agent_sql_attempts=1),
+            AgentAskRequest(question="q", conversation_id=cid),
+            ollama_call=bad,
+        ),
+    )
+    assert ask_store.list_turns(con, cid)[0]["error"]
+
+
+def test_run_agent_ask_stream_sql_error_persists_turn(registry_csv: DatasetRegistry) -> None:
+    from app.services import ask_store
+
+    con = registry_csv.workspace.connection
+    conv = ask_store.create_conversation(con)
+    cid = conv["conversation_id"]
+
+    def bad(*a, **k):  # noqa: ANN001
+        return json.dumps({"sql": "SELECT * FROM totally_missing_view LIMIT 1", "explanation": ""})
+
+    ev = list(
+        run_agent_ask_stream(
+            registry_csv,
+            Settings(agent_sql_attempts=1),
+            AgentAskRequest(question="q", conversation_id=cid),
+            ollama_call=bad,
+        ),
+    )
+    assert any(e["type"] == "turn" for e in ev)
+    assert ask_store.list_turns(con, cid)[0]["error"]
+
+
+def test_run_agent_ask_stream_summary_emits_turn_with_conversation(registry_csv: DatasetRegistry) -> None:
+    from app.services import ask_store
+
+    con = registry_csv.workspace.connection
+    conv = ask_store.create_conversation(con)
+    cid = conv["conversation_id"]
+    settings = Settings(agent_summarize_with_llm=True)
+    vw = registry_csv.list_all()[0].view_name
+    n = 0
+
+    def fake_ollama(s, m, f=None):  # noqa: ANN001
+        nonlocal n
+        n += 1
+        if f == OLLAMA_SQL_DRAFT_FORMAT:
+            return json.dumps({"sql": f"SELECT * FROM {vw} LIMIT 1", "explanation": "e"})
+        return '{"answer": "hi"}'
+
+    def fake_stream(s, m, f=None):  # noqa: ANN001
+        yield '{"answer": "hi"}'
+
+    ev = list(
+        run_agent_ask_stream(
+            registry_csv,
+            settings,
+            AgentAskRequest(question="q", conversation_id=cid),
+            ollama_call=fake_ollama,
+            ollama_stream=fake_stream,
+        ),
+    )
+    assert any(e["type"] == "turn" for e in ev)
+    assert ask_store.list_turns(con, cid)[0]["answer"] == "hi"

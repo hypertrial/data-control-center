@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from typing import Any, Iterator
 
 import httpx
@@ -18,6 +19,7 @@ from app.models.api import (
     QueryRequest,
     QueryResult,
 )
+from app.services import ask_store
 from app.services.query import execute_query
 from app.services.registry import DatasetRegistry
 from app.services.workspace import Workspace, sanitize_sql_identifier
@@ -338,6 +340,55 @@ def _empty_result_retry_prompt() -> str:
     )
 
 
+def _build_user_block(registry: DatasetRegistry, req: AgentAskRequest, ctx: str) -> str:
+    hist = ""
+    if req.conversation_id and req.use_history:
+        turns = ask_store.last_turns_for_context(
+            registry.workspace.connection,
+            req.conversation_id,
+            n=3,
+        )
+        hist = ask_store.format_history_block(turns)
+    return (
+        f"{hist}"
+        f"Datasets and schema:\n{ctx}\n\n"
+        f"User question:\n{req.question.strip()}\n\n"
+        'Return JSON object with keys "sql" (string) and "explanation" (string). /no_think'
+    )
+
+
+def _persist_turn_optional(
+    registry: DatasetRegistry,
+    req: AgentAskRequest,
+    t0: float,
+    *,
+    sql: str | None,
+    explanation: str | None,
+    answer: str | None,
+    error: str | None,
+    attempts: list[dict[str, Any]],
+    query_result: QueryResult | None,
+    model_name: str,
+) -> tuple[str | None, int | None]:
+    if not req.conversation_id:
+        return None, None
+    elapsed_ms = int((time.monotonic() - t0) * 1000)
+    tid, seq = ask_store.append_turn(
+        registry.workspace.connection,
+        req.conversation_id,
+        req.question.strip(),
+        sql,
+        explanation,
+        answer,
+        error,
+        attempts,
+        query_result,
+        model_name,
+        elapsed_ms,
+    )
+    return tid, seq
+
+
 def run_agent_ask(
     registry: DatasetRegistry,
     settings: Settings,
@@ -345,6 +396,13 @@ def run_agent_ask(
     ollama_call=ollama_chat,
 ) -> AgentAskResponse:
     model_name = settings.llm_model
+    t0 = time.monotonic()
+    attempts: list[dict[str, Any]] = []
+
+    if req.conversation_id:
+        if not ask_store.get_conversation(registry.workspace.connection, req.conversation_id):
+            return AgentAskResponse(model=model_name, error="Conversation not found")
+
     ctx, ctx_err = build_dataset_context(
         registry,
         registry.workspace,
@@ -357,11 +415,7 @@ def run_agent_ask(
     cap = min(settings.agent_max_rows, settings.query_max_rows)
     limit = min(req.max_rows or cap, cap)
 
-    user_block = (
-        f"Datasets and schema:\n{ctx}\n\n"
-        f"User question:\n{req.question.strip()}\n\n"
-        'Return JSON object with keys "sql" (string) and "explanation" (string). /no_think'
-    )
+    user_block = _build_user_block(registry, req, ctx)
     messages: list[dict[str, str]] = [
         {"role": "system", "content": _system_prompt()},
         {"role": "user", "content": user_block},
@@ -374,31 +428,83 @@ def run_agent_ask(
             content = ollama_call(settings, messages, OLLAMA_SQL_DRAFT_FORMAT)
         except httpx.ConnectError as e:
             logger.warning("Ollama connection failed: %s", e)
+            msg = (
+                f"Ollama is not reachable at {settings.llm_base_url}. "
+                f"Start Ollama and run `ollama pull {settings.llm_model}` "
+                "if the model is not installed."
+            )
+            _persist_turn_optional(
+                registry,
+                req,
+                t0,
+                sql=None,
+                explanation=None,
+                answer=None,
+                error=msg,
+                attempts=attempts,
+                query_result=None,
+                model_name=model_name,
+            )
             return AgentAskResponse(
                 model=model_name,
-                error=(
-                    f"Ollama is not reachable at {settings.llm_base_url}. "
-                    f"Start Ollama and run `ollama pull {settings.llm_model}` "
-                    "if the model is not installed."
-                ),
+                error=msg,
             )
         except httpx.HTTPError as e:
             logger.warning("Ollama HTTP error: %s", e)
+            msg = f"Ollama at {settings.llm_base_url} failed: {e}"
+            _persist_turn_optional(
+                registry,
+                req,
+                t0,
+                sql=None,
+                explanation=None,
+                answer=None,
+                error=msg,
+                attempts=attempts,
+                query_result=None,
+                model_name=model_name,
+            )
             return AgentAskResponse(
                 model=model_name,
-                error=f"Ollama at {settings.llm_base_url} failed: {e}",
+                error=msg,
             )
         except Exception as e:  # noqa: BLE001
             logger.exception("Ollama request failed")
+            msg = f"Ollama request failed: {e}"
+            _persist_turn_optional(
+                registry,
+                req,
+                t0,
+                sql=None,
+                explanation=None,
+                answer=None,
+                error=msg,
+                attempts=attempts,
+                query_result=None,
+                model_name=model_name,
+            )
             return AgentAskResponse(
                 model=model_name,
-                error=f"Ollama request failed: {e}",
+                error=msg,
             )
 
         draft, parse_err = parse_sql_draft(content)
         if parse_err or draft is None:
             last_content_err = parse_err or "Unknown parse error"
+            attempts.append({"stage": "draft_sql", "error": last_content_err, "sql": None})
             if attempt + 1 >= settings.agent_sql_attempts:
+                _persist_turn_optional(
+                    registry,
+                    req,
+                    t0,
+                    sql=None,
+                    explanation=None,
+                    answer=None,
+                    error=last_content_err,
+                    attempts=attempts,
+                    query_result=None,
+                    model_name=model_name,
+                )
                 return AgentAskResponse(model=model_name, error=last_content_err)
             messages.append({"role": "assistant", "content": content})
             messages.append(
@@ -423,13 +529,33 @@ def run_agent_ask(
                 and attempt + 1 < settings.agent_sql_attempts
                 and _should_retry_empty_result(draft.sql)
             ):
+                attempts.append(
+                    {
+                        "sql": draft.sql,
+                        "error": "Query returned 0 rows (retrying with adjusted SQL)",
+                        "stage": "execute",
+                    }
+                )
                 messages.append({"role": "assistant", "content": content})
                 messages.append({"role": "user", "content": _empty_result_retry_prompt()})
                 continue
 
             if not settings.agent_summarize_with_llm:
+                ans = _default_answer(draft, qres)
+                _persist_turn_optional(
+                    registry,
+                    req,
+                    t0,
+                    sql=draft.sql,
+                    explanation=draft.explanation or None,
+                    answer=ans,
+                    error=None,
+                    attempts=attempts,
+                    query_result=qres,
+                    model_name=model_name,
+                )
                 return AgentAskResponse(
-                    answer=_default_answer(draft, qres),
+                    answer=ans,
                     sql=draft.sql,
                     explanation=draft.explanation or None,
                     query_result=qres,
@@ -468,6 +594,18 @@ def run_agent_ask(
                     f"{draft.explanation}\n\n(Summarization unavailable: {e})".strip()
                 )
 
+            _persist_turn_optional(
+                registry,
+                req,
+                t0,
+                sql=draft.sql,
+                explanation=draft.explanation or None,
+                answer=answer,
+                error=None,
+                attempts=attempts,
+                query_result=qres,
+                model_name=model_name,
+            )
             return AgentAskResponse(
                 answer=answer,
                 sql=draft.sql,
@@ -477,7 +615,20 @@ def run_agent_ask(
             )
 
         err_text = qres.error or "Unknown SQL error"
+        attempts.append({"sql": draft.sql, "error": err_text, "stage": "execute"})
         if attempt + 1 >= settings.agent_sql_attempts:
+            _persist_turn_optional(
+                registry,
+                req,
+                t0,
+                sql=draft.sql,
+                explanation=draft.explanation or None,
+                answer=None,
+                error=err_text,
+                attempts=attempts,
+                query_result=qres,
+                model_name=model_name,
+            )
             return AgentAskResponse(
                 model=model_name,
                 sql=draft.sql,
@@ -504,9 +655,24 @@ def run_agent_ask_stream(
     ollama_call=ollama_chat,
     ollama_stream=ollama_chat_stream,
 ) -> Iterator[dict[str, Any]]:
-    """Yield event dicts for SSE: meta, error, sql, query_result, token, answer, done."""
+    """Yield SSE events including meta, stage, sql_attempt, sql, query_result, token, answer, turn, timing, done."""
     model_name = settings.llm_model
+    t0 = time.monotonic()
+    attempts: list[dict[str, Any]] = []
+
+    def elapsed_ms() -> int:
+        return int((time.monotonic() - t0) * 1000)
+
     yield {"type": "meta", "data": {"model": model_name}}
+
+    if req.conversation_id:
+        if not ask_store.get_conversation(registry.workspace.connection, req.conversation_id):
+            yield {"type": "error", "data": {"message": "Conversation not found"}}
+            yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
+            yield {"type": "done", "data": {}}
+            return
+
+    yield {"type": "stage", "data": {"name": "context", "elapsed_ms": elapsed_ms()}}
 
     ctx, ctx_err = build_dataset_context(
         registry,
@@ -516,17 +682,14 @@ def run_agent_ask_stream(
     )
     if ctx_err:
         yield {"type": "error", "data": {"message": ctx_err}}
+        yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
         yield {"type": "done", "data": {}}
         return
 
     cap = min(settings.agent_max_rows, settings.query_max_rows)
     limit = min(req.max_rows or cap, cap)
 
-    user_block = (
-        f"Datasets and schema:\n{ctx}\n\n"
-        f"User question:\n{req.question.strip()}\n\n"
-        'Return JSON object with keys "sql" (string) and "explanation" (string). /no_think'
-    )
+    user_block = _build_user_block(registry, req, ctx)
     messages: list[dict[str, str]] = [
         {"role": "system", "content": _system_prompt()},
         {"role": "user", "content": user_block},
@@ -535,38 +698,129 @@ def run_agent_ask_stream(
     last_content_err: str | None = None
 
     for attempt in range(max(1, settings.agent_sql_attempts)):
+        yield {
+            "type": "stage",
+            "data": {"name": "draft_sql", "attempt": attempt + 1, "elapsed_ms": elapsed_ms()},
+        }
         try:
             content = ollama_call(settings, messages, OLLAMA_SQL_DRAFT_FORMAT)
         except httpx.ConnectError as e:
             logger.warning("Ollama connection failed: %s", e)
-            yield {
-                "type": "error",
-                "data": {
-                    "message": (
-                        f"Ollama is not reachable at {settings.llm_base_url}. "
-                        f"Start Ollama and run `ollama pull {settings.llm_model}` "
-                        "if the model is not installed."
-                    ),
-                },
-            }
+            msg = (
+                f"Ollama is not reachable at {settings.llm_base_url}. "
+                f"Start Ollama and run `ollama pull {settings.llm_model}` "
+                "if the model is not installed."
+            )
+            tid, seq = _persist_turn_optional(
+                registry,
+                req,
+                t0,
+                sql=None,
+                explanation=None,
+                answer=None,
+                error=msg,
+                attempts=attempts,
+                query_result=None,
+                model_name=model_name,
+            )
+            yield {"type": "error", "data": {"message": msg}}
+            if tid and seq is not None and req.conversation_id:
+                yield {
+                    "type": "turn",
+                    "data": {
+                        "turn_id": tid,
+                        "conversation_id": req.conversation_id,
+                        "seq": seq,
+                    },
+                }
+            yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
             yield {"type": "done", "data": {}}
             return
         except httpx.HTTPError as e:
             logger.warning("Ollama HTTP error: %s", e)
-            yield {"type": "error", "data": {"message": f"Ollama at {settings.llm_base_url} failed: {e}"}}
+            msg = f"Ollama at {settings.llm_base_url} failed: {e}"
+            tid, seq = _persist_turn_optional(
+                registry,
+                req,
+                t0,
+                sql=None,
+                explanation=None,
+                answer=None,
+                error=msg,
+                attempts=attempts,
+                query_result=None,
+                model_name=model_name,
+            )
+            yield {"type": "error", "data": {"message": msg}}
+            if tid and seq is not None and req.conversation_id:
+                yield {
+                    "type": "turn",
+                    "data": {
+                        "turn_id": tid,
+                        "conversation_id": req.conversation_id,
+                        "seq": seq,
+                    },
+                }
+            yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
             yield {"type": "done", "data": {}}
             return
         except Exception as e:  # noqa: BLE001
             logger.exception("Ollama request failed")
-            yield {"type": "error", "data": {"message": f"Ollama request failed: {e}"}}
+            msg = f"Ollama request failed: {e}"
+            tid, seq = _persist_turn_optional(
+                registry,
+                req,
+                t0,
+                sql=None,
+                explanation=None,
+                answer=None,
+                error=msg,
+                attempts=attempts,
+                query_result=None,
+                model_name=model_name,
+            )
+            yield {"type": "error", "data": {"message": msg}}
+            if tid and seq is not None and req.conversation_id:
+                yield {
+                    "type": "turn",
+                    "data": {
+                        "turn_id": tid,
+                        "conversation_id": req.conversation_id,
+                        "seq": seq,
+                    },
+                }
+            yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
             yield {"type": "done", "data": {}}
             return
 
         draft, parse_err = parse_sql_draft(content)
         if parse_err or draft is None:
             last_content_err = parse_err or "Unknown parse error"
+            attempts.append({"stage": "draft_sql", "error": last_content_err, "sql": None})
             if attempt + 1 >= settings.agent_sql_attempts:
+                tid, seq = _persist_turn_optional(
+                    registry,
+                    req,
+                    t0,
+                    sql=None,
+                    explanation=None,
+                    answer=None,
+                    error=last_content_err,
+                    attempts=attempts,
+                    query_result=None,
+                    model_name=model_name,
+                )
                 yield {"type": "error", "data": {"message": last_content_err}}
+                if tid and seq is not None and req.conversation_id:
+                    yield {
+                        "type": "turn",
+                        "data": {
+                            "turn_id": tid,
+                            "conversation_id": req.conversation_id,
+                            "seq": seq,
+                        },
+                    }
+                yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
                 yield {"type": "done", "data": {}}
                 return
             messages.append({"role": "assistant", "content": content})
@@ -581,6 +835,7 @@ def run_agent_ask_stream(
             )
             continue
 
+        yield {"type": "stage", "data": {"name": "execute", "elapsed_ms": elapsed_ms()}}
         qres = execute_query(
             registry,
             settings,
@@ -592,6 +847,25 @@ def run_agent_ask_stream(
                 and attempt + 1 < settings.agent_sql_attempts
                 and _should_retry_empty_result(draft.sql)
             ):
+                attempts.append(
+                    {
+                        "sql": draft.sql,
+                        "error": "Query returned 0 rows (retrying with adjusted SQL)",
+                        "stage": "execute",
+                    }
+                )
+                yield {
+                    "type": "sql_attempt",
+                    "data": {
+                        "sql": draft.sql,
+                        "error": "Query returned 0 rows (retrying with adjusted SQL)",
+                        "attempt": attempt + 1,
+                    },
+                }
+                yield {
+                    "type": "stage",
+                    "data": {"name": "retry", "attempt": attempt + 1, "elapsed_ms": elapsed_ms()},
+                }
                 messages.append({"role": "assistant", "content": content})
                 messages.append({"role": "user", "content": _empty_result_retry_prompt()})
                 continue
@@ -603,13 +877,37 @@ def run_agent_ask_stream(
             yield {"type": "query_result", "data": qres.model_dump(mode="json")}
 
             if not settings.agent_summarize_with_llm:
-                yield {
-                    "type": "answer",
-                    "data": {"answer": _default_answer(draft, qres)},
-                }
+                ans = _default_answer(draft, qres)
+                yield {"type": "answer", "data": {"answer": ans}}
+                tid, seq = _persist_turn_optional(
+                    registry,
+                    req,
+                    t0,
+                    sql=draft.sql,
+                    explanation=draft.explanation or None,
+                    answer=ans,
+                    error=None,
+                    attempts=attempts,
+                    query_result=qres,
+                    model_name=model_name,
+                )
+                if tid and seq is not None and req.conversation_id:
+                    yield {
+                        "type": "turn",
+                        "data": {
+                            "turn_id": tid,
+                            "conversation_id": req.conversation_id,
+                            "seq": seq,
+                        },
+                    }
+                yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
                 yield {"type": "done", "data": {}}
                 return
 
+            yield {
+                "type": "stage",
+                "data": {"name": "summarize", "elapsed_ms": elapsed_ms()},
+            }
             summary_messages = [
                 {
                     "role": "system",
@@ -643,11 +941,50 @@ def run_agent_ask_stream(
             except (httpx.HTTPError, OSError) as e:
                 answer = f"{draft.explanation}\n\n(Summarization unavailable: {e})".strip()
             yield {"type": "answer", "data": {"answer": answer}}
+            tid, seq = _persist_turn_optional(
+                registry,
+                req,
+                t0,
+                sql=draft.sql,
+                explanation=draft.explanation or None,
+                answer=answer,
+                error=None,
+                attempts=attempts,
+                query_result=qres,
+                model_name=model_name,
+            )
+            if tid and seq is not None and req.conversation_id:
+                yield {
+                    "type": "turn",
+                    "data": {
+                        "turn_id": tid,
+                        "conversation_id": req.conversation_id,
+                        "seq": seq,
+                    },
+                }
+            yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
             yield {"type": "done", "data": {}}
             return
 
         err_text = qres.error or "Unknown SQL error"
+        attempts.append({"sql": draft.sql, "error": err_text, "stage": "execute"})
+        yield {
+            "type": "sql_attempt",
+            "data": {"sql": draft.sql, "error": err_text, "attempt": attempt + 1},
+        }
         if attempt + 1 >= settings.agent_sql_attempts:
+            tid, seq = _persist_turn_optional(
+                registry,
+                req,
+                t0,
+                sql=draft.sql,
+                explanation=draft.explanation or None,
+                answer=None,
+                error=err_text,
+                attempts=attempts,
+                query_result=qres,
+                model_name=model_name,
+            )
             yield {
                 "type": "error",
                 "data": {
@@ -657,9 +994,23 @@ def run_agent_ask_stream(
                     "query_result": qres.model_dump(mode="json"),
                 },
             }
+            if tid and seq is not None and req.conversation_id:
+                yield {
+                    "type": "turn",
+                    "data": {
+                        "turn_id": tid,
+                        "conversation_id": req.conversation_id,
+                        "seq": seq,
+                    },
+                }
+            yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
             yield {"type": "done", "data": {}}
             return
 
+        yield {
+            "type": "stage",
+            "data": {"name": "retry", "attempt": attempt + 1, "elapsed_ms": elapsed_ms()},
+        }
         messages.append({"role": "assistant", "content": content})
         messages.append(
             {

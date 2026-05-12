@@ -169,6 +169,14 @@ class AgentAskRequest(BaseModel):
         description="If set, only these datasets are included in context",
     )
     max_rows: int | None = Field(default=None, ge=1, le=100_000)
+    conversation_id: str | None = Field(
+        default=None,
+        description="When set, persist this Ask turn to the workspace conversation",
+    )
+    use_history: bool = Field(
+        default=True,
+        description="Include prior turns from conversation_id in the LLM context",
+    )
 
 
 class AgentSqlDraft(BaseModel):
@@ -185,3 +193,36 @@ class AgentAskResponse(BaseModel):
     query_result: QueryResult | None = None
     model: str
     error: str | None = None
+
+
+class AskConversation(BaseModel):
+    conversation_id: str
+    title: str
+    dataset_ids: list[str] | None = None
+    created_at: str
+    updated_at: str
+
+
+class AskTurn(BaseModel):
+    turn_id: str
+    conversation_id: str
+    seq: int
+    question: str
+    sql: str | None = None
+    explanation: str | None = None
+    answer: str | None = None
+    error: str | None = None
+    attempts: list[dict[str, Any]] = Field(default_factory=list)
+    query_result: QueryResult | None = None
+    model: str | None = None
+    elapsed_ms: int | None = None
+    created_at: str
+
+
+class AskConversationCreate(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+    dataset_ids: list[str] | None = None
+
+
+class AskConversationPatch(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)

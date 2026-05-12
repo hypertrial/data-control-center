@@ -4,11 +4,40 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { DatasetProfile } from '@/api/types'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { AskPage } from '@/features/ask/AskPage'
 import { useUiStore } from '@/store/uiStore'
 
+const minimalProfile: DatasetProfile = {
+  dataset_id: 'ds_001',
+  name: 'n',
+  rows: 1,
+  columns: 1,
+  file_size_bytes: null,
+  missing_cell_pct: null,
+  duplicate_row_pct: null,
+  numeric_column_count: 0,
+  categorical_column_count: 0,
+  datetime_column_count: 0,
+  potential_id_columns: [],
+  potential_key_columns: [],
+  quality_score: null,
+  narrative: '',
+  likely_grain: null,
+  primary_date_column: null,
+  main_numeric_measures: [],
+  column_profiles: [],
+  quality_issues: [],
+}
+
 const h = vi.hoisted(() => ({
   askAgentStream: vi.fn(),
+  listAskConversations: vi.fn(),
+  createAskConversation: vi.fn(),
+  listAskTurns: vi.fn(),
+  listDatasets: vi.fn(),
+  getProfile: vi.fn(),
 }))
 
 vi.mock('@/api/client', async (importOriginal) => {
@@ -16,6 +45,14 @@ vi.mock('@/api/client', async (importOriginal) => {
   return {
     ...mod,
     askAgentStream: h.askAgentStream,
+    api: {
+      ...mod.api,
+      listAskConversations: h.listAskConversations,
+      createAskConversation: h.createAskConversation,
+      listAskTurns: h.listAskTurns,
+      listDatasets: h.listDatasets,
+      getProfile: h.getProfile,
+    },
   }
 })
 
@@ -25,7 +62,9 @@ function wrap(ui: React.ReactElement) {
   })
   return render(
     <MemoryRouter>
-      <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+      <QueryClientProvider client={qc}>
+        <TooltipProvider>{ui}</TooltipProvider>
+      </QueryClientProvider>
     </MemoryRouter>,
   )
 }
@@ -41,6 +80,18 @@ function mockStream(events: Array<{ type: string; data?: unknown }>) {
 describe('AskPage', () => {
   beforeEach(() => {
     h.askAgentStream.mockReset()
+    h.listAskConversations.mockResolvedValue([])
+    h.createAskConversation.mockResolvedValue({
+      conversation_id: 'c_test',
+      title: 'New conversation',
+      dataset_ids: null,
+      created_at: '2020-01-01T00:00:00',
+      updated_at: '2020-01-01T00:00:00',
+    })
+    h.listAskTurns.mockResolvedValue([])
+    h.listDatasets.mockResolvedValue([])
+    h.getProfile.mockResolvedValue(minimalProfile)
+    useUiStore.setState({ pendingQuery: null, activeConversationId: null, activeDatasetId: null })
   })
 
   it('disables ask when question empty', () => {
@@ -48,10 +99,22 @@ describe('AskPage', () => {
     expect(screen.getByRole('button', { name: /Ask \(stream\)/ })).toBeDisabled()
   })
 
-  it('shows active dataset in scope hint', () => {
+  it('lists registered dataset id as scope chip when datasets exist', async () => {
+    h.listDatasets.mockResolvedValue([
+      {
+        dataset_id: 'ds_001',
+        name: 'a.csv',
+        view_name: 'a',
+        source_path: '/p',
+        format: 'csv',
+        row_count: 1,
+        column_count: 1,
+        file_size_bytes: 1,
+      },
+    ])
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     wrap(<AskPage />)
-    expect(screen.getByText(/ds_001/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'ds_001' })).toBeInTheDocument())
   })
 
   it('submits and renders answer and opens SQL via store', async () => {
@@ -80,8 +143,14 @@ describe('AskPage', () => {
     await user.click(screen.getByRole('button', { name: /Ask \(stream\)/i }))
     await waitFor(() => expect(screen.getByText(/There are/)).toBeInTheDocument())
     expect(h.askAgentStream).toHaveBeenCalled()
-    const arg = h.askAgentStream.mock.calls[0]![0] as { question: string }
+    const arg = h.askAgentStream.mock.calls[0]![0] as {
+      question: string
+      conversation_id?: string
+      use_history?: boolean
+    }
     expect(arg.question).toBe('How many rows?')
+    expect(arg.conversation_id).toBe('c_test')
+    expect(arg.use_history).toBe(true)
     await user.click(screen.getByRole('button', { name: 'Open in SQL' }))
     expect(useUiStore.getState().pendingQuery).toBe('SELECT COUNT(*) AS n FROM t')
   })

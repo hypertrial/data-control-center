@@ -5,6 +5,8 @@ export type ColumnQualityFilter = 'all' | 'has_flags' | 'critical_only'
 type UiState = {
   activeDatasetId: string | null
   setActiveDatasetId: (id: string | null) => void
+  activeConversationId: string | null
+  setActiveConversationId: (id: string | null) => void
   selectedColumn: string | null
   setSelectedColumn: (c: string | null) => void
   columnDrawerOpen: boolean
@@ -39,6 +41,8 @@ type UiState = {
 export const useUiStore = create<UiState>((set, get) => ({
   activeDatasetId: null,
   setActiveDatasetId: (id) => set({ activeDatasetId: id }),
+  activeConversationId: null,
+  setActiveConversationId: (id) => set({ activeConversationId: id }),
   selectedColumn: null,
   setSelectedColumn: (c) => set({ selectedColumn: c }),
   columnDrawerOpen: false,
