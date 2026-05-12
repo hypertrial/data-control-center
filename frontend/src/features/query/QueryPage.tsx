@@ -9,10 +9,9 @@ import { format } from 'sql-formatter'
 import { ChevronDown, ChevronRight, History, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
-import type { ColumnProfile, DatasetSummary, QueryResultColumn } from '@/api/types'
+import type { ColumnProfile, DatasetSummary } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { PageContainer } from '@/components/ui/section'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -20,6 +19,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { quoteIdent, sqlSelectStarFromView } from '@/lib/sql'
 import { useUiStore } from '@/store/uiStore'
 import { cn } from '@/lib/utils'
+import { SqlResultsGrid } from '@/features/query/SqlResultsGrid'
 
 const HISTORY_KEY = 'dcc-sql-history'
 const HISTORY_CAP = 10
@@ -320,50 +320,7 @@ export function QueryPage() {
 
       {runMutation.data?.error && <QueryErrorBanner message={runMutation.data.error} />}
       {runMutation.data && !runMutation.data.error && (
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="text-xs text-[hsl(var(--muted))]">
-              <span className="tabular-nums">{runMutation.data.row_count}</span> rows
-              {runMutation.data.truncated ? ' (truncated)' : ''}
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-1"
-              onClick={() => {
-                void navigator.clipboard.writeText(JSON.stringify(runMutation.data!.rows, null, 2))
-                toast.success('Result rows copied as JSON')
-              }}
-            >
-              <Copy className="h-3.5 w-3.5" /> Copy results
-            </Button>
-          </div>
-          <Table>
-            <caption className="sr-only">Query result</caption>
-            <THead>
-              <TR>
-                {runMutation.data.columns.map((c: QueryResultColumn) => (
-                  <TH key={c.name} scope="col">
-                    {c.name}
-                    <span className="ml-1 text-[10px] font-normal text-[hsl(var(--muted))]">{c.type}</span>
-                  </TH>
-                ))}
-              </TR>
-            </THead>
-            <TBody>
-              {runMutation.data.rows.map((row: Record<string, unknown>, i: number) => (
-                <TR key={i}>
-                  {runMutation.data!.columns.map((c: QueryResultColumn) => (
-                    <TD key={c.name} className="max-w-[240px] truncate font-mono text-xs">
-                      {formatCell(row[c.name])}
-                    </TD>
-                  ))}
-                </TR>
-              ))}
-            </TBody>
-          </Table>
-        </div>
+        <SqlResultsGrid queryResult={runMutation.data} busy={runMutation.isPending} />
       )}
 
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
@@ -451,10 +408,4 @@ function SchemaDatasetBlock({
       )}
     </div>
   )
-}
-
-function formatCell(v: unknown) {
-  if (v === null || v === undefined) return ''
-  if (typeof v === 'object') return JSON.stringify(v)
-  return String(v)
 }
