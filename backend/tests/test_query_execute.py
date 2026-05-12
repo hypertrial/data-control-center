@@ -84,6 +84,48 @@ def test_execute_success_and_truncation(registry_with_view: DatasetRegistry) -> 
     assert len(out.rows) == 1
 
 
+def test_execute_preserves_aggregate_date_range_rows(tmp_path: Path) -> None:
+    csv = tmp_path / "daily.csv"
+    csv.write_text("day_utc\n2009-01-03\n2026-03-13\n")
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    reg = DatasetRegistry(ws)
+    ds = reg.register_path(csv)
+
+    out = execute_query(
+        reg,
+        settings,
+        QueryRequest(sql=f"SELECT MIN(day_utc), MAX(day_utc) FROM {ds.view_name}"),
+    )
+
+    assert not out.error
+    assert out.row_count == 1
+    assert out.model_dump(mode="json")["rows"] == [
+        {"min(day_utc)": "2009-01-03", "max(day_utc)": "2026-03-13"}
+    ]
+
+
+def test_execute_preserves_empty_aggregate_null_row(tmp_path: Path) -> None:
+    csv = tmp_path / "daily.csv"
+    csv.write_text("day_utc\n2009-01-03\n2026-03-13\n")
+    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    ws = Workspace(settings)
+    reg = DatasetRegistry(ws)
+    ds = reg.register_path(csv)
+
+    out = execute_query(
+        reg,
+        settings,
+        QueryRequest(
+            sql=f"SELECT MIN(day_utc), MAX(day_utc) FROM {ds.view_name} WHERE day_utc > DATE '2100-01-01'"
+        ),
+    )
+
+    assert not out.error
+    assert out.row_count == 1
+    assert out.rows == [{"min(day_utc)": None, "max(day_utc)": None}]
+
+
 def test_execute_duckdb_error(registry_with_view: DatasetRegistry) -> None:
     vw = next(iter(registry_with_view.list_all())).view_name
     assert execute_query(
