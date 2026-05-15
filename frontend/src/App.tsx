@@ -20,8 +20,20 @@ import { ShortcutCheatsheet } from '@/features/shell/ShortcutCheatsheet'
 import { TopBar } from '@/features/shell/TopBar'
 import { useGlobalShortcuts } from '@/hooks/useGlobalShortcuts'
 import { UiUrlSync } from '@/hooks/UiUrlSync'
+import { isTransientNetworkError } from '@/lib/transientNetworkError'
 
-const queryClient = new QueryClient()
+/** Extra retries for dev-only transport drops (Vite proxy `socket hang up` during Uvicorn reload). */
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        if (isTransientNetworkError(error)) return failureCount < 5
+        return failureCount < 3
+      },
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10_000),
+    },
+  },
+})
 
 function Shell({ children }: { children: ReactNode }) {
   return (

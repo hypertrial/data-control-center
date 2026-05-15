@@ -16,6 +16,9 @@ export default defineConfig({
     watch: {
       ignored: ['**/coverage/**'],
     },
+    // If you see `http proxy error` + `socket hang up` for several `/api/...` paths at the same
+    // second, check the Uvicorn terminal for a reload/restart — that drops in-flight requests
+    // (see root Makefile: `--reload-dir app` reduces restarts on test edits only).
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',
