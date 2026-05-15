@@ -122,11 +122,12 @@ def build_dataset_context(
             if len(columns) > max_columns:
                 col_bits.append(f"... +{len(columns) - max_columns} more columns")
         if not col_bits:
-            col_bits = _pragma_column_summaries(
-                workspace.connection,
-                ds.view_name,
-                max_cols=max_columns,
-            )
+            with workspace.lock_db() as con:
+                col_bits = _pragma_column_summaries(
+                    con,
+                    ds.view_name,
+                    max_cols=max_columns,
+                )
         if not col_bits:
             col_bits = ["(no columns resolved)"]
         narrative = ""
@@ -343,11 +344,12 @@ def _empty_result_retry_prompt() -> str:
 def _build_user_block(registry: DatasetRegistry, req: AgentAskRequest, ctx: str) -> str:
     hist = ""
     if req.conversation_id and req.use_history:
-        turns = ask_store.last_turns_for_context(
-            registry.workspace.connection,
-            req.conversation_id,
-            n=3,
-        )
+        with registry.workspace.lock_db() as con:
+            turns = ask_store.last_turns_for_context(
+                con,
+                req.conversation_id,
+                n=3,
+            )
         hist = ask_store.format_history_block(turns)
     return (
         f"{hist}"
@@ -373,19 +375,20 @@ def _persist_turn_optional(
     if not req.conversation_id:
         return None, None
     elapsed_ms = int((time.monotonic() - t0) * 1000)
-    tid, seq = ask_store.append_turn(
-        registry.workspace.connection,
-        req.conversation_id,
-        req.question.strip(),
-        sql,
-        explanation,
-        answer,
-        error,
-        attempts,
-        query_result,
-        model_name,
-        elapsed_ms,
-    )
+    with registry.workspace.lock_db() as con:
+        tid, seq = ask_store.append_turn(
+            con,
+            req.conversation_id,
+            req.question.strip(),
+            sql,
+            explanation,
+            answer,
+            error,
+            attempts,
+            query_result,
+            model_name,
+            elapsed_ms,
+        )
     return tid, seq
 
 
@@ -400,8 +403,9 @@ def run_agent_ask(
     attempts: list[dict[str, Any]] = []
 
     if req.conversation_id:
-        if not ask_store.get_conversation(registry.workspace.connection, req.conversation_id):
-            return AgentAskResponse(model=model_name, error="Conversation not found")
+        with registry.workspace.lock_db() as con:
+            if not ask_store.get_conversation(con, req.conversation_id):
+                return AgentAskResponse(model=model_name, error="Conversation not found")
 
     ctx, ctx_err = build_dataset_context(
         registry,
@@ -666,11 +670,12 @@ def run_agent_ask_stream(
     yield {"type": "meta", "data": {"model": model_name}}
 
     if req.conversation_id:
-        if not ask_store.get_conversation(registry.workspace.connection, req.conversation_id):
-            yield {"type": "error", "data": {"message": "Conversation not found"}}
-            yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
-            yield {"type": "done", "data": {}}
-            return
+        with registry.workspace.lock_db() as con:
+            if not ask_store.get_conversation(con, req.conversation_id):
+                yield {"type": "error", "data": {"message": "Conversation not found"}}
+                yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
+                yield {"type": "done", "data": {}}
+                return
 
     yield {"type": "stage", "data": {"name": "context", "elapsed_ms": elapsed_ms()}}
 
