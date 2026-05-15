@@ -25,6 +25,8 @@ You can also run **`npm run dev`** from the **repository root** (see root [`READ
 
 [`vite.config.ts`](vite.config.ts) proxies **`/api`** → **`http://127.0.0.1:8000`**. Start the FastAPI backend separately (`make backend` or `make dev` from the repo root).
 
+If Vite logs **`http proxy error`** / **`socket hang up`** for several `/api/...` paths at once, the connection to the API was cut mid-request — often a **Uvicorn auto-reload** while editing [`backend/app/`](../backend/app) (see root **`Makefile`**: `--reload-dir app`). [`App.tsx`](src/App.tsx) configures TanStack Query with **extra retries** for typical fetch/transport failures so the UI usually recovers without manual reload.
+
 ## Layout & conventions
 
 - **`src/features/`** — route-level pages (overview, columns, quality, samples, SQL).
