@@ -46,17 +46,17 @@ def execute_query(
     limit = min(req.max_rows or settings.query_max_rows, settings.query_max_rows)
     fetch_cap = limit + 1
     wrapped = f"SELECT * FROM ({normalized}) AS _dcc_sub LIMIT {int(fetch_cap)}"
-    con = registry.workspace.connection
     try:
-        res = con.execute(wrapped)
-        cols_meta = res.description or []
-        colnames = [c[0] for c in cols_meta]
-        fetched: list[tuple[object, ...]] = []
-        while len(fetched) < fetch_cap:
-            row = res.fetchone()
-            if row is None:
-                break
-            fetched.append(row)
+        with registry.workspace.lock_db() as con:
+            res = con.execute(wrapped)
+            cols_meta = res.description or []
+            colnames = [c[0] for c in cols_meta]
+            fetched: list[tuple[object, ...]] = []
+            while len(fetched) < fetch_cap:
+                row = res.fetchone()
+                if row is None:
+                    break
+                fetched.append(row)
 
         truncated = len(fetched) > limit
         trimmed = fetched[:limit]

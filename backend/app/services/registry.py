@@ -110,21 +110,21 @@ class DatasetRegistry:
         self._migrate_legacy_v_dataset_views()
 
     def _load_max_id(self) -> int:
-        con = self._workspace.connection
-        row = con.execute(
-            """
-            SELECT MAX(CAST(SUBSTRING(dataset_id, 4) AS INTEGER))
-            FROM dcc_datasets
-            WHERE dataset_id LIKE 'ds_%'
-            """
-        ).fetchone()
+        with self._workspace.lock_db() as con:
+            row = con.execute(
+                """
+                SELECT MAX(CAST(SUBSTRING(dataset_id, 4) AS INTEGER))
+                FROM dcc_datasets
+                WHERE dataset_id LIKE 'ds_%'
+                """
+            ).fetchone()
         if row and row[0] is not None:
             return int(row[0])
         return 0
 
     def _load_from_db(self) -> None:
-        con = self._workspace.connection
-        rows = con.execute("SELECT * FROM dcc_datasets").fetchall()
+        with self._workspace.lock_db() as con:
+            rows = con.execute("SELECT * FROM dcc_datasets").fetchall()
         for r in rows:
             did, src, view_name, fmt, row_count, col_count, fsize, _ = r
             self._by_id[did] = RegisteredDataset(
@@ -172,14 +172,15 @@ class DatasetRegistry:
 
                 rows, cols = self._workspace.get_row_column_counts(new_name)
                 fsize = p.stat().st_size
-                self._workspace.connection.execute(
-                    """
-                    UPDATE dcc_datasets
-                    SET view_name = ?, row_count = ?, column_count = ?, file_size_bytes = ?
-                    WHERE dataset_id = ?
-                    """,
-                    [new_name, rows, cols, fsize, did],
-                )
+                with self._workspace.lock_db() as con:
+                    con.execute(
+                        """
+                        UPDATE dcc_datasets
+                        SET view_name = ?, row_count = ?, column_count = ?, file_size_bytes = ?
+                        WHERE dataset_id = ?
+                        """,
+                        [new_name, rows, cols, fsize, did],
+                    )
                 self._by_id[did] = RegisteredDataset(
                     dataset_id=did,
                     source_path=p,
@@ -230,13 +231,14 @@ class DatasetRegistry:
         rows, cols = self._workspace.get_row_column_counts(view_name)
 
         with self._lock:
-            self._workspace.connection.execute(
-                """
-                INSERT INTO dcc_datasets (dataset_id, source_path, view_name, format, row_count, column_count, file_size_bytes)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                [dataset_id, str(p), view_name, fmt, rows, cols, fsize],
-            )
+            with self._workspace.lock_db() as con:
+                con.execute(
+                    """
+                    INSERT INTO dcc_datasets (dataset_id, source_path, view_name, format, row_count, column_count, file_size_bytes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [dataset_id, str(p), view_name, fmt, rows, cols, fsize],
+                )
 
         ds = RegisteredDataset(
             dataset_id=dataset_id,
@@ -280,18 +282,19 @@ class DatasetRegistry:
                 return False
             self._workspace.drop_view_if_exists(ds.view_name)
             self._workspace.delete_profile_cache(dataset_id)
-            self._workspace.connection.execute(
-                "DELETE FROM dcc_profile_history WHERE dataset_id = ?",
-                [dataset_id],
-            )
-            self._workspace.connection.execute(
-                "DELETE FROM dcc_jobs WHERE dataset_id = ?",
-                [dataset_id],
-            )
-            self._workspace.connection.execute(
-                "DELETE FROM dcc_datasets WHERE dataset_id = ?",
-                [dataset_id],
-            )
+            with self._workspace.lock_db() as con:
+                con.execute(
+                    "DELETE FROM dcc_profile_history WHERE dataset_id = ?",
+                    [dataset_id],
+                )
+                con.execute(
+                    "DELETE FROM dcc_jobs WHERE dataset_id = ?",
+                    [dataset_id],
+                )
+                con.execute(
+                    "DELETE FROM dcc_datasets WHERE dataset_id = ?",
+                    [dataset_id],
+                )
             self._by_id.pop(dataset_id, None)
             return True
 

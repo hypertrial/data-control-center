@@ -298,16 +298,16 @@ def sample_rows(
             detail=f"page_size must be <= {settings.sample_max_page_size}",
         )
     offset = (page - 1) * ps
-    con = registry.workspace.connection
     view = ds.view_name
     safe_view = sanitize_sql_identifier(view)
     try:
-        count_row = con.execute(f"SELECT COUNT(*) AS c FROM {safe_view}").fetchone()
-        total_rows = int(count_row[0]) if count_row else 0
-        res = con.execute(f"SELECT * FROM {safe_view} LIMIT {int(ps)} OFFSET {int(offset)}")
-        cols_meta = res.description or []
-        colnames = [c[0] for c in cols_meta]
-        fetched = res.fetchall()
+        with registry.workspace.lock_db() as con:
+            count_row = con.execute(f"SELECT COUNT(*) AS c FROM {safe_view}").fetchone()
+            total_rows = int(count_row[0]) if count_row else 0
+            res = con.execute(f"SELECT * FROM {safe_view} LIMIT {int(ps)} OFFSET {int(offset)}")
+            cols_meta = res.description or []
+            colnames = [c[0] for c in cols_meta]
+            fetched = res.fetchall()
         rows = [{colnames[i]: row[i] for i in range(len(colnames))} for row in fetched]
         return {
             "page": page,

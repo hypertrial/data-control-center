@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -29,124 +32,135 @@ class Workspace:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._path = path
         self._con = duckdb.connect(str(path))
+        self._db_lock = threading.RLock()
         self._init_schema()
 
     def _init_schema(self) -> None:
-        self._con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS dcc_datasets (
-              dataset_id VARCHAR PRIMARY KEY,
-              source_path VARCHAR NOT NULL,
-              view_name VARCHAR NOT NULL,
-              format VARCHAR NOT NULL,
-              row_count BIGINT,
-              column_count INTEGER,
-              file_size_bytes BIGINT,
-              registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-        )
-        self._con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS dcc_profile_cache (
-              dataset_id VARCHAR PRIMARY KEY,
-              profile_json VARCHAR NOT NULL,
-              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-        )
-        self._con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS dcc_jobs (
-              job_id VARCHAR PRIMARY KEY,
-              kind VARCHAR NOT NULL,
-              dataset_id VARCHAR,
-              status VARCHAR NOT NULL,
-              progress DOUBLE DEFAULT 0,
-              error VARCHAR,
-              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-        )
-        self._con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS dcc_profile_history (
-              history_id VARCHAR PRIMARY KEY,
-              dataset_id VARCHAR NOT NULL,
-              profile_json VARCHAR NOT NULL,
-              quality_score DOUBLE,
-              rows BIGINT,
-              columns INTEGER,
-              missing_cell_pct DOUBLE,
-              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-        )
-        self._con.execute(
-            """
-            CREATE INDEX IF NOT EXISTS dcc_profile_history_ds_created
-            ON dcc_profile_history (dataset_id, created_at DESC);
-            """
-        )
-        self._con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS dcc_saved_queries (
-              saved_id VARCHAR PRIMARY KEY,
-              name VARCHAR NOT NULL,
-              sql VARCHAR NOT NULL,
-              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-        )
-        self._con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS dcc_ask_conversations (
-              conversation_id VARCHAR PRIMARY KEY,
-              title VARCHAR NOT NULL,
-              dataset_ids VARCHAR,
-              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-        )
-        self._con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS dcc_ask_turns (
-              turn_id VARCHAR PRIMARY KEY,
-              conversation_id VARCHAR NOT NULL,
-              seq INTEGER NOT NULL,
-              question VARCHAR NOT NULL,
-              sql VARCHAR,
-              explanation VARCHAR,
-              answer VARCHAR,
-              error VARCHAR,
-              attempts_json VARCHAR,
-              result_json VARCHAR,
-              model VARCHAR,
-              elapsed_ms INTEGER,
-              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-        )
-        self._con.execute(
-            """
-            CREATE INDEX IF NOT EXISTS dcc_ask_turns_conv_seq
-            ON dcc_ask_turns (conversation_id, seq);
-            """
-        )
+        with self._db_lock:
+            self._con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS dcc_datasets (
+                  dataset_id VARCHAR PRIMARY KEY,
+                  source_path VARCHAR NOT NULL,
+                  view_name VARCHAR NOT NULL,
+                  format VARCHAR NOT NULL,
+                  row_count BIGINT,
+                  column_count INTEGER,
+                  file_size_bytes BIGINT,
+                  registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            self._con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS dcc_profile_cache (
+                  dataset_id VARCHAR PRIMARY KEY,
+                  profile_json VARCHAR NOT NULL,
+                  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            self._con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS dcc_jobs (
+                  job_id VARCHAR PRIMARY KEY,
+                  kind VARCHAR NOT NULL,
+                  dataset_id VARCHAR,
+                  status VARCHAR NOT NULL,
+                  progress DOUBLE DEFAULT 0,
+                  error VARCHAR,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            self._con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS dcc_profile_history (
+                  history_id VARCHAR PRIMARY KEY,
+                  dataset_id VARCHAR NOT NULL,
+                  profile_json VARCHAR NOT NULL,
+                  quality_score DOUBLE,
+                  rows BIGINT,
+                  columns INTEGER,
+                  missing_cell_pct DOUBLE,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            self._con.execute(
+                """
+                CREATE INDEX IF NOT EXISTS dcc_profile_history_ds_created
+                ON dcc_profile_history (dataset_id, created_at DESC);
+                """
+            )
+            self._con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS dcc_saved_queries (
+                  saved_id VARCHAR PRIMARY KEY,
+                  name VARCHAR NOT NULL,
+                  sql VARCHAR NOT NULL,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            self._con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS dcc_ask_conversations (
+                  conversation_id VARCHAR PRIMARY KEY,
+                  title VARCHAR NOT NULL,
+                  dataset_ids VARCHAR,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            self._con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS dcc_ask_turns (
+                  turn_id VARCHAR PRIMARY KEY,
+                  conversation_id VARCHAR NOT NULL,
+                  seq INTEGER NOT NULL,
+                  question VARCHAR NOT NULL,
+                  sql VARCHAR,
+                  explanation VARCHAR,
+                  answer VARCHAR,
+                  error VARCHAR,
+                  attempts_json VARCHAR,
+                  result_json VARCHAR,
+                  model VARCHAR,
+                  elapsed_ms INTEGER,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            self._con.execute(
+                """
+                CREATE INDEX IF NOT EXISTS dcc_ask_turns_conv_seq
+                ON dcc_ask_turns (conversation_id, seq);
+                """
+            )
 
     @property
     def connection(self) -> duckdb.DuckDBPyConnection:
+        """Raw handle; unsafe for concurrent use. Prefer lock_db() when sharing across threads."""
         return self._con
 
+    @contextmanager
+    def lock_db(self) -> Iterator[duckdb.DuckDBPyConnection]:
+        """Serialize DuckDB access (FastAPI runs sync routes in a threadpool; async upload uses the main thread)."""
+        with self._db_lock:
+            yield self._con
+
     def close(self) -> None:
-        self._con.close()
+        with self._db_lock:
+            self._con.close()
 
     def drop_view_if_exists(self, view_name: str) -> None:
         safe = sanitize_sql_identifier(view_name)
-        self._con.execute(f"DROP VIEW IF EXISTS {safe}")
+        with self._db_lock:
+            self._con.execute(f"DROP VIEW IF EXISTS {safe}")
 
     def register_file_view(
         self,
@@ -179,44 +193,47 @@ class Workspace:
             )
         else:
             raise ValueError(f"Unsupported format for DuckDB registration: {file_format}")
-        self._con.execute(sql)
+        with self._db_lock:
+            self._con.execute(sql)
 
     def get_row_column_counts(self, view_name: str) -> tuple[int, int]:
         safe = sanitize_sql_identifier(view_name)
-        row = self._con.execute(f"SELECT COUNT(*) AS c FROM {safe}").fetchone()
-        rows = int(row[0]) if row else 0
-        cols_row = self._con.execute(
-            f"SELECT COUNT(*) FROM pragma_table_info('{safe}')"
-        ).fetchone()
-        cols = int(cols_row[0]) if cols_row else 0
+        with self._db_lock:
+            row = self._con.execute(f"SELECT COUNT(*) AS c FROM {safe}").fetchone()
+            rows = int(row[0]) if row else 0
+            cols_row = self._con.execute(
+                f"SELECT COUNT(*) FROM pragma_table_info('{safe}')"
+            ).fetchone()
+            cols = int(cols_row[0]) if cols_row else 0
         return rows, cols
 
     def save_profile_cache(self, dataset_id: str, profile: dict[str, Any]) -> None:
         payload = json.dumps(profile)
-        self._con.execute(
-            """
-            INSERT INTO dcc_profile_cache (dataset_id, profile_json)
-            VALUES (?, ?)
-            ON CONFLICT (dataset_id) DO UPDATE SET
-              profile_json = excluded.profile_json,
-              updated_at = now()
-            """,
-            [dataset_id, payload],
-        )
-        hid = uuid.uuid4().hex
-        qs = profile.get("quality_score")
-        rows = profile.get("rows")
-        cols = profile.get("columns")
-        miss = profile.get("missing_cell_pct")
-        self._con.execute(
-            """
-            INSERT INTO dcc_profile_history (
-              history_id, dataset_id, profile_json, quality_score, rows, columns, missing_cell_pct
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            [hid, dataset_id, payload, qs, rows, cols, miss],
-        )
-        self._prune_profile_history(dataset_id)
+        with self._db_lock:
+            self._con.execute(
+                """
+                INSERT INTO dcc_profile_cache (dataset_id, profile_json)
+                VALUES (?, ?)
+                ON CONFLICT (dataset_id) DO UPDATE SET
+                  profile_json = excluded.profile_json,
+                  updated_at = now()
+                """,
+                [dataset_id, payload],
+            )
+            hid = uuid.uuid4().hex
+            qs = profile.get("quality_score")
+            rows = profile.get("rows")
+            cols = profile.get("columns")
+            miss = profile.get("missing_cell_pct")
+            self._con.execute(
+                """
+                INSERT INTO dcc_profile_history (
+                  history_id, dataset_id, profile_json, quality_score, rows, columns, missing_cell_pct
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [hid, dataset_id, payload, qs, rows, cols, miss],
+            )
+            self._prune_profile_history(dataset_id)
 
     def _prune_profile_history(self, dataset_id: str, keep: int = 50) -> None:
         self._con.execute(
@@ -240,17 +257,18 @@ class Workspace:
 
     def list_profile_history(self, dataset_id: str, limit: int = 10) -> list[dict[str, Any]]:
         lim = max(1, min(limit, 50))
-        rows = self._con.execute(
-            """
-            SELECT history_id, dataset_id, created_at, quality_score, rows, columns,
-                   missing_cell_pct
-            FROM dcc_profile_history
-            WHERE dataset_id = ?
-            ORDER BY created_at DESC
-            LIMIT ?
-            """,
-            [dataset_id, lim],
-        ).fetchall()
+        with self._db_lock:
+            rows = self._con.execute(
+                """
+                SELECT history_id, dataset_id, created_at, quality_score, rows, columns,
+                       missing_cell_pct
+                FROM dcc_profile_history
+                WHERE dataset_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                [dataset_id, lim],
+            ).fetchall()
         out: list[dict[str, Any]] = []
         for r in rows:
             ct = r[2]
@@ -268,22 +286,24 @@ class Workspace:
         return out
 
     def load_profile_history_blob(self, history_id: str) -> dict[str, Any] | None:
-        row = self._con.execute(
-            "SELECT profile_json FROM dcc_profile_history WHERE history_id = ?",
-            [history_id],
-        ).fetchone()
+        with self._db_lock:
+            row = self._con.execute(
+                "SELECT profile_json FROM dcc_profile_history WHERE history_id = ?",
+                [history_id],
+            ).fetchone()
         if not row:
             return None
         return json.loads(row[0])
 
     def list_saved_queries(self) -> list[dict[str, Any]]:
-        rows = self._con.execute(
-            """
-            SELECT saved_id, name, sql, created_at, updated_at
-            FROM dcc_saved_queries
-            ORDER BY updated_at DESC
-            """
-        ).fetchall()
+        with self._db_lock:
+            rows = self._con.execute(
+                """
+                SELECT saved_id, name, sql, created_at, updated_at
+                FROM dcc_saved_queries
+                ORDER BY updated_at DESC
+                """
+            ).fetchall()
         out: list[dict[str, Any]] = []
         for r in rows:
             ca, ua = r[3], r[4]
@@ -300,10 +320,11 @@ class Workspace:
 
     def insert_saved_query(self, name: str, sql: str) -> str:
         sid = uuid.uuid4().hex
-        self._con.execute(
-            "INSERT INTO dcc_saved_queries (saved_id, name, sql) VALUES (?, ?, ?)",
-            [sid, name.strip(), sql],
-        )
+        with self._db_lock:
+            self._con.execute(
+                "INSERT INTO dcc_saved_queries (saved_id, name, sql) VALUES (?, ?, ?)",
+                [sid, name.strip(), sql],
+            )
         return sid
 
     def update_saved_query(
@@ -312,51 +333,54 @@ class Workspace:
         name: str | None = None,
         sql: str | None = None,
     ) -> bool:
-        row = self._con.execute(
-            "SELECT saved_id FROM dcc_saved_queries WHERE saved_id = ?",
-            [saved_id],
-        ).fetchone()
-        if not row:
-            return False
-        if name is not None and sql is not None:
-            self._con.execute(
-                """
-                UPDATE dcc_saved_queries
-                SET name = ?, sql = ?, updated_at = now()
-                WHERE saved_id = ?
-                """,
-                [name.strip(), sql, saved_id],
-            )
-        elif name is not None:
-            self._con.execute(
-                "UPDATE dcc_saved_queries SET name = ?, updated_at = now() WHERE saved_id = ?",
-                [name.strip(), saved_id],
-            )
-        elif sql is not None:
-            self._con.execute(
-                "UPDATE dcc_saved_queries SET sql = ?, updated_at = now() WHERE saved_id = ?",
-                [sql, saved_id],
-            )
+        with self._db_lock:
+            row = self._con.execute(
+                "SELECT saved_id FROM dcc_saved_queries WHERE saved_id = ?",
+                [saved_id],
+            ).fetchone()
+            if not row:
+                return False
+            if name is not None and sql is not None:
+                self._con.execute(
+                    """
+                    UPDATE dcc_saved_queries
+                    SET name = ?, sql = ?, updated_at = now()
+                    WHERE saved_id = ?
+                    """,
+                    [name.strip(), sql, saved_id],
+                )
+            elif name is not None:
+                self._con.execute(
+                    "UPDATE dcc_saved_queries SET name = ?, updated_at = now() WHERE saved_id = ?",
+                    [name.strip(), saved_id],
+                )
+            elif sql is not None:
+                self._con.execute(
+                    "UPDATE dcc_saved_queries SET sql = ?, updated_at = now() WHERE saved_id = ?",
+                    [sql, saved_id],
+                )
         return True
 
     def delete_saved_query(self, saved_id: str) -> bool:
-        row = self._con.execute(
-            "SELECT saved_id FROM dcc_saved_queries WHERE saved_id = ?",
-            [saved_id],
-        ).fetchone()
-        if not row:
-            return False
-        self._con.execute("DELETE FROM dcc_saved_queries WHERE saved_id = ?", [saved_id])
+        with self._db_lock:
+            row = self._con.execute(
+                "SELECT saved_id FROM dcc_saved_queries WHERE saved_id = ?",
+                [saved_id],
+            ).fetchone()
+            if not row:
+                return False
+            self._con.execute("DELETE FROM dcc_saved_queries WHERE saved_id = ?", [saved_id])
         return True
 
     def get_saved_query(self, saved_id: str) -> dict[str, Any] | None:
-        row = self._con.execute(
-            """
-            SELECT saved_id, name, sql, created_at, updated_at
-            FROM dcc_saved_queries WHERE saved_id = ?
-            """,
-            [saved_id],
-        ).fetchone()
+        with self._db_lock:
+            row = self._con.execute(
+                """
+                SELECT saved_id, name, sql, created_at, updated_at
+                FROM dcc_saved_queries WHERE saved_id = ?
+                """,
+                [saved_id],
+            ).fetchone()
         if not row:
             return None
         ca, ua = row[3], row[4]
@@ -369,13 +393,14 @@ class Workspace:
         }
 
     def get_profile_history_meta(self, history_id: str) -> dict[str, Any] | None:
-        row = self._con.execute(
-            """
-            SELECT history_id, dataset_id, created_at
-            FROM dcc_profile_history WHERE history_id = ?
-            """,
-            [history_id],
-        ).fetchone()
+        with self._db_lock:
+            row = self._con.execute(
+                """
+                SELECT history_id, dataset_id, created_at
+                FROM dcc_profile_history WHERE history_id = ?
+                """,
+                [history_id],
+            ).fetchone()
         if not row:
             return None
         ct = row[2]
@@ -386,31 +411,35 @@ class Workspace:
         }
 
     def load_profile_cache(self, dataset_id: str) -> dict[str, Any] | None:
-        row = self._con.execute(
-            "SELECT profile_json FROM dcc_profile_cache WHERE dataset_id = ?",
-            [dataset_id],
-        ).fetchone()
+        with self._db_lock:
+            row = self._con.execute(
+                "SELECT profile_json FROM dcc_profile_cache WHERE dataset_id = ?",
+                [dataset_id],
+            ).fetchone()
         if not row:
             return None
         return json.loads(row[0])
 
     def delete_profile_cache(self, dataset_id: str) -> None:
-        self._con.execute("DELETE FROM dcc_profile_cache WHERE dataset_id = ?", [dataset_id])
+        with self._db_lock:
+            self._con.execute("DELETE FROM dcc_profile_cache WHERE dataset_id = ?", [dataset_id])
 
     def job_insert(self, job_id: str, kind: str, dataset_id: str | None, status: str) -> None:
-        self._con.execute(
-            """
-            INSERT INTO dcc_jobs (job_id, kind, dataset_id, status, progress)
-            VALUES (?, ?, ?, ?, 0)
-            """,
-            [job_id, kind, dataset_id, status],
-        )
+        with self._db_lock:
+            self._con.execute(
+                """
+                INSERT INTO dcc_jobs (job_id, kind, dataset_id, status, progress)
+                VALUES (?, ?, ?, ?, 0)
+                """,
+                [job_id, kind, dataset_id, status],
+            )
 
     def job_finish(self, job_id: str, status: str, error: str | None = None) -> None:
-        self._con.execute(
-            """
-            UPDATE dcc_jobs SET status = ?, error = ?, updated_at = now()
-            WHERE job_id = ?
-            """,
-            [status, error, job_id],
-        )
+        with self._db_lock:
+            self._con.execute(
+                """
+                UPDATE dcc_jobs SET status = ?, error = ?, updated_at = now()
+                WHERE job_id = ?
+                """,
+                [status, error, job_id],
+            )
