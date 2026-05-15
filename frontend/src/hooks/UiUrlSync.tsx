@@ -70,7 +70,14 @@ export function UiUrlSync() {
   useEffect(() => {
     const ds = searchParams.get('ds')
     const st = useUiStore.getState()
-    if (ds && ds !== st.activeDatasetId) setActive(ds)
+    if (!dq.isLoading) {
+      const list = dq.data ?? []
+      if (ds) {
+        const exists = list.some((d) => d.dataset_id === ds)
+        if (exists && ds !== st.activeDatasetId) setActive(ds)
+        else if (!exists && st.activeDatasetId === ds) setActive(null)
+      }
+    }
 
     const col = searchParams.get('col')
     if (pathname === '/columns' && col) {
@@ -89,7 +96,19 @@ export function UiUrlSync() {
 
     const cq = decodeColumnQuality(searchParams.get('cq'))
     if (cq && cq !== st.columnQualityFilter) setColumnQuality(cq)
-  }, [searchParams, pathname, setActive, setColumnSearch, setSemantic, setSev, setColumnQuality, setSelectedColumn, setDrawerOpen])
+  }, [
+    dq.isLoading,
+    dq.data,
+    searchParams,
+    pathname,
+    setActive,
+    setColumnSearch,
+    setSemantic,
+    setSev,
+    setColumnQuality,
+    setSelectedColumn,
+    setDrawerOpen,
+  ])
 
   useEffect(() => {
     const next = new URLSearchParams(searchParams)

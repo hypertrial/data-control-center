@@ -2,9 +2,15 @@ import * as React from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter, useSearchParams } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api/client'
 import { DatasetSidebar } from '@/features/datasets/DatasetSidebar'
+
+function SearchProbe() {
+  const [sp] = useSearchParams()
+  return <span data-testid="ds-param">{sp.get('ds') ?? ''}</span>
+}
 
 const toastMock = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
 
@@ -18,11 +24,15 @@ vi.mock('@/api/client', () => ({
   },
 }))
 
-function wrap(ui: React.ReactElement) {
+function wrap(ui: React.ReactElement, initialEntry = '/') {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+    </MemoryRouter>,
+  )
 }
 
 describe('DatasetSidebar', () => {
@@ -62,6 +72,24 @@ describe('DatasetSidebar', () => {
     wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
     await user.click(screen.getByText(/^a$/))
+  })
+
+  it('removes ds from the URL when deleting that dataset (stale ?ds would 404)', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    wrap(
+      <>
+        <SearchProbe />
+        <DatasetSidebar />
+      </>,
+      '/?ds=ds_001',
+    )
+    await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: 'Remove a' }))
+
+    await waitFor(() => expect(api.deleteDataset).toHaveBeenCalledWith('ds_001'))
+    await waitFor(() => expect(screen.getByTestId('ds-param').textContent).toBe(''))
   })
 
   it('removes a dataset after confirmation', async () => {

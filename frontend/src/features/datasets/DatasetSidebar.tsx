@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import type { DatasetSummary } from '@/api/types'
 import { api } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
 import { Database, Loader2, PanelLeftClose, PanelLeft, Upload, X, FolderOpen, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { formatBytes, formatCount, formatDatasetFormat, stripFileExtension } from '@/lib/format'
 import { qualityScoreSeverity } from '@/lib/tokens'
@@ -16,6 +18,7 @@ type SortMode = 'name' | 'rows' | 'quality'
 
 export function DatasetSidebar() {
   const qc = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
   const {
     activeDatasetId,
     setActiveDatasetId,
@@ -86,16 +89,27 @@ export function DatasetSidebar() {
       }
       try {
         await api.deleteDataset(datasetId)
+        qc.setQueryData<DatasetSummary[]>(['datasets'], (old) =>
+          (old ?? []).filter((d) => d.dataset_id !== datasetId),
+        )
+        qc.removeQueries({ queryKey: ['profile', datasetId] })
+        qc.removeQueries({ queryKey: ['profile-history', datasetId] })
+        qc.removeQueries({ queryKey: ['quality', datasetId] })
+        qc.removeQueries({ queryKey: ['sample', datasetId] })
+        qc.removeQueries({ queryKey: ['profile-diff', datasetId] })
+        if (searchParams.get('ds') === datasetId) {
+          const next = new URLSearchParams(searchParams)
+          next.delete('ds')
+          setSearchParams(next, { replace: true })
+        }
         if (activeDatasetId === datasetId) setActiveDatasetId(null)
         await qc.invalidateQueries({ queryKey: ['datasets'] })
-        await qc.invalidateQueries({ queryKey: ['profile', datasetId] })
-        await qc.invalidateQueries({ queryKey: ['profile-history', datasetId] })
         toast.success(`Removed ${name}.`)
       } catch (e) {
         toast.error((e as Error).message)
       }
     },
-    [activeDatasetId, qc, setActiveDatasetId],
+    [activeDatasetId, qc, searchParams, setSearchParams, setActiveDatasetId],
   )
 
   const emptyWorkspace = !q.isLoading && list.length === 0
