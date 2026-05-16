@@ -42,3 +42,8 @@ export function chartTooltip(): Record<string, unknown> {
     textStyle: { color: hslFromRootVar('--fg'), fontSize: 12 },
   }
 }
+
+/** Axis labels on dark surfaces; ECharts defaults are illegible on our cards without an explicit color. */
+export function chartAxisLabelStyle(): { color: string; fontSize: number } {
+  return { color: hslFromRootVar('--fg-muted'), fontSize: 11 }
+}

@@ -16,7 +16,7 @@ import { formatBytes, formatCount, formatPercent } from '@/lib/format'
 import { qualityScoreSeverity } from '@/lib/tokens'
 import { useUiStore } from '@/store/uiStore'
 import { cn } from '@/lib/utils'
-import { hslFromRootVar, chartPalette, chartTooltip } from '@/lib/chartTheme'
+import { hslFromRootVar, chartAxisLabelStyle, chartPalette, chartTooltip } from '@/lib/chartTheme'
 import { ProfileDiffDialog } from '@/features/overview/DiffDialog'
 
 /** Truncate for chart axis labels; full string remains in tooltips. */
@@ -274,12 +274,17 @@ function MissingnessMiniChart({ names, values }: { names: string[]; values: numb
           bottom: 8,
           containLabel: false,
         },
-        xAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
+        xAxis: {
+          type: 'value',
+          max: 100,
+          axisLabel: { formatter: '{value}%', ...chartAxisLabelStyle() },
+        },
         yAxis: {
           type: 'category',
           data: names,
           inverse: true,
           axisLabel: {
+            ...chartAxisLabelStyle(),
             interval: 0,
             width: Math.max(96, leftGutter - 20),
             overflow: 'truncate',
@@ -350,12 +355,18 @@ function IssuesImpactChart({
           bottom: 8,
           containLabel: false,
         },
-        xAxis: { type: 'value', max: maxImpact * 1.08, splitLine: { lineStyle: { opacity: 0.2 } } },
+        xAxis: {
+          type: 'value',
+          max: maxImpact * 1.08,
+          splitLine: { lineStyle: { opacity: 0.2 } },
+          axisLabel: { ...chartAxisLabelStyle() },
+        },
         yAxis: {
           type: 'category',
           data: labels,
           inverse: true,
           axisLabel: {
+            ...chartAxisLabelStyle(),
             interval: 0,
             width: Math.max(120, leftGutter - 24),
             overflow: 'truncate',
