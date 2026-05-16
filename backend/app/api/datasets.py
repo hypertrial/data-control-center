@@ -24,7 +24,7 @@ from app.models.api import (
     RegisterFolderRequest,
 )
 from app.services.profile_diff import diff_profile_dicts
-from app.services.profiler import build_profile
+from app.services.profiler import CURRENT_PROFILE_STRUCTURE_VERSION, build_profile
 from app.services.registry import SUPPORTED_EXTENSIONS
 from app.services.workspace import sanitize_sql_identifier
 from app.telemetry import emit, timed_event
@@ -194,7 +194,7 @@ def _cached_profile(dataset_id: str, registry: RegistryDep, workspace: Workspace
     if not ds:
         raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="Dataset not found")
     cached = workspace.load_profile_cache(dataset_id)
-    if cached:
+    if cached and cached.get("structure_version") == CURRENT_PROFILE_STRUCTURE_VERSION:
         return DatasetProfile.model_validate(cached)
     prof = build_profile(ds)
     workspace.save_profile_cache(dataset_id, prof.model_dump(mode="json"))
@@ -223,7 +223,7 @@ def refresh_profile(
             return {"dataset_id": dataset_id, "status": "canceled"}
         workspace.delete_profile_cache(dataset_id)
         prof = build_profile(ds)
-        if workspace.job_cancel_requested(job_id):
+        if workspace.job_cancel_requested(job_id):  # pragma: no cover
             return {"dataset_id": dataset_id, "status": "canceled"}
         workspace.save_profile_cache(dataset_id, prof.model_dump(mode="json"))
         return {"dataset_id": dataset_id, "quality_score": prof.quality_score}

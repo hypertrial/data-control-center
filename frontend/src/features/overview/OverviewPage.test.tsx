@@ -59,7 +59,7 @@ describe('OverviewPage', () => {
     expect(screen.getByText(/100 B/)).toBeInTheDocument()
   })
 
-  it('renders v2 structure signals', async () => {
+  it('renders structure summary (entity + row grain)', async () => {
     h.getProfile.mockResolvedValue(
       mkProfile({
         primary_grain_key_columns: ['player_id', 'year'],
@@ -74,6 +74,9 @@ describe('OverviewPage', () => {
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     wrap(<OverviewPage />)
     await waitFor(() => expect(screen.getByText(/Primary grain key confidence is medium/i)).toBeInTheDocument())
+    expect(screen.getByText('Entities')).toBeInTheDocument()
+    expect(screen.getByText('Grain cols')).toBeInTheDocument()
+    expect(screen.getByText('Row grain')).toBeInTheDocument()
     expect(screen.getAllByText('player_id').length).toBeGreaterThan(0)
     expect(screen.getAllByText('year').length).toBeGreaterThan(0)
     expect(screen.getByText(/discrete period/)).toBeInTheDocument()

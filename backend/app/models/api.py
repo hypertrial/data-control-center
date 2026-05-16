@@ -140,7 +140,7 @@ class DatasetProfile(BaseModel):
     likely_grain: str | None = None
     primary_date_column: str | None = None
     main_numeric_measures: list[str] = Field(default_factory=list)
-    structure_version: str = "v2"
+    structure_version: str = "v3"
     temporal_columns: list[TemporalColumnInfo] = Field(default_factory=list)
     entity_id_columns: list[EntityIdCandidate] = Field(default_factory=list)
     grain_key_candidates: list[GrainKeyCandidate] = Field(default_factory=list)

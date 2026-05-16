@@ -26,11 +26,36 @@ from app.models.api import (
 from app.services.registry import RegisteredDataset
 from app.telemetry import emit
 
+# Bump when structure inference output shape or semantics change materially (cache invalidation).
+CURRENT_PROFILE_STRUCTURE_VERSION = "v3"
+
 ID_NAME_PATTERN = re.compile(
-    r"(^|_)(id|key|uuid|guid|pk|sk)(_|$)", re.IGNORECASE
+    r"(^|_)(id|key|uuid|guid|pk|sk|code)(_|$)", re.IGNORECASE
+)
+# Whole-column names that are commonly entity or surrogate keys (after normalization).
+ENTITY_TOKEN_PATTERN = re.compile(
+    r"^(pid|uid|sku|upc|ean|uuid|guid)$|"
+    r"(^|_)(player|user|entity|customer|account|member|product|vendor|tenant)"
+    r"_(id|key|code|no)($|_)",
+    re.IGNORECASE,
 )
 DATE_NAME_PATTERN = re.compile(r"(date|time|timestamp|ts|dt|created|updated)", re.IGNORECASE)
 DISCRETE_TIME_NAME_PATTERN = re.compile(r"(year|season|period|quarter|month|week|day)", re.IGNORECASE)
+
+
+def _normalize_column_name(col: str) -> str:
+    """Snake-case-ish lower name for rule matching (handles camelCase)."""
+    spaced = col.strip().replace(" ", "_")
+    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", spaced).lower()
+
+
+def _entity_name_strength(norm: str) -> int:
+    """Higher means more likely an entity / identifier column by name alone."""
+    if ID_NAME_PATTERN.search(norm):
+        return 3
+    if ENTITY_TOKEN_PATTERN.search(norm):
+        return 2
+    return 0
 
 
 def _lazy_frame_for(ds: RegisteredDataset) -> pl.LazyFrame:
@@ -55,8 +80,8 @@ def _infer_semantic(
     row_count: int,
     sample_vals: list[Any],
 ) -> SemanticType:
-    name_l = col.lower()
-    if ID_NAME_PATTERN.search(name_l):
+    name_l = _normalize_column_name(col)
+    if ID_NAME_PATTERN.search(name_l) or ENTITY_TOKEN_PATTERN.search(name_l):
         return SemanticType.id_like
     if dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt32, pl.UInt64):
         if n_unique == row_count and row_count > 0:
@@ -200,7 +225,37 @@ def _rank_measure_candidates(
     return out
 
 
-def _build_composite_key_candidates(
+def _build_key_candidate_pool(
+    col_profiles: list[ColumnProfile],
+    temporal_cols: list[TemporalColumnInfo],
+    max_cols: int,
+) -> list[str]:
+    """Prioritize identifier-ish columns so wide schemas still find entity + period grain."""
+    scored: list[tuple[float, int, str]] = []
+    for order, c in enumerate(col_profiles):
+        if c.null_pct > 5:
+            continue
+        norm = _normalize_column_name(c.name)
+        ent = _entity_name_strength(norm)
+        pri = 0.0
+        if c.semantic_type == SemanticType.id_like:
+            pri = 300.0 + ent * 30.0 - c.null_pct
+        elif c.semantic_type == SemanticType.categorical:
+            pri = 150.0 + ent * 20.0 - c.null_pct
+            if ent >= 2 and c.cardinality and c.cardinality >= max(5, len(col_profiles)):
+                pri += 40.0
+        elif c.semantic_type == SemanticType.numeric and ent >= 2:
+            pri = 115.0 + min(60.0, (c.cardinality or 0) / 50.0) - c.null_pct
+        if pri > 0:
+            scored.append((pri, -order, c.name))
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    non_temp_pool = list(dict.fromkeys([name for _, _, name in scored]))
+    temporal_names = [t.name for t in temporal_cols]
+    budget = max(0, max_cols - len(temporal_names))
+    return non_temp_pool[:budget] + temporal_names
+
+
+def _build_grain_key_candidates(
     df_sample: pl.DataFrame,
     candidate_cols: list[str],
     high_threshold: float,
@@ -208,15 +263,28 @@ def _build_composite_key_candidates(
     max_pair_checks: int,
     max_triple_checks: int,
 ) -> list[GrainKeyCandidate]:
+    """Collect single-column, pair, and triple key candidates (no early stop on first hit)."""
     out: list[GrainKeyCandidate] = []
     sample_rows = max(1, len(df_sample))
-    checked_pairs = 0
-    checked_triples = 0
+    if not candidate_cols or not len(df_sample):
+        return out
 
-    # Pairs first.
+    for col in candidate_cols:
+        d = int(df_sample.select(pl.col(col).n_unique().alias("d")).item())
+        ratio = d / sample_rows
+        conf = _confidence_from_ratio(ratio, high_threshold, medium_threshold)
+        if conf != StructureConfidence.low:
+            out.append(
+                GrainKeyCandidate(
+                    columns=[col],
+                    uniqueness_ratio=round(ratio, 6),
+                    confidence=conf,
+                    rank=1,
+                )
+            )
+
+    checked_pairs = 0
     for i in range(len(candidate_cols)):
-        if checked_pairs >= max_pair_checks:
-            break
         for j in range(i + 1, len(candidate_cols)):
             if checked_pairs >= max_pair_checks:
                 break
@@ -234,19 +302,14 @@ def _build_composite_key_candidates(
                         rank=1,
                     )
                 )
-                if conf == StructureConfidence.high:
-                    break
-        if out and out[-1].confidence == StructureConfidence.high:
+        if checked_pairs >= max_pair_checks:
             break
 
-    # If no strong pairs, try triples under strict cap.
-    if not out:
+    has_high = any(c.confidence == StructureConfidence.high for c in out)
+    if not has_high and max_triple_checks > 0:
+        checked_triples = 0
         for i in range(len(candidate_cols)):
-            if checked_triples >= max_triple_checks:
-                break
             for j in range(i + 1, len(candidate_cols)):
-                if checked_triples >= max_triple_checks:
-                    break
                 for k in range(j + 1, len(candidate_cols)):
                     if checked_triples >= max_triple_checks:
                         break
@@ -264,11 +327,9 @@ def _build_composite_key_candidates(
                                 rank=1,
                             )
                         )
-                        if conf == StructureConfidence.high:
-                            break
-                if out and out[-1].confidence == StructureConfidence.high:
+                if checked_triples >= max_triple_checks:
                     break
-            if out and out[-1].confidence == StructureConfidence.high:
+            if checked_triples >= max_triple_checks:
                 break
 
     conf_rank = {
@@ -282,6 +343,86 @@ def _build_composite_key_candidates(
     )
     for idx, cand in enumerate(out, start=1):
         cand.rank = idx
+    return out
+
+
+def _pick_primary_grain_columns(
+    candidates: list[GrainKeyCandidate],
+    entity_names: set[str],
+    temporal_name: str | None,
+) -> list[str]:
+    """Prefer high-confidence (entity column + primary temporal) panels when ties exist."""
+    if not candidates:
+        return []
+    conf_rank = {
+        StructureConfidence.high: 3,
+        StructureConfidence.medium: 2,
+        StructureConfidence.low: 1,
+    }
+
+    def panel_score(colset: set[str]) -> int:
+        if not temporal_name or temporal_name not in colset:
+            return 0
+        if not entity_names.intersection(colset):
+            return 0
+        return 2 if len(colset) >= 2 else 0
+
+    def sort_key(c: GrainKeyCandidate) -> tuple:
+        cols = set(c.columns)
+        return (
+            panel_score(cols),
+            conf_rank.get(c.confidence, 0),
+            c.uniqueness_ratio,
+            -len(c.columns),
+        )
+
+    best = max(candidates, key=sort_key)
+    return list(best.columns)
+
+
+def _merge_entity_candidates(
+    from_id_semantic: list[EntityIdCandidate],
+    col_profiles: list[ColumnProfile],
+) -> list[EntityIdCandidate]:
+    by_name: dict[str, StructureConfidence] = {}
+    for e in from_id_semantic:
+        by_name[e.name] = e.confidence
+
+    for c in col_profiles:
+        if c.null_pct > 10:
+            continue
+        norm = _normalize_column_name(c.name)
+        ent = _entity_name_strength(norm)
+        if ent < 2:
+            continue
+        if c.semantic_type not in (
+            SemanticType.id_like,
+            SemanticType.numeric,
+            SemanticType.text,
+            SemanticType.categorical,
+        ):
+            continue
+        if c.name in by_name:
+            continue
+        if c.semantic_type in (SemanticType.categorical, SemanticType.text):
+            if ent < 3 or not c.cardinality or c.cardinality < 25:
+                continue
+        if c.semantic_type == SemanticType.numeric and ent < 3:
+            continue
+        conf = StructureConfidence.high if c.null_pct <= 1 else StructureConfidence.medium
+        if ent >= 3:
+            conf = StructureConfidence.high if c.null_pct <= 2 else StructureConfidence.medium
+        by_name[c.name] = conf
+
+    out = [EntityIdCandidate(name=n, confidence=s) for n, s in by_name.items()]
+    out.sort(
+        key=lambda x: (
+            {StructureConfidence.high: 0, StructureConfidence.medium: 1, StructureConfidence.low: 2}.get(
+                x.confidence, 3
+            ),
+            x.name,
+        )
+    )
     return out
 
 
@@ -421,14 +562,6 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
         round(null_cells / total_cells * 100, 4) if total_cells else None
     )
 
-    issues = _detect_quality_issues(
-        ds, col_profiles, row_count, null_cells, total_cells, sample_n
-    )
-
-    # Quality score 0-100
-    penalty = sum(i.score_impact for i in issues)
-    quality_score = max(0.0, min(100.0, 100.0 - penalty))
-
     semantic_elapsed_ms = int((time.monotonic() - semantic_started) * 1000)
 
     temporal_cols.sort(
@@ -443,16 +576,17 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
     measure_elapsed_ms = int((time.monotonic() - measure_started) * 1000)
     measures = [c.name for c in measure_candidates[:8]]
 
-    key_candidate_pool = []
-    for c in col_profiles:
-        if c.null_pct > 5:
-            continue
-        if c.semantic_type in (SemanticType.id_like, SemanticType.categorical):
-            key_candidate_pool.append(c.name)
-    key_candidate_pool.extend([t.name for t in temporal_cols])
-    key_candidate_pool = list(dict.fromkeys(key_candidate_pool))[: settings.profile_structure_max_key_candidates]
+    entity_final = _merge_entity_candidates(entity_candidates, col_profiles)
+    entity_name_set = {e.name for e in entity_final}
+    id_column_names = [e.name for e in entity_final]
+
+    key_candidate_pool = _build_key_candidate_pool(
+        col_profiles,
+        temporal_cols,
+        settings.profile_structure_max_key_candidates,
+    )
     key_search_started = time.monotonic()
-    grain_candidates = _build_composite_key_candidates(
+    grain_candidates = _build_grain_key_candidates(
         df_sample=df_sample,
         candidate_cols=key_candidate_pool,
         high_threshold=settings.profile_structure_high_confidence_threshold,
@@ -461,11 +595,24 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
         max_triple_checks=settings.profile_structure_max_triple_checks,
     )
     key_search_elapsed_ms = int((time.monotonic() - key_search_started) * 1000)
-    primary_grain = grain_candidates[0].columns if grain_candidates else []
-    key_candidates = []
+    primary_grain = _pick_primary_grain_columns(grain_candidates, entity_name_set, primary_date)
+    key_candidates: list[str] = []
     for g in grain_candidates:
         key_candidates.extend(g.columns)
     key_candidates = list(dict.fromkeys(key_candidates))
+
+    issues = _detect_quality_issues(
+        ds,
+        col_profiles,
+        row_count,
+        null_cells,
+        total_cells,
+        sample_n,
+        primary_grain_columns=primary_grain,
+    )
+
+    penalty = sum(i.score_impact for i in issues)
+    quality_score = max(0.0, min(100.0, 100.0 - penalty))
 
     narrative_parts = [
         f"Dataset **{ds.source_path.name}** has **{row_count:,}** rows and **{col_count}** columns.",
@@ -476,8 +623,8 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
         else:
             joined = " + ".join(f"`{x}`" for x in primary_grain)
             narrative_parts.append(f"This appears to be one row per composite grain: **{joined}**.")
-    elif id_candidates:
-        narrative_parts.append(f"Likely identifier columns: {', '.join(f'`{x}`' for x in id_candidates[:5])}.")
+    elif id_column_names:
+        narrative_parts.append(f"Likely identifier columns: {', '.join(f'`{x}`' for x in id_column_names[:5])}.")
     if primary_date:
         narrative_parts.append(f"Primary date-like column: `{primary_date}`.")
     if measures:
@@ -491,7 +638,11 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
         structure_warnings.append("No high-confidence row grain key was identified in bounded analysis.")
     if primary_temporal is None:
         structure_warnings.append("No temporal axis was detected; trends may require manual column selection.")
-    if grain_candidates and grain_candidates[0].confidence == StructureConfidence.medium:
+    primary_grain_conf = next(
+        (g.confidence for g in grain_candidates if list(g.columns) == primary_grain),
+        grain_candidates[0].confidence if grain_candidates else None,
+    )
+    if primary_grain_conf == StructureConfidence.medium:
         structure_warnings.append("Primary grain key confidence is medium (sample-based uniqueness).")
 
     emit(
@@ -500,7 +651,7 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
         row_count=row_count,
         column_count=col_count,
         temporal_candidates=len(temporal_cols),
-        entity_candidates=len(entity_candidates),
+        entity_candidates=len(entity_final),
         grain_candidates=len(grain_candidates),
         semantic_elapsed_ms=semantic_elapsed_ms,
         key_search_elapsed_ms=key_search_elapsed_ms,
@@ -523,7 +674,7 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
         datetime_column_count=len(
             {c.name for c in col_profiles if c.semantic_type == SemanticType.datetime}
         ),
-        potential_id_columns=id_candidates[:15],
+        potential_id_columns=id_column_names[:15],
         potential_key_columns=key_candidates[:15],
         quality_score=round(quality_score, 2),
         narrative="\n\n".join(narrative_parts),
@@ -536,9 +687,9 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
         ),
         primary_date_column=primary_date,
         main_numeric_measures=measures,
-        structure_version="v2",
+        structure_version=CURRENT_PROFILE_STRUCTURE_VERSION,
         temporal_columns=temporal_cols,
-        entity_id_columns=entity_candidates[:15],
+        entity_id_columns=entity_final[:15],
         grain_key_candidates=grain_candidates[:15],
         primary_grain_key_columns=primary_grain,
         primary_temporal_column=primary_temporal,
@@ -565,6 +716,7 @@ def _detect_quality_issues(
     null_cells: int,
     total_cells: int,
     sample_rows: int,
+    primary_grain_columns: list[str] | None = None,
 ) -> list[QualityIssue]:
     issues: list[QualityIssue] = []
     view = ds.view_name
@@ -593,10 +745,15 @@ def _detect_quality_issues(
             )
         )
 
+    grain_set = frozenset(primary_grain_columns or [])
+    composite_grain = len(grain_set) > 1
+
     # duplicate primary candidate (sample-uniqueness vs effective rows)
     eff = min(row_count, sample_rows) if row_count else sample_rows
     for c in cols:
         if c.semantic_type == SemanticType.id_like and eff > 0:
+            if composite_grain and c.name in grain_set:
+                continue
             if c.unique_count is not None and c.unique_count < eff * 0.99:
                 dup_pct = (1 - c.unique_count / eff) * 100
                 issues.append(
