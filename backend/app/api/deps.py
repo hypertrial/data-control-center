@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from app.config import Settings
+from app.services.jobs import JobService
 from app.services.registry import DatasetRegistry
 from app.services.workspace import Workspace
 
@@ -23,6 +24,11 @@ def get_registry(request: Request) -> DatasetRegistry:
     return request.app.state.registry
 
 
+def get_jobs(request: Request) -> JobService:
+    return request.app.state.jobs
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 WorkspaceDep = Annotated[Workspace, Depends(get_workspace)]
 RegistryDep = Annotated[DatasetRegistry, Depends(get_registry)]
+JobsDep = Annotated[JobService, Depends(get_jobs)]

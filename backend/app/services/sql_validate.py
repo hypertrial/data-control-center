@@ -1,4 +1,4 @@
-"""Lightweight validation for ad-hoc DuckDB SELECT/WITH queries."""
+"""Validation for read-only DuckDB SQL in workspace mode."""
 
 from __future__ import annotations
 
@@ -13,9 +13,24 @@ FORBIDDEN_KEYWORDS = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# Any source/table function beginning with read_ or known filesystem/url probes is blocked.
+FORBIDDEN_SOURCE_FUNCTIONS = re.compile(
+    r"\b(read_[a-z0-9_]*|glob|httpfs|parquet_scan|csv_scan|json_scan)\s*\(",
+    re.IGNORECASE,
+)
+
+FROM_JOIN_PATTERN = re.compile(
+    r"\b(?:FROM|JOIN)\s+([A-Za-z_][A-Za-z0-9_\.]*)",
+    re.IGNORECASE,
+)
+
+QUOTED_FROM_JOIN_PATTERN = re.compile(
+    r"\b(?:FROM|JOIN)\s+\"([A-Za-z0-9_]+)\"",
+    re.IGNORECASE,
+)
+
 
 def strip_sql_comments(sql: str) -> str:
-    """Remove `--` line comments and `/* */` block comments (quote-aware)."""
     out: list[str] = []
     i = 0
     n = len(sql)
@@ -65,7 +80,6 @@ def strip_sql_comments(sql: str) -> str:
 
 
 def split_sql_statements(sql: str) -> list[str]:
-    """Split on semicolons not inside quoted regions."""
     parts: list[str] = []
     buf: list[str] = []
     i = 0
@@ -108,7 +122,6 @@ def split_sql_statements(sql: str) -> list[str]:
 
 
 def blank_string_literals(sql: str) -> str:
-    """Replace characters inside single-quoted literals with spaces for keyword scanning."""
     out: list[str] = []
     i = 0
     n = len(sql)
@@ -138,12 +151,20 @@ def blank_string_literals(sql: str) -> str:
     return "".join(out)
 
 
-def validate_workspace_sql(sql: str) -> tuple[str | None, str | None]:
-    """
-    Return (error_message, normalized_single_statement_sql).
+def extract_relations(sql: str) -> set[str]:
+    refs: set[str] = set()
+    for m in FROM_JOIN_PATTERN.finditer(sql):
+        token = m.group(1).strip()
+        if token:
+            refs.add(token.split(".")[-1])
+    for m in QUOTED_FROM_JOIN_PATTERN.finditer(sql):
+        token = m.group(1).strip()
+        if token:
+            refs.add(token)
+    return refs
 
-    normalized_sql is comment-stripped, trimmed, trailing semicolon removed.
-    """
+
+def validate_workspace_sql(sql: str, view_names: set[str] | None = None) -> tuple[str | None, str | None]:
     if not sql or not sql.strip():
         return ("SQL must not be empty.", None)
 
@@ -154,11 +175,25 @@ def validate_workspace_sql(sql: str) -> tuple[str | None, str | None]:
 
     stmt = statements[0].strip()
     blanked = blank_string_literals(stmt)
+
     if FORBIDDEN_KEYWORDS.search(blanked):
         return ("SQL contains forbidden keywords for this workspace.", None)
+    if FORBIDDEN_SOURCE_FUNCTIONS.search(blanked):
+        return ("SQL contains forbidden file-reading or external source functions.", None)
 
     upper_head = stmt.lstrip().upper()
     if not (upper_head.startswith("SELECT") or upper_head.startswith("WITH")):
         return ("Only read-only SELECT queries (optionally starting with WITH) are allowed.", None)
+
+    refs = extract_relations(blanked)
+    if view_names and refs:
+        unknown = {r for r in refs if r not in view_names}
+        if unknown:
+            return (
+                f"SQL references non-registered relations: {', '.join(sorted(unknown)[:5])}.",
+                None,
+            )
+    if view_names and not refs:
+        return ("SQL must reference at least one registered dataset view.", None)
 
     return (None, stmt)

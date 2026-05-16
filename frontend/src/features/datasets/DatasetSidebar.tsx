@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DatasetDropzone } from '@/features/datasets/DatasetDropzone'
 import { ACCEPT_ATTR, filterSupportedFiles } from '@/features/datasets/uploadFiles'
+import { Dialog, DialogContent, DialogFooter } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
 import { Database, Loader2, PanelLeftClose, PanelLeft, Upload, X, FolderOpen, Trash2 } from 'lucide-react'
@@ -31,23 +32,18 @@ export function DatasetSidebar() {
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortMode>('name')
   const [dropHighlight, setDropHighlight] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
 
-  const q = useQuery({
-    queryKey: ['datasets'],
-    queryFn: api.listDatasets,
-  })
-
+  const q = useQuery({ queryKey: ['datasets'], queryFn: api.listDatasets })
   const list = useMemo(() => q.data ?? [], [q.data])
 
   const sortedFiltered = useMemo(() => {
     let rows = list
     if (search.trim()) {
       const s = search.toLowerCase()
-      rows = rows.filter(
-        (d) => d.name.toLowerCase().includes(s) || d.dataset_id.toLowerCase().includes(s),
-      )
+      rows = rows.filter((d) => d.name.toLowerCase().includes(s) || d.dataset_id.toLowerCase().includes(s))
     }
     const copy = [...rows]
     copy.sort((a, b) => {
@@ -71,7 +67,7 @@ export function DatasetSidebar() {
         await qc.invalidateQueries({ queryKey: ['datasets'] })
         if (rows.length) {
           setActiveDatasetId(rows[rows.length - 1]!.dataset_id)
-          toast.success(`Registered ${rows.length} file(s).`)
+          toast.success(`Registered ${rows.length} file(s). Row counts may appear shortly.`)
         }
       } catch (e) {
         toast.error((e as Error).message)
@@ -84,14 +80,9 @@ export function DatasetSidebar() {
 
   const removeDataset = useCallback(
     async (datasetId: string, name: string) => {
-      if (!window.confirm(`Remove ${name} from this workspace? The source file will not be deleted.`)) {
-        return
-      }
       try {
         await api.deleteDataset(datasetId)
-        qc.setQueryData<DatasetSummary[]>(['datasets'], (old) =>
-          (old ?? []).filter((d) => d.dataset_id !== datasetId),
-        )
+        qc.setQueryData<DatasetSummary[]>(['datasets'], (old) => (old ?? []).filter((d) => d.dataset_id !== datasetId))
         qc.removeQueries({ queryKey: ['profile', datasetId] })
         qc.removeQueries({ queryKey: ['profile-history', datasetId] })
         qc.removeQueries({ queryKey: ['quality', datasetId] })
@@ -107,6 +98,8 @@ export function DatasetSidebar() {
         toast.success(`Removed ${name}.`)
       } catch (e) {
         toast.error((e as Error).message)
+      } finally {
+        setConfirmDelete(null)
       }
     },
     [activeDatasetId, qc, searchParams, setSearchParams, setActiveDatasetId],
@@ -145,37 +138,16 @@ export function DatasetSidebar() {
             {!narrow && <Database className="h-4 w-4 shrink-0" />}
             {!narrow && <span>Datasets</span>}
             {narrow && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="shrink-0"
-                aria-label="Expand sidebar"
-                onClick={() => setSidebarCollapsed(false)}
-              >
+              <Button type="button" variant="ghost" size="icon" className="shrink-0" aria-label="Expand sidebar" onClick={() => setSidebarCollapsed(false)}>
                 <PanelLeft className="h-4 w-4" />
               </Button>
             )}
             {!narrow && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="ml-auto hidden lg:inline-flex"
-                aria-label="Collapse sidebar"
-                onClick={() => setSidebarCollapsed(true)}
-              >
+              <Button type="button" variant="ghost" size="icon" className="ml-auto hidden lg:inline-flex" aria-label="Collapse sidebar" onClick={() => setSidebarCollapsed(true)}>
                 <PanelLeftClose className="h-4 w-4" />
               </Button>
             )}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="ml-auto lg:hidden"
-              aria-label="Close"
-              onClick={() => setSidebarMobileOpen(false)}
-            >
+            <Button type="button" variant="ghost" size="icon" className="ml-auto lg:hidden" aria-label="Close" onClick={() => setSidebarMobileOpen(false)}>
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -190,10 +162,7 @@ export function DatasetSidebar() {
 
           {!narrow && !emptyWorkspace ? (
             <div
-              className={cn(
-                'mt-3 space-y-2 rounded-lg border border-dashed border-border-default p-2 transition',
-                dropHighlight && 'border-[hsl(var(--accent))] bg-white/[0.04]',
-              )}
+              className={cn('mt-3 space-y-2 rounded-lg border border-dashed border-border-default p-2 transition', dropHighlight && 'border-[hsl(var(--accent))] bg-white/[0.04]')}
               onDragEnter={(e) => {
                 e.preventDefault()
                 setDropHighlight(true)
@@ -214,52 +183,21 @@ export function DatasetSidebar() {
                 void uploadFiles(files)
               }}
             >
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept={ACCEPT_ATTR}
-                className="sr-only"
-                aria-label="Upload data files"
-                onChange={(e) => {
-                  const files = e.target.files ? Array.from(e.target.files) : []
-                  e.target.value = ''
-                  void uploadFiles(files)
-                }}
-              />
-              <input
-                ref={folderInputRef}
-                type="file"
-                multiple
-                className="sr-only"
-                aria-label="Upload folder of data files"
-                {...({ webkitdirectory: '' } as object)}
-                onChange={(e) => {
-                  const files = e.target.files ? Array.from(e.target.files) : []
-                  e.target.value = ''
-                  void uploadFiles(files)
-                }}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full"
-                disabled={busy}
-                aria-label="Upload files"
-                onClick={() => fileInputRef.current?.click()}
-              >
+              <input ref={fileInputRef} type="file" multiple accept={ACCEPT_ATTR} className="sr-only" aria-label="Upload data files" onChange={(e) => {
+                const files = e.target.files ? Array.from(e.target.files) : []
+                e.target.value = ''
+                void uploadFiles(files)
+              }} />
+              <input ref={folderInputRef} type="file" multiple className="sr-only" aria-label="Upload folder of data files" {...({ webkitdirectory: '' } as object)} onChange={(e) => {
+                const files = e.target.files ? Array.from(e.target.files) : []
+                e.target.value = ''
+                void uploadFiles(files)
+              }} />
+              <Button type="button" variant="outline" size="sm" className="w-full" disabled={busy} aria-label="Upload files" onClick={() => fileInputRef.current?.click()}>
                 {busy ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-2 h-3.5 w-3.5" />}
                 Upload
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full"
-                disabled={busy}
-                onClick={() => folderInputRef.current?.click()}
-              >
+              <Button type="button" variant="outline" size="sm" className="w-full" disabled={busy} onClick={() => folderInputRef.current?.click()}>
                 <FolderOpen className="mr-2 h-3.5 w-3.5" />
                 Folder
               </Button>
@@ -268,29 +206,14 @@ export function DatasetSidebar() {
 
           {narrow && !emptyWorkspace ? (
             <div className="mt-2 flex flex-col items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                disabled={busy}
-                aria-label="Upload files"
-                onClick={() => fileInputRef.current?.click()}
-              >
+              <Button type="button" variant="outline" size="icon" disabled={busy} aria-label="Upload files" onClick={() => fileInputRef.current?.click()}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept={ACCEPT_ATTR}
-                className="sr-only"
-                aria-label="Upload data files"
-                onChange={(e) => {
-                  const files = e.target.files ? Array.from(e.target.files) : []
-                  e.target.value = ''
-                  void uploadFiles(files)
-                }}
-              />
+              <input ref={fileInputRef} type="file" multiple accept={ACCEPT_ATTR} className="sr-only" aria-label="Upload data files" onChange={(e) => {
+                const files = e.target.files ? Array.from(e.target.files) : []
+                e.target.value = ''
+                void uploadFiles(files)
+              }} />
             </div>
           ) : null}
         </div>
@@ -298,21 +221,10 @@ export function DatasetSidebar() {
         <div className="flex flex-1 flex-col overflow-hidden p-2">
           {!narrow && list.length > 0 && (
             <div className="mb-2 flex shrink-0 flex-col gap-2">
-              <Input
-                id="dcc-sidebar-search"
-                placeholder="Search datasets…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="h-8 text-xs"
-                aria-label="Search datasets"
-              />
+              <Input id="dcc-sidebar-search" placeholder="Search datasets..." value={search} onChange={(e) => setSearch(e.target.value)} className="h-8 text-xs" aria-label="Search datasets" />
               <label className="flex items-center gap-2 text-[10px] text-fg-muted">
                 Sort
-                <select
-                  className="h-7 flex-1 rounded-md border border-border-default bg-black/30 px-1 text-xs"
-                  value={sort}
-                  onChange={(e) => setSort(e.target.value as SortMode)}
-                >
+                <select className="h-7 flex-1 rounded-md border border-border-default bg-black/30 px-1 text-xs" value={sort} onChange={(e) => setSort(e.target.value as SortMode)}>
                   <option value="name">Name</option>
                   <option value="rows">Rows</option>
                   <option value="quality">Quality</option>
@@ -322,11 +234,7 @@ export function DatasetSidebar() {
                 <div
                   className="h-full bg-[hsl(var(--severity-ok))]"
                   style={{
-                    width: `${Math.min(
-                      100,
-                      (list.filter((d) => (d.quality_score ?? 0) >= 70).length / Math.max(1, list.length)) *
-                        100,
-                    )}%`,
+                    width: `${Math.min(100, (list.filter((d) => (d.quality_score ?? 0) >= 70).length / Math.max(1, list.length)) * 100)}%`,
                   }}
                 />
               </div>
@@ -334,25 +242,18 @@ export function DatasetSidebar() {
           )}
 
           <div className="flex-1 space-y-1 overflow-auto">
-            {q.isLoading && <div className="text-sm text-fg-muted">Loading…</div>}
+            {q.isLoading && <div className="text-sm text-fg-muted">Loading...</div>}
             {q.isError && <div className="text-sm text-red-300">{(q.error as Error).message}</div>}
             <ul className="space-y-1">
               {sortedFiltered.map((d) => {
                 const active = activeDatasetId === d.dataset_id
                 const sev = qualityScoreSeverity(d.quality_score ?? null)
-                const dot =
-                  sev === 'critical'
-                    ? 'bg-[hsl(var(--severity-critical))]'
-                    : sev === 'warning'
-                      ? 'bg-[hsl(var(--severity-warning))]'
-                      : d.quality_score != null
-                        ? 'bg-[hsl(var(--severity-ok))]'
-                        : 'bg-white/20'
+                const dot = sev === 'critical' ? 'bg-[hsl(var(--severity-critical))]' : sev === 'warning' ? 'bg-[hsl(var(--severity-warning))]' : d.quality_score != null ? 'bg-[hsl(var(--severity-ok))]' : 'bg-white/20'
                 return (
                   <li key={d.dataset_id} className="group relative">
                     <button
                       type="button"
-                      title={`${d.dataset_id} — ${d.source_path}`}
+                      title={`${d.dataset_id} - ${d.source_path}`}
                       aria-current={active ? 'page' : undefined}
                       onClick={() => {
                         setActiveDatasetId(d.dataset_id)
@@ -367,29 +268,18 @@ export function DatasetSidebar() {
                       )}
                     >
                       <div className={cn('flex items-center gap-2', narrow && 'justify-center')}>
-                        <span
-                          className={cn('h-2 w-2 shrink-0 rounded-full', dot)}
-                          title={d.quality_score != null ? `Quality ${d.quality_score}` : 'Not profiled'}
-                        />
+                        <span className={cn('h-2 w-2 shrink-0 rounded-full', dot)} title={d.quality_score != null ? `Quality ${d.quality_score}` : 'Not profiled'} />
                         {!narrow && (
                           <>
                             <span className="min-w-0 truncate font-medium">{stripFileExtension(d.name)}</span>
-                            <span className="ml-auto shrink-0 rounded border border-border-default px-1 font-mono text-[10px] uppercase text-fg-muted">
-                              {formatDatasetFormat(d.format)}
-                            </span>
+                            <span className="ml-auto shrink-0 rounded border border-border-default px-1 font-mono text-[10px] uppercase text-fg-muted">{formatDatasetFormat(d.format)}</span>
                           </>
                         )}
                       </div>
                       {!narrow && (
                         <div className="mt-0.5 pl-4 text-[10px] text-fg-muted">
-                          <span className="tabular-nums">{formatCount(d.row_count)}</span> ·{' '}
-                          <span className="tabular-nums">{formatBytes(d.file_size_bytes)}</span>
-                          {d.quality_score != null ? (
-                            <>
-                              {' '}
-                              · Q <span className="tabular-nums">{d.quality_score}</span>
-                            </>
-                          ) : null}
+                          <span className="tabular-nums">{formatCount(d.row_count)}</span> - <span className="tabular-nums">{formatBytes(d.file_size_bytes)}</span>
+                          {d.quality_score != null ? <> - Q <span className="tabular-nums">{d.quality_score}</span></> : null}
                         </div>
                       )}
                     </button>
@@ -401,7 +291,7 @@ export function DatasetSidebar() {
                         className="absolute right-1 top-1 h-7 w-7 text-fg-muted opacity-0 hover:text-[hsl(var(--status-error))] focus:opacity-100 group-hover:opacity-100"
                         aria-label={`Remove ${stripFileExtension(d.name)}`}
                         title="Remove dataset"
-                        onClick={() => void removeDataset(d.dataset_id, d.name)}
+                        onClick={() => setConfirmDelete({ id: d.dataset_id, name: d.name })}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -413,6 +303,16 @@ export function DatasetSidebar() {
           </div>
         </div>
       </aside>
+
+      <Dialog open={!!confirmDelete} onOpenChange={(open) => !open && setConfirmDelete(null)}>
+        <DialogContent title="Remove dataset" className="max-w-md">
+          <p className="text-sm text-fg-muted">Remove {confirmDelete?.name} from this workspace? Source files are not deleted.</p>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setConfirmDelete(null)}>Cancel</Button>
+            <Button type="button" variant="destructive" onClick={() => confirmDelete && void removeDataset(confirmDelete.id, confirmDelete.name)}>Remove</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

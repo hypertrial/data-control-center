@@ -1,3 +1,10 @@
+export type ApiError = {
+  code: string
+  message: string
+  details?: Record<string, unknown> | null
+  trace_id?: string
+}
+
 export type DatasetSummary = {
   dataset_id: string
   name: string
@@ -191,6 +198,31 @@ export type AskConversationCreate = {
 
 export type AskConversationPatch = {
   title?: string | null
+}
+
+export type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'canceled'
+
+export type JobSummary = {
+  job_id: string
+  kind: string
+  dataset_id: string | null
+  status: JobStatus
+  progress: number
+  error_code?: string | null
+  error_message?: string | null
+  cancel_requested: boolean
+  created_at: string
+  updated_at: string
+  finished_at?: string | null
+}
+
+export type JobDetail = JobSummary & {
+  result?: Record<string, unknown> | null
+}
+
+export type JobCreateResponse = {
+  job_id: string
+  status: JobStatus
 }
 
 /** SSE payloads from `POST /api/agent/ask/stream`. */

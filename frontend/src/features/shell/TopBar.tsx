@@ -3,6 +3,7 @@ import {
   AlertCircle,
   HelpCircle,
   LayoutDashboard,
+  Loader2,
   Menu,
   MessageCircle,
   PanelLeftClose,
@@ -12,10 +13,11 @@ import {
   Search,
   Table2,
   Terminal,
+  XCircle,
 } from 'lucide-react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -35,7 +37,7 @@ const NAV: Array<{ to: string; label: string; icon: LucideIcon; end?: boolean }>
 ]
 
 function QualityMicroBar({ score }: { score: number | null | undefined }) {
-  if (score == null) return <span className="text-xs text-fg-muted">—</span>
+  if (score == null) return <span className="text-xs text-fg-muted">-</span>
   const sev = qualityScoreSeverity(score)
   const pct = Math.min(100, Math.max(0, score))
   const color =
@@ -64,7 +66,7 @@ export function TopBar() {
   const setCollapsed = useUiStore((s) => s.setSidebarCollapsed)
   const setMobileOpen = useUiStore((s) => s.setSidebarMobileOpen)
 
-  const [refreshBusy, setRefreshBusy] = useState(false)
+  const [refreshJobId, setRefreshJobId] = useState<string | null>(null)
 
   const dsQ = useQuery({ queryKey: ['datasets'], queryFn: api.listDatasets })
   const profileQ = useQuery({
@@ -72,28 +74,51 @@ export function TopBar() {
     queryFn: () => api.getProfile(activeId!),
     enabled: !!activeId,
   })
+  const refreshJobQ = useQuery({
+    queryKey: ['job', refreshJobId],
+    queryFn: () => api.getJob(refreshJobId!),
+    enabled: !!refreshJobId,
+    refetchInterval: (q) => {
+      const s = q.state.data?.status
+      if (!s) return 1200
+      return s === 'queued' || s === 'running' ? 1200 : false
+    },
+  })
+
+  useEffect(() => {
+    const status = refreshJobQ.data?.status
+    if (!status) return
+    if (status === 'completed') {
+      void qc.invalidateQueries({ queryKey: ['datasets'] })
+      void qc.invalidateQueries({ queryKey: ['profile', activeId] })
+      void qc.invalidateQueries({ queryKey: ['quality', activeId] })
+      void qc.invalidateQueries({ queryKey: ['profile-history', activeId] })
+      queueMicrotask(() => setRefreshJobId(null))
+    }
+    if (status === 'failed' || status === 'canceled') {
+      queueMicrotask(() => setRefreshJobId(null))
+    }
+  }, [refreshJobQ.data?.status, qc, activeId])
 
   const summary = (dsQ.data ?? []).find((d) => d.dataset_id === activeId)
   const name = summary?.name ?? profileQ.data?.name ?? activeId
   const rows = profileQ.data?.rows ?? summary?.row_count ?? null
   const cols = profileQ.data?.columns ?? summary?.column_count ?? null
   const sizeBytes = profileQ.data?.file_size_bytes ?? summary?.file_size_bytes ?? null
-  const format = summary?.format ?? '—'
+  const format = summary?.format ?? '-'
   const qScore = profileQ.data?.quality_score ?? summary?.quality_score ?? null
   const updated = profileQ.dataUpdatedAt
 
+  const runningRefresh = refreshJobQ.data?.status === 'queued' || refreshJobQ.data?.status === 'running'
+
   const onRefresh = () => {
-    if (!activeId) return
-    setRefreshBusy(true)
-    void api
-      .refreshProfile(activeId)
-      .then(() => {
-        void qc.invalidateQueries({ queryKey: ['datasets'] })
-        void qc.invalidateQueries({ queryKey: ['profile', activeId] })
-        void qc.invalidateQueries({ queryKey: ['quality', activeId] })
-        void qc.invalidateQueries({ queryKey: ['profile-history', activeId] })
-      })
-      .finally(() => setRefreshBusy(false))
+    if (!activeId || runningRefresh) return
+    void api.refreshProfile(activeId).then((job) => setRefreshJobId(job.job_id))
+  }
+
+  const onCancelRefresh = () => {
+    if (!refreshJobId) return
+    void api.cancelJob(refreshJobId)
   }
 
   return (
@@ -121,25 +146,19 @@ export function TopBar() {
             {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           </Button>
           <div className="min-w-0">
-            <div className="truncate text-xs font-semibold uppercase tracking-wider text-fg-muted">
-              Data Control Center
-            </div>
+            <div className="truncate text-xs font-semibold uppercase tracking-wider text-fg-muted">Data Control Center</div>
             {activeId ? (
               <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="truncate text-sm font-semibold text-fg" title={name ?? undefined}>
-                  {name}
-                </span>
-                <span className="hidden text-fg-muted sm:inline">·</span>
+                <span className="truncate text-sm font-semibold text-fg" title={name ?? undefined}>{name}</span>
+                <span className="hidden text-fg-muted sm:inline">-</span>
                 <span className="hidden flex-wrap items-center gap-2 text-xs text-fg-muted sm:flex">
                   <span className="tabular-nums">{formatCount(rows)} rows</span>
-                  <span>·</span>
+                  <span>-</span>
                   <span className="tabular-nums">{formatCount(cols)} cols</span>
-                  <span>·</span>
+                  <span>-</span>
                   <span className="tabular-nums">{formatBytes(sizeBytes)}</span>
-                  <Badge variant="default" className="font-normal">
-                    {formatDatasetFormat(format)}
-                  </Badge>
-                  {updated ? <span>· {formatRelativeTime(updated)}</span> : null}
+                  <Badge variant="default" className="font-normal">{formatDatasetFormat(format)}</Badge>
+                  {updated ? <span>- {formatRelativeTime(updated)}</span> : null}
                 </span>
                 <span className="hidden items-center gap-2 md:flex">
                   <span className="text-[10px] font-medium uppercase text-fg-muted">Quality</span>
@@ -152,33 +171,22 @@ export function TopBar() {
           </div>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <Tooltip content="Command palette (⌘K)">
+          <Tooltip content="Command palette (Cmd+K)">
             <Button type="button" variant="outline" size="sm" className="gap-1" onClick={() => setPalette(true)}>
               <Search className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Search</span>
-              <kbd className="ml-1 hidden rounded border border-border-default px-1 font-mono text-[10px] text-fg-muted sm:inline">
-                ⌘K
-              </kbd>
+              <kbd className="ml-1 hidden rounded border border-border-default px-1 font-mono text-[10px] text-fg-muted sm:inline">Cmd+K</kbd>
             </Button>
           </Tooltip>
           <Tooltip content="Shortcuts (?)">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="Keyboard shortcuts"
-              onClick={() => setShortcuts(true)}
-            >
+            <Button type="button" variant="ghost" size="icon" aria-label="Keyboard shortcuts" onClick={() => setShortcuts(true)}>
               <HelpCircle className="h-4 w-4" />
             </Button>
           </Tooltip>
         </div>
       </div>
 
-      <nav
-        className="flex flex-wrap items-center gap-1 border-t border-border-default/80 px-2 py-1.5 sm:px-3"
-        aria-label="Primary"
-      >
+      <nav className="flex flex-wrap items-center gap-1 border-t border-border-default/80 px-2 py-1.5 sm:px-3" aria-label="Primary">
         {NAV.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
@@ -187,9 +195,7 @@ export function TopBar() {
             className={({ isActive }) =>
               cn(
                 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition sm:text-sm',
-                isActive
-                  ? 'bg-white/12 text-white shadow-sm'
-                  : 'text-fg-muted hover:bg-white/5 hover:text-fg',
+                isActive ? 'bg-white/12 text-white shadow-sm' : 'text-fg-muted hover:bg-white/5 hover:text-fg',
               )
             }
           >
@@ -202,16 +208,30 @@ export function TopBar() {
           </NavLink>
         ))}
         <div className="ml-auto flex items-center gap-2">
+          {runningRefresh ? (
+            <Badge variant="default" className="gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Profile refresh running</Badge>
+          ) : null}
           <Button
             type="button"
             variant="outline"
             size="sm"
             className="gap-1"
-            disabled={!activeId || profileQ.isFetching || refreshBusy}
+            disabled={!activeId || profileQ.isFetching || runningRefresh}
             onClick={() => onRefresh()}
           >
-            <RefreshCw className={cn('h-3.5 w-3.5', (profileQ.isFetching || refreshBusy) && 'animate-spin')} />
+            <RefreshCw className="h-3.5 w-3.5" />
             Refresh profile
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="gap-1"
+            disabled={!runningRefresh}
+            onClick={() => onCancelRefresh()}
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            Cancel
           </Button>
         </div>
       </nav>

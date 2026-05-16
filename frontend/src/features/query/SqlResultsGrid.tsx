@@ -29,6 +29,7 @@ import {
 
 const ROW_H = 32
 const COL_ROWNUM = '__rownum__'
+const LARGE_EXPORT_CELLS = 200_000
 
 const colHelper = createColumnHelper<Record<string, unknown>>()
 
@@ -72,9 +73,7 @@ export function SqlResultsGrid({ queryResult, busy }: SqlResultsGridProps) {
       maxSize: 80,
       enableSorting: false,
       enableResizing: false,
-      cell: (ctx) => (
-        <span className="tabular-nums text-[hsl(var(--muted))]">{ctx.row.index + 1}</span>
-      ),
+      cell: (ctx) => <span className="tabular-nums text-[hsl(var(--muted))]">{ctx.row.index + 1}</span>,
     })
 
     const dataCols = queryResult.columns.map((col: QueryResultColumn) =>
@@ -83,9 +82,7 @@ export function SqlResultsGrid({ queryResult, busy }: SqlResultsGridProps) {
         header: () => (
           <div className="flex flex-col gap-0.5 pr-2 text-left">
             <span className="truncate font-medium">{col.name}</span>
-            {col.type ? (
-              <span className="truncate text-[10px] font-normal text-[hsl(var(--muted))]">{col.type}</span>
-            ) : null}
+            {col.type ? <span className="truncate text-[10px] font-normal text-[hsl(var(--muted))]">{col.type}</span> : null}
           </div>
         ),
         size: 180,
@@ -107,11 +104,7 @@ export function SqlResultsGrid({ queryResult, busy }: SqlResultsGridProps) {
           const nullish = isNullishCell(v)
           return (
             <span
-              className={cn(
-                'block max-w-full truncate',
-                num ? 'font-mono' : 'font-mono text-xs',
-                nullish && 'text-[hsl(var(--muted))]',
-              )}
+              className={cn('block max-w-full truncate', num ? 'font-mono' : 'font-mono text-xs', nullish && 'text-[hsl(var(--muted))]')}
               title={disp}
             >
               {nullish ? 'NULL' : disp}
@@ -124,7 +117,7 @@ export function SqlResultsGrid({ queryResult, busy }: SqlResultsGridProps) {
     return [rowCol, ...dataCols]
   }, [queryResult.columns])
 
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table useReactTable
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: dataRows,
     columns,
@@ -137,8 +130,6 @@ export function SqlResultsGrid({ queryResult, busy }: SqlResultsGridProps) {
   })
 
   const tableRows = table.getRowModel().rows
-
-  /** Large results use row virtualization; small results render fully (also fixes tests with no layout). */
   const shouldVirtualize = tableRows.length > 200
 
   const rowVirtualizer = useVirtualizer({
@@ -149,20 +140,16 @@ export function SqlResultsGrid({ queryResult, busy }: SqlResultsGridProps) {
   })
   const virtualRows = shouldVirtualize ? rowVirtualizer.getVirtualItems() : []
   const paddingTop = shouldVirtualize && virtualRows.length > 0 ? virtualRows[0].start : 0
-  const paddingBottom =
-    shouldVirtualize && virtualRows.length > 0
-      ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
-      : 0
+  const paddingBottom = shouldVirtualize && virtualRows.length > 0 ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end : 0
 
-  const selectionRect = useMemo(() => {
-    if (!anchor || !focus) return null
-    return normalizeSelection(anchor, focus)
-  }, [anchor, focus])
+  const selectionRect = useMemo(() => (anchor && focus ? normalizeSelection(anchor, focus) : null), [anchor, focus])
 
-  const sortedDataForExport = useMemo(
-    () => tableRows.map((r) => r.original as Record<string, unknown>),
-    [tableRows],
-  )
+  const sortedDataForExport = useMemo(() => tableRows.map((r) => r.original as Record<string, unknown>), [tableRows])
+
+  const tooLargeForQuickExport = useMemo(() => {
+    const cells = sortedDataForExport.length * Math.max(1, queryResult.columns.length)
+    return cells >= LARGE_EXPORT_CELLS
+  }, [sortedDataForExport.length, queryResult.columns.length])
 
   const getValueAt = useCallback(
     (rowIndex: number, colIndex: number): unknown => {
@@ -300,24 +287,16 @@ export function SqlResultsGrid({ queryResult, busy }: SqlResultsGridProps) {
       <div className="flex flex-wrap items-center gap-2 border-b border-border-default pb-2">
         <div className="text-xs text-[hsl(var(--muted))]">
           {busy ? (
-            <span>Running…</span>
+            <span>Running...</span>
           ) : (
             <>
               <span className="tabular-nums text-white/90">{queryResult.row_count}</span> rows
-              {queryResult.truncated ? (
-                <span className="text-[hsl(var(--severity-warning))]"> (truncated)</span>
-              ) : null}
+              {queryResult.truncated ? <span className="text-[hsl(var(--severity-warning))]"> (truncated)</span> : null}
+              {tooLargeForQuickExport ? <span className="text-[hsl(var(--severity-warning))]"> - large export</span> : null}
             </>
           )}
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="gap-1"
-          onClick={copySelectionTsv}
-          disabled={busy}
-        >
+        <Button type="button" variant="outline" size="sm" className="gap-1" onClick={copySelectionTsv} disabled={busy}>
           <Copy className="h-3.5 w-3.5" /> Copy TSV
         </Button>
         <Button
@@ -326,6 +305,7 @@ export function SqlResultsGrid({ queryResult, busy }: SqlResultsGridProps) {
           size="sm"
           className="gap-1"
           onClick={() => {
+            if (tooLargeForQuickExport && !window.confirm('Large result. Copying JSON may be slow. Continue?')) return
             void navigator.clipboard.writeText(JSON.stringify(sortedDataForExport, null, 2))
             toast.success('Result rows copied as JSON')
           }}
@@ -339,6 +319,7 @@ export function SqlResultsGrid({ queryResult, busy }: SqlResultsGridProps) {
           size="sm"
           className="gap-1"
           onClick={() => {
+            if (tooLargeForQuickExport && !window.confirm('Large result. CSV export may be slow. Continue?')) return
             void navigator.clipboard.writeText(queryResultToCsv(queryResult.columns, sortedDataForExport))
             toast.success('CSV copied to clipboard')
           }}
@@ -346,10 +327,7 @@ export function SqlResultsGrid({ queryResult, busy }: SqlResultsGridProps) {
         >
           Export CSV
         </Button>
-        <span className="text-[10px] text-[hsl(var(--muted))]">
-          Click header to sort · Drag cells to select · <kbd className="rounded border border-border-default px-0.5 font-mono">⌘</kbd>
-          <kbd className="rounded border border-border-default px-0.5 font-mono">C</kbd> copy TSV
-        </span>
+        <span className="text-[10px] text-[hsl(var(--muted))]">Click header to sort - Drag cells to select - Cmd/Ctrl+C copy TSV</span>
       </div>
 
       <div
@@ -372,14 +350,10 @@ export function SqlResultsGrid({ queryResult, busy }: SqlResultsGridProps) {
                       key={header.id}
                       className={cn(
                         'relative border-b border-white/10 px-2 py-2 text-xs font-medium text-[hsl(var(--muted))]',
-                        isRowNum &&
-                          'sticky left-0 z-30 min-w-[3rem] bg-[hsl(var(--card))]/98 shadow-[2px_0_8px_rgba(0,0,0,0.35)]',
+                        isRowNum && 'sticky left-0 z-30 min-w-[3rem] bg-[hsl(var(--card))]/98 shadow-[2px_0_8px_rgba(0,0,0,0.35)]',
                         !isRowNum && 'min-w-[6rem]',
                       )}
-                      style={{
-                        width: header.getSize(),
-                        maxWidth: header.getSize(),
-                      }}
+                      style={{ width: header.getSize(), maxWidth: header.getSize() }}
                     >
                       {header.isPlaceholder ? null : canSort ? (
                         <button
@@ -407,10 +381,7 @@ export function SqlResultsGrid({ queryResult, busy }: SqlResultsGridProps) {
                             e.stopPropagation()
                             header.getResizeHandler()(e)
                           }}
-                          className={cn(
-                            'absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize select-none touch-none',
-                            header.column.getIsResizing() && 'bg-white/30',
-                          )}
+                          className={cn('absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize select-none touch-none', header.column.getIsResizing() && 'bg-white/30')}
                         />
                       ) : null}
                     </th>
@@ -425,82 +396,33 @@ export function SqlResultsGrid({ queryResult, busy }: SqlResultsGridProps) {
                 <td colSpan={gridColSpan} style={{ height: paddingTop }} />
               </tr>
             ) : null}
-            {shouldVirtualize
-              ? virtualRows.map((vr) => {
-                  const row = tableRows[vr.index] as Row<Record<string, unknown>>
+            {(shouldVirtualize ? virtualRows.map((vr) => tableRows[vr.index] as Row<Record<string, unknown>>) : tableRows).map((row) => (
+              <tr key={row.id} className="border-b border-white/5 hover:bg-white/[0.04]" style={{ height: ROW_H }}>
+                {row.getVisibleCells().map((cell) => {
+                  const colIndex = cell.column.getIndex()
+                  const selected = selectionRect != null && isInSelection(row.index, colIndex, selectionRect)
+                  const isRowNumCell = cell.column.id === COL_ROWNUM
                   return (
-                    <tr
-                      key={row.id}
-                      className="border-b border-white/5 hover:bg-white/[0.04]"
-                      style={{ height: ROW_H }}
+                    <td
+                      key={cell.id}
+                      data-row={row.index}
+                      data-col={colIndex}
+                      className={cn(
+                        'border-r border-white/5 px-2 py-1 align-middle',
+                        isRowNumCell && 'sticky left-0 z-10 bg-[hsl(var(--background))]/98 text-xs shadow-[2px_0_8px_rgba(0,0,0,0.2)]',
+                        selected && 'bg-[hsl(var(--accent))]/25 ring-1 ring-inset ring-white/20',
+                      )}
+                      style={{ width: cell.column.getSize(), maxWidth: cell.column.getSize() }}
+                      onMouseDown={(e) => onCellMouseDown(e, row.index, colIndex)}
+                      onMouseEnter={() => onCellMouseEnter(row.index, colIndex)}
+                      onDoubleClick={() => openCellDetail(row.index, colIndex)}
                     >
-                      {row.getVisibleCells().map((cell) => {
-                        const colIndex = cell.column.getIndex()
-                        const selected =
-                          selectionRect != null && isInSelection(row.index, colIndex, selectionRect)
-                        const isRowNumCell = cell.column.id === COL_ROWNUM
-                        return (
-                          <td
-                            key={cell.id}
-                            data-row={row.index}
-                            data-col={colIndex}
-                            className={cn(
-                              'border-r border-white/5 px-2 py-1 align-middle',
-                              isRowNumCell &&
-                                'sticky left-0 z-10 bg-[hsl(var(--background))]/98 text-xs shadow-[2px_0_8px_rgba(0,0,0,0.2)]',
-                              selected && 'bg-[hsl(var(--accent))]/25 ring-1 ring-inset ring-white/20',
-                            )}
-                            style={{
-                              width: cell.column.getSize(),
-                              maxWidth: cell.column.getSize(),
-                            }}
-                            onMouseDown={(e) => onCellMouseDown(e, row.index, colIndex)}
-                            onMouseEnter={() => onCellMouseEnter(row.index, colIndex)}
-                            onDoubleClick={() => openCellDetail(row.index, colIndex)}
-                          >
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </td>
-                        )
-                      })}
-                    </tr>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
                   )
-                })
-              : tableRows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-b border-white/5 hover:bg-white/[0.04]"
-                    style={{ height: ROW_H }}
-                  >
-                    {row.getVisibleCells().map((cell) => {
-                      const colIndex = cell.column.getIndex()
-                      const selected =
-                        selectionRect != null && isInSelection(row.index, colIndex, selectionRect)
-                      const isRowNumCell = cell.column.id === COL_ROWNUM
-                      return (
-                        <td
-                          key={cell.id}
-                          data-row={row.index}
-                          data-col={colIndex}
-                          className={cn(
-                            'border-r border-white/5 px-2 py-1 align-middle',
-                            isRowNumCell &&
-                              'sticky left-0 z-10 bg-[hsl(var(--background))]/98 text-xs shadow-[2px_0_8px_rgba(0,0,0,0.2)]',
-                            selected && 'bg-[hsl(var(--accent))]/25 ring-1 ring-inset ring-white/20',
-                          )}
-                          style={{
-                            width: cell.column.getSize(),
-                            maxWidth: cell.column.getSize(),
-                          }}
-                          onMouseDown={(e) => onCellMouseDown(e, row.index, colIndex)}
-                          onMouseEnter={() => onCellMouseEnter(row.index, colIndex)}
-                          onDoubleClick={() => openCellDetail(row.index, colIndex)}
-                        >
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
+                })}
+              </tr>
+            ))}
             {shouldVirtualize && paddingBottom > 0 ? (
               <tr>
                 <td colSpan={gridColSpan} style={{ height: paddingBottom }} />

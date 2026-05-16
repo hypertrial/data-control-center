@@ -2,12 +2,16 @@ import type {
   AgentAskRequest,
   AgentAskResponse,
   AgentStreamEvent,
+  ApiError,
   AskConversation,
   AskConversationCreate,
   AskConversationPatch,
   AskTurn,
   DatasetProfile,
   DatasetSummary,
+  JobCreateResponse,
+  JobDetail,
+  JobSummary,
   ProfileDiffResponse,
   ProfileHistoryEntry,
   QueryRequest,
@@ -20,11 +24,23 @@ import type {
 
 const API = '/api'
 
+async function readApiError(r: Response): Promise<string> {
+  const text = await r.text()
+  if (!text) return r.statusText || 'Request failed'
+  try {
+    const parsed = JSON.parse(text) as { error?: ApiError; detail?: string }
+    if (parsed?.error?.message) return parsed.error.message
+    if (typeof parsed?.detail === 'string') return parsed.detail
+  } catch {
+    // fall through to raw text
+  }
+  return text
+}
+
 async function handle<T>(res: Promise<Response>): Promise<T> {
   const r = await res
   if (!r.ok) {
-    const text = await r.text()
-    throw new Error(text || r.statusText)
+    throw new Error(await readApiError(r))
   }
   return r.json() as Promise<T>
 }
@@ -52,7 +68,6 @@ export const api = {
       }),
     ),
 
-  /** Multipart upload: browser → API (no filesystem paths on the client). */
   uploadDatasets: (files: File[]) => {
     const body = new FormData()
     for (const f of files) body.append('files', f)
@@ -69,14 +84,11 @@ export const api = {
 
   deleteDataset: async (datasetId: string) => {
     const r = await fetch(`${API}/datasets/${encodeURIComponent(datasetId)}`, { method: 'DELETE' })
-    if (!r.ok) {
-      const text = await r.text()
-      throw new Error(text || r.statusText)
-    }
+    if (!r.ok) throw new Error(await readApiError(r))
   },
 
   refreshProfile: (datasetId: string) =>
-    handle<DatasetProfile>(
+    handle<JobCreateResponse>(
       fetch(`${API}/datasets/${datasetId}/profile/refresh`, { method: 'POST' }),
     ),
 
@@ -87,9 +99,7 @@ export const api = {
 
   getSample: (datasetId: string, page: number, pageSize: number) =>
     handle<SampleResponse>(
-      fetch(
-        `${API}/datasets/${datasetId}/sample?page=${page}&page_size=${pageSize}`,
-      ),
+      fetch(`${API}/datasets/${datasetId}/sample?page=${page}&page_size=${pageSize}`),
     ),
 
   runQuery: (body: QueryRequest) =>
@@ -116,10 +126,7 @@ export const api = {
     ),
 
   getProfileDiff: (datasetId: string, a?: string | null, b?: string | null) => {
-    const q =
-      a && b
-        ? `?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`
-        : ''
+    const q = a && b ? `?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}` : ''
     return handle<ProfileDiffResponse>(fetch(`${API}/datasets/${datasetId}/profile/diff${q}`))
   },
 
@@ -145,10 +152,7 @@ export const api = {
 
   deleteSavedQuery: async (savedId: string) => {
     const r = await fetch(`${API}/saved-queries/${encodeURIComponent(savedId)}`, { method: 'DELETE' })
-    if (!r.ok) {
-      const text = await r.text()
-      throw new Error(text || r.statusText)
-    }
+    if (!r.ok) throw new Error(await readApiError(r))
   },
 
   listAskConversations: () => handle<AskConversation[]>(fetch(`${API}/ask/conversations`)),
@@ -175,10 +179,7 @@ export const api = {
     const r = await fetch(`${API}/ask/conversations/${encodeURIComponent(conversationId)}`, {
       method: 'DELETE',
     })
-    if (!r.ok) {
-      const text = await r.text()
-      throw new Error(text || r.statusText)
-    }
+    if (!r.ok) throw new Error(await readApiError(r))
   },
 
   listAskTurns: (conversationId: string, limit = 100) =>
@@ -193,17 +194,22 @@ export const api = {
       `${API}/ask/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}`,
       { method: 'DELETE' },
     )
-    if (!r.ok) {
-      const text = await r.text()
-      throw new Error(text || r.statusText)
-    }
+    if (!r.ok) throw new Error(await readApiError(r))
   },
+
+  listJobs: (limit = 100, status?: string) => {
+    const q = new URLSearchParams()
+    q.set('limit', String(limit))
+    if (status) q.set('status', status)
+    return handle<JobSummary[]>(fetch(`${API}/jobs?${q.toString()}`))
+  },
+
+  getJob: (jobId: string) => handle<JobDetail>(fetch(`${API}/jobs/${encodeURIComponent(jobId)}`)),
+
+  cancelJob: (jobId: string) =>
+    handle<JobCreateResponse>(fetch(`${API}/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' })),
 }
 
-/**
- * POST /api/agent/ask/stream — parse `data: {json}` SSE lines.
- * Calls `onEvent` for each decoded event until `done` or connection closes.
- */
 export async function askAgentStream(
   body: AgentAskRequest,
   onEvent: (ev: AgentStreamEvent) => void,
@@ -216,8 +222,7 @@ export async function askAgentStream(
     signal: options?.signal,
   })
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(text || res.statusText)
+    throw new Error(await readApiError(res))
   }
   const reader = res.body?.getReader()
   if (!reader) throw new Error('No response body')
@@ -241,7 +246,7 @@ export async function askAgentStream(
           const ev = JSON.parse(json) as AgentStreamEvent
           if (ev && typeof ev === 'object' && 'type' in ev) onEvent(ev)
         } catch {
-          /* ignore malformed sse json */
+          // ignore malformed sse json
         }
       }
     }

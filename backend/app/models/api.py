@@ -12,6 +12,17 @@ class HealthResponse(BaseModel):
     status: str = "ok"
 
 
+class ErrorEnvelope(BaseModel):
+    code: str
+    message: str
+    details: dict[str, Any] | None = None
+    trace_id: str
+
+
+class ErrorResponse(BaseModel):
+    error: ErrorEnvelope
+
+
 class RegisterFileRequest(BaseModel):
     path: str = Field(..., description="Absolute path to a data file")
 
@@ -164,26 +175,15 @@ class SavedQueryPatch(BaseModel):
 
 class AgentAskRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=10_000)
-    dataset_ids: list[str] | None = Field(
-        default=None,
-        description="If set, only these datasets are included in context",
-    )
+    dataset_ids: list[str] | None = Field(default=None)
     max_rows: int | None = Field(default=None, ge=1, le=100_000)
-    conversation_id: str | None = Field(
-        default=None,
-        description="When set, persist this Ask turn to the workspace conversation",
-    )
-    use_history: bool = Field(
-        default=True,
-        description="Include prior turns from conversation_id in the LLM context",
-    )
+    conversation_id: str | None = Field(default=None)
+    use_history: bool = Field(default=True)
 
 
 class AgentSqlDraft(BaseModel):
-    """Structured JSON output from the LLM for SQL generation."""
-
-    sql: str = Field(..., description="Single SELECT or WITH statement for DuckDB")
-    explanation: str = Field(default="", description="Brief reasoning for the query")
+    sql: str = Field(...)
+    explanation: str = Field(default="")
 
 
 class AgentAskResponse(BaseModel):
@@ -226,3 +226,34 @@ class AskConversationCreate(BaseModel):
 
 class AskConversationPatch(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class JobStatus(str, Enum):
+    queued = "queued"
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+    canceled = "canceled"
+
+
+class JobSummary(BaseModel):
+    job_id: str
+    kind: str
+    dataset_id: str | None = None
+    status: JobStatus
+    progress: float
+    error_code: str | None = None
+    error_message: str | None = None
+    cancel_requested: bool = False
+    created_at: str
+    updated_at: str
+    finished_at: str | None = None
+
+
+class JobDetail(JobSummary):
+    result: dict[str, Any] | None = None
+
+
+class JobCreateResponse(BaseModel):
+    job_id: str
+    status: JobStatus
