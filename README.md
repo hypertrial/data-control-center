@@ -7,6 +7,11 @@ Local-first control center for opening, profiling, exploring, and querying many 
 - **Frontend** ([`frontend/`](frontend/)): React + Vite + TypeScript, TanStack Query/Table, Zustand, ECharts, Tailwind + shadcn-style primitives
 - **Backend** ([`backend/`](backend/)): FastAPI + DuckDB (views + profile cache) + Polars profiling
 
+## Documentation map
+
+- **Backend** (run, tests, workspace DB, profiling env knobs): [`backend/README.md`](backend/README.md)
+- **Frontend** (Vite proxy, layout, TanStack keys, coverage): [`frontend/README.md`](frontend/README.md)
+
 ## Prerequisites
 
 - **Node** — use **22 LTS** or **24+** to avoid install noise (see [`.nvmrc`](.nvmrc)). **Node 23** works, but ESLint 10’s `engines` field doesn’t list it, so `npm install` may print **`EBADENGINE` warnings**; those are safe to ignore.
@@ -32,7 +37,7 @@ If **`frontend/node_modules`** is missing, **`make dev`** and **`make frontend`*
 
 Other targets: `make help`, `make backend`, `make frontend`.
 
-**UI only from repo root:** `npm run dev` uses the root [`package.json`](package.json) and forwards to `frontend/`. You still need the API (`make backend` in another terminal, or use `make dev` for both).
+**From repo root**, [`package.json`](package.json) delegates to **`frontend/`**: **`npm run dev`**, **`npm run lint`**, **`npm test`**, **`npm run build`**. You still need the API when running the UI (`make backend` in another terminal, or **`make dev`** for both).
 
 ### Two terminals (manual)
 
@@ -74,6 +79,16 @@ Open `http://localhost:5173`. The dev server proxies `/api` to the backend.
 - Saved SQL snippets are persisted in the workspace DB via **`/api/saved-queries`** and are available from the SQL tab and command palette.
 - Global UI shortcuts: **⌘/Ctrl+K** opens the command palette, **?** opens the shortcuts sheet, **/** focuses dataset search, **g o/c/q/s/a/y** jumps to Overview/Columns/Quality/Samples/Ask/SQL, and **r** refreshes cached queries.
 
+## Security and registration paths
+
+Path-based dataset registration is gated by [`backend/app/config.py`](backend/app/config.py) (all env vars prefixed **`DCC_`**):
+
+- **`DCC_ALLOW_ARBITRARY_REGISTRATION_PATHS`** — when **`false`** (default), registration rejects paths outside the allowed roots below.
+- **`DCC_REGISTRATION_ALLOWED_ROOTS`** — extra filesystem roots (in addition to the resolved **`DCC_UPLOAD_DIR`**) from which path registration is permitted.
+- **`DCC_EXPOSE_ABSOLUTE_SOURCE_PATHS`** — whether API responses include absolute source paths.
+
+Implementation: [`backend/app/services/registry.py`](backend/app/services/registry.py) (`ensure_registration_allowed`).
+
 ## Local LLM assistant (Ask tab)
 
 - Install **[Ollama](https://ollama.com)** on macOS (download from the site, or e.g. `brew install ollama` if you use Homebrew).
@@ -86,7 +101,7 @@ Open `http://localhost:5173`. The dev server proxies `/api` to the backend.
   For a larger, often more capable model, install **`qwen3:8b`** and set **`DCC_LLM_MODEL=qwen3:8b`** when starting the backend.
 - Keep the Ollama app/daemon running, then run **`make dev`** as usual. Open the **Ask** tab, type a question in plain language, and optional **max_rows** for the result preview.
 - The backend calls Ollama at **`DCC_LLM_BASE_URL`** (default `http://127.0.0.1:11434`), asks the model for a single read-only **`SELECT`/`WITH`** statement, runs it through the same validation and row limits as **`POST /api/query`**, and returns a concise local answer from the executed result. Set **`DCC_AGENT_SUMMARIZE_WITH_LLM=true`** if you prefer a second model call to summarize the result. Generated SQL can be opened in the **SQL** tab.
-- Useful settings (all prefixed with **`DCC_`**): **`LLM_BASE_URL`**, **`LLM_MODEL`**, **`LLM_TIMEOUT_SECONDS`**, **`LLM_SQL_NUM_PREDICT`**, **`LLM_SUMMARY_NUM_PREDICT`**, **`LLM_TEMPERATURE`**, **`LLM_THINK`**, **`AGENT_CONTEXT_MAX_COLUMNS`**, **`AGENT_MAX_ROWS`**, **`AGENT_SQL_ATTEMPTS`**, **`AGENT_SUMMARIZE_WITH_LLM`**, **`AGENT_SUMMARIZE_MAX_JSON_CHARS`**. The default Ask path keeps prompts and generated answers bounded for responsive local inference.
+- Useful **Ask / LLM** settings (see [`backend/app/config.py`](backend/app/config.py); env names use the **`DCC_`** prefix): **`DCC_LLM_BASE_URL`**, **`DCC_LLM_MODEL`**, **`DCC_LLM_TIMEOUT_SECONDS`**, **`DCC_LLM_SQL_NUM_PREDICT`**, **`DCC_LLM_SUMMARY_NUM_PREDICT`**, **`DCC_LLM_TEMPERATURE`**, **`DCC_LLM_THINK`**. **Agent** knobs: **`DCC_AGENT_CONTEXT_MAX_COLUMNS`**, **`DCC_AGENT_MAX_ROWS`**, **`DCC_AGENT_SQL_ATTEMPTS`**, **`DCC_AGENT_SUMMARIZE_WITH_LLM`**, **`DCC_AGENT_SUMMARIZE_MAX_JSON_CHARS`**. The default Ask path keeps prompts and generated answers bounded for responsive local inference.
 - **HTTP API:** `POST /api/agent/ask` with JSON body **`{ "question": "...", "dataset_ids": ["ds_001"] | null, "max_rows": 200, "conversation_id": "<optional>", "use_history": true }`**. The UI creates or selects a conversation and sends **`conversation_id`** so turns are saved; **`use_history`** includes recent prior turns in the agent prompt.
 - **Streaming API:** `POST /api/agent/ask/stream` accepts the same body and returns Server-Sent Events: `meta`, `stage`, `sql_attempt`, `sql`, `query_result`, `token`, `answer`, `timing`, `turn`, `error`, `done`.
 - **CI** does not run Ollama; backend tests **mock** the LLM HTTP calls.
@@ -113,7 +128,7 @@ On push and pull requests to **`main`** / **`master`**, [`.github/workflows/ci.y
 
 Backend tests run with **pytest-cov** via defaults in [`backend/pyproject.toml`](backend/pyproject.toml): the suite fails if **`app/`** drops below **100%** line coverage (`--cov-fail-under=100`). For a local HTML report, run `uv run pytest --cov=app --cov-report=html` and open `backend/htmlcov/index.html`.
 
-Frontend tests use **Vitest + v8** with thresholds in [`frontend/vitest.config.ts`](frontend/vitest.config.ts): lines/statements must meet the **baseline** (currently **~85%**); excluded paths are listed there (e.g. bootstrap-only files). Raise toward 100% as more branches gain tests.
+Frontend tests use **Vitest + v8** with thresholds in [`frontend/vitest.config.ts`](frontend/vitest.config.ts): lines and statements must meet the **`COVERAGE_BASELINE`** (**85%**); excluded paths are listed there (e.g. bootstrap-only files). Raise toward 100% as more branches gain tests.
 
 ```bash
 cd backend && uv run pytest
