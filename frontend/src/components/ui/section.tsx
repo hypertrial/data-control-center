@@ -33,5 +33,5 @@ export function Section({
 }
 
 export function PageContainer({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn('space-y-6 p-6', className)}>{children}</div>
+  return <div className={cn('space-y-6 p-4 sm:p-6', className)}>{children}</div>
 }

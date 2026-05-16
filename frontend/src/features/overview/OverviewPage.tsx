@@ -16,8 +16,20 @@ import { formatBytes, formatCount, formatPercent } from '@/lib/format'
 import { qualityScoreSeverity } from '@/lib/tokens'
 import { useUiStore } from '@/store/uiStore'
 import { cn } from '@/lib/utils'
-import { hslFromRootVar, chartPalette, chartGrid, chartTooltip } from '@/lib/chartTheme'
+import { hslFromRootVar, chartPalette, chartTooltip } from '@/lib/chartTheme'
 import { ProfileDiffDialog } from '@/features/overview/DiffDialog'
+
+/** Truncate for chart axis labels; full string remains in tooltips. */
+function shortenChartLabel(raw: string, maxChars: number): string {
+  const s = raw.trim()
+  if (s.length <= maxChars) return s
+  return `${s.slice(0, Math.max(1, maxChars - 1))}…`
+}
+
+function estimateChartYAxisGutterPx(names: string[], cap = 300): number {
+  const longest = names.reduce((m, n) => Math.max(m, n.length), 10)
+  return Math.min(cap, Math.round(48 + longest * 6.5))
+}
 
 function HeroMetric({
   label,
@@ -104,14 +116,14 @@ function FigureCard({
   className?: string
 }) {
   return (
-    <Card className={cn('border-border-default flex h-full flex-col', className)}>
+    <Card className={cn('border-border-default flex h-full min-w-0 flex-col overflow-hidden', className)}>
       <CardHeader className="space-y-1 pb-2">
         <CardTitle className="text-sm font-semibold leading-tight">{title}</CardTitle>
         {description ? (
           <p className="text-xs leading-snug text-[hsl(var(--muted))]">{description}</p>
         ) : null}
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col pt-0">{children}</CardContent>
+      <CardContent className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-0">{children}</CardContent>
     </Card>
   )
 }
@@ -245,6 +257,7 @@ function CompletenessBars({
 
 function MissingnessMiniChart({ names, values }: { names: string[]; values: number[] }) {
   const ref = useRef<HTMLDivElement>(null)
+  const leftGutter = useMemo(() => estimateChartYAxisGutterPx(names), [names])
 
   useDisposableEChart(
     ref,
@@ -254,9 +267,25 @@ function MissingnessMiniChart({ names, values }: { names: string[]; values: numb
       const warn = hslFromRootVar('--severity-warning')
       const info = hslFromRootVar('--severity-info')
       return {
-        grid: { ...chartGrid },
+        grid: {
+          left: leftGutter,
+          right: 20,
+          top: 16,
+          bottom: 8,
+          containLabel: false,
+        },
         xAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
-        yAxis: { type: 'category', data: names, inverse: true, axisLabel: { width: 90, overflow: 'truncate' } },
+        yAxis: {
+          type: 'category',
+          data: names,
+          inverse: true,
+          axisLabel: {
+            interval: 0,
+            width: Math.max(96, leftGutter - 20),
+            overflow: 'truncate',
+            formatter: (v: string) => shortenChartLabel(v, 44),
+          },
+        },
         series: [
           {
             type: 'bar',
@@ -269,12 +298,21 @@ function MissingnessMiniChart({ names, values }: { names: string[]; values: numb
         ],
         tooltip: {
           trigger: 'axis',
-          valueFormatter: (v: number) => `${v.toFixed(2)}%`,
+          axisPointer: { type: 'shadow' },
+          formatter: (raw: unknown) => {
+            const arr = raw as { dataIndex?: number; name?: string }[]
+            const row = arr[0]
+            const ix = typeof row?.dataIndex === 'number' ? row.dataIndex : -1
+            const col = ix >= 0 ? names[ix] : row?.name ?? ''
+            const pct = ix >= 0 ? values[ix] : null
+            const pctStr = pct != null ? `${pct.toFixed(2)}% null` : ''
+            return col ? `${col}<br/><span style="opacity:.85">${pctStr}</span>` : pctStr
+          },
           ...chartTooltip(),
         },
       }
     },
-    [names, values],
+    [names, values, leftGutter],
   )
 
   if (!names.length) return <p className="text-sm text-[hsl(var(--muted))]">No column stats.</p>
@@ -290,13 +328,14 @@ function IssuesImpactChart({
   openCol: (c: string) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const labels = useMemo(() => issues.map((i) => i.title), [issues])
+  const leftGutter = useMemo(() => estimateChartYAxisGutterPx(labels, 340), [labels])
 
   useDisposableEChart(
     ref,
     issues.length > 0,
     () => {
       const maxImpact = Math.max(1, ...issues.map((i) => i.score_impact))
-      const labels = issues.map((i) => (i.title.length > 48 ? `${i.title.slice(0, 46)}…` : i.title))
 
       const crit = hslFromRootVar('--severity-critical')
       const warn = hslFromRootVar('--severity-warning')
@@ -304,13 +343,24 @@ function IssuesImpactChart({
       const sevColor = (s: string) => (s === 'critical' ? crit : s === 'warning' ? warn : info)
 
       return {
-        grid: { ...chartGrid, right: 28 },
+        grid: {
+          left: leftGutter,
+          right: 28,
+          top: 16,
+          bottom: 8,
+          containLabel: false,
+        },
         xAxis: { type: 'value', max: maxImpact * 1.08, splitLine: { lineStyle: { opacity: 0.2 } } },
         yAxis: {
           type: 'category',
           data: labels,
           inverse: true,
-          axisLabel: { width: 140, overflow: 'truncate', interval: 0 },
+          axisLabel: {
+            interval: 0,
+            width: Math.max(120, leftGutter - 24),
+            overflow: 'truncate',
+            formatter: (v: string) => shortenChartLabel(v, 52),
+          },
         },
         series: [
           {
@@ -333,10 +383,11 @@ function IssuesImpactChart({
             const cols = issue.affected_columns.slice(0, 4).join(', ') || '—'
             return `${issue.title}<br/><span style="opacity:.85">Impact</span>: ${issue.score_impact.toFixed(1)}<br/><span style="opacity:.85">Columns</span>: ${cols}`
           },
+          ...chartTooltip(),
         },
       }
     },
-    [issues, openCol],
+    [issues, labels, leftGutter],
     (chart) => {
       const onClick = (p: { dataIndex?: number }) => {
         const idx = typeof p.dataIndex === 'number' ? p.dataIndex : -1
@@ -372,24 +423,37 @@ function chipCols(
   label: string,
   cols: string[],
   onPick: (c: string) => void,
+  opts?: { maxItems?: number },
 ): React.ReactNode {
   if (!cols.length) return null
+  const max = opts?.maxItems
+  const shown = max != null ? cols.slice(0, max) : cols
+  const overflow = max != null ? cols.slice(max) : []
   return (
-    <div className="flex flex-wrap items-start gap-2">
-      <span className="mt-1 min-w-[6.5rem] text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+    <div className="flex min-w-0 flex-wrap items-start gap-2">
+      <span className="mt-1 min-w-[6.5rem] shrink-0 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
         {label}
       </span>
-      <div className="flex flex-wrap gap-1.5">
-        {cols.map((c) => (
+      <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+        {shown.map((c) => (
           <button
             key={c}
             type="button"
-            className="rounded-md border border-border-default bg-white/[0.04] px-2 py-0.5 font-mono text-xs text-white/90 hover:bg-white/10"
+            className="max-w-full truncate rounded-md border border-border-default bg-white/[0.04] px-2 py-0.5 text-left font-mono text-xs text-white/90 hover:bg-white/10"
+            title={c}
             onClick={() => onPick(c)}
           >
             {c}
           </button>
         ))}
+        {overflow.length > 0 ? (
+          <span
+            className="self-center rounded-md border border-border-default bg-white/[0.03] px-2 py-0.5 text-xs text-[hsl(var(--muted))]"
+            title={overflow.join(', ')}
+          >
+            +{overflow.length} more
+          </span>
+        ) : null}
       </div>
     </div>
   )
@@ -412,11 +476,17 @@ function StructureSummary({ profile, onPick }: { profile: DatasetProfile; onPick
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <div className="rounded-lg border border-border-default bg-white/[0.03] px-2 py-2 text-center">
+        <div className="rounded-lg border border-border-default bg-white/[0.03] px-2 py-2 text-center sm:text-left">
           <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">Date</div>
-          <div className="mt-0.5 truncate font-mono text-xs text-white" title={dateLabel ?? ''}>
-            {dateLabel ?? '—'}
-            {dateHint ? <span className="ml-1 text-[10px] text-[hsl(var(--muted))]">({dateHint})</span> : null}
+          <div className="mt-0.5 min-w-0 space-y-0.5">
+            <div className="break-words font-mono text-xs leading-snug text-white" title={dateLabel ?? ''}>
+              {dateLabel ?? '—'}
+            </div>
+            {dateHint ? (
+              <div className="text-[10px] leading-snug text-[hsl(var(--muted))]" title={dateHint}>
+                {dateHint}
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="rounded-lg border border-border-default bg-white/[0.03] px-2 py-2 text-center">
@@ -463,7 +533,7 @@ function StructureSummary({ profile, onPick }: { profile: DatasetProfile; onPick
           : null}
         {chipCols('Entity IDs', idCols, onPick)}
         {chipCols('Row grain', keyCols, onPick)}
-        {chipCols('Main measures', measureCols.slice(0, 8), onPick)}
+        {chipCols('Main measures', measureCols, onPick, { maxItems: 8 })}
       </div>
     </div>
   )
@@ -558,7 +628,7 @@ export function OverviewPage() {
       </div>
 
       <Section title="Profile snapshot" description="Column mix, completeness, and inferred structure at a glance.">
-        <div className="grid gap-3 lg:grid-cols-3 lg:items-stretch">
+        <div className="grid gap-3 md:grid-cols-2 md:items-stretch">
           <FigureCard
             title="Column mix"
             description="How inferred types split across the schema."
@@ -576,6 +646,8 @@ export function OverviewPage() {
           >
             <CompletenessBars missingPct={p.missing_cell_pct} duplicatePct={p.duplicate_row_pct} />
           </FigureCard>
+        </div>
+        <div className="mt-3 min-w-0">
           <FigureCard
             title="Structure"
             description="Grain, time axis, identifiers, and core measures."
@@ -603,7 +675,7 @@ export function OverviewPage() {
           </div>
         }
       >
-        <div className="grid gap-3 lg:grid-cols-2 lg:items-stretch">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-stretch">
           <FigureCard title="Issue impact" description="Highest score impact first (max five).">
             <IssuesImpactChart issues={topIssues} openCol={openCol} />
           </FigureCard>

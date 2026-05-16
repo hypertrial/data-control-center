@@ -123,8 +123,8 @@ export function TopBar() {
 
   return (
     <header className="shrink-0 border-b border-border-default bg-[hsl(var(--card))]/60 backdrop-blur-md">
-      <div className="flex flex-wrap items-center gap-3 px-3 py-2 sm:px-4">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className="flex items-start gap-2 px-3 py-2 sm:gap-3 sm:px-4">
+        <div className="flex shrink-0 items-center gap-1 pt-0.5 sm:gap-2">
           <Button
             type="button"
             variant="ghost"
@@ -145,48 +145,81 @@ export function TopBar() {
           >
             {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           </Button>
-          <div className="min-w-0">
-            <div className="truncate text-xs font-semibold uppercase tracking-wider text-fg-muted">Data Control Center</div>
-            {activeId ? (
-              <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="truncate text-sm font-semibold text-fg" title={name ?? undefined}>{name}</span>
-                <span className="hidden text-fg-muted sm:inline">-</span>
-                <span className="hidden flex-wrap items-center gap-2 text-xs text-fg-muted sm:flex">
-                  <span className="tabular-nums">{formatCount(rows)} rows</span>
-                  <span>-</span>
-                  <span className="tabular-nums">{formatCount(cols)} cols</span>
-                  <span>-</span>
-                  <span className="tabular-nums">{formatBytes(sizeBytes)}</span>
-                  <Badge variant="default" className="font-normal">{formatDatasetFormat(format)}</Badge>
-                  {updated ? <span>- {formatRelativeTime(updated)}</span> : null}
+        </div>
+
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-fg-muted sm:text-xs">
+            Data Control Center
+          </div>
+          {activeId ? (
+            <>
+              <h1 className="truncate text-sm font-semibold leading-tight text-fg sm:text-base" title={name ?? ''}>
+                {name}
+              </h1>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-fg-muted sm:text-xs">
+                <span className="tabular-nums whitespace-nowrap">{formatCount(rows)} rows</span>
+                <span aria-hidden className="text-white/25">
+                  ·
+                </span>
+                <span className="tabular-nums whitespace-nowrap">{formatCount(cols)} cols</span>
+                <span aria-hidden className="text-white/25">
+                  ·
+                </span>
+                <span className="tabular-nums whitespace-nowrap">{formatBytes(sizeBytes)}</span>
+                <Badge variant="default" className="shrink-0 font-normal">
+                  {formatDatasetFormat(format)}
+                </Badge>
+                {updated ? (
+                  <>
+                    <span aria-hidden className="hidden text-white/25 sm:inline">
+                      ·
+                    </span>
+                    <span className="hidden whitespace-nowrap sm:inline">{formatRelativeTime(updated)}</span>
+                  </>
+                ) : null}
+                <span className="flex w-full basis-full items-center gap-2 pt-0.5 sm:w-auto sm:basis-auto sm:pt-0 md:hidden">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-fg-muted">Quality</span>
+                  <QualityMicroBar score={qScore} />
                 </span>
                 <span className="hidden items-center gap-2 md:flex">
-                  <span className="text-[10px] font-medium uppercase text-fg-muted">Quality</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-fg-muted">Quality</span>
                   <QualityMicroBar score={qScore} />
                 </span>
               </div>
-            ) : (
-              <p className="mt-0.5 text-xs text-fg-muted">Select a dataset from the sidebar to begin.</p>
-            )}
-          </div>
+            </>
+          ) : (
+            <p className="text-xs text-fg-muted">Select a dataset from the sidebar to begin.</p>
+          )}
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+
+        <div className="flex shrink-0 flex-col items-end gap-1 self-start pt-0.5 sm:flex-row sm:items-center">
           <Tooltip content="Command palette (Cmd+K)">
             <Button type="button" variant="outline" size="sm" className="gap-1" onClick={() => setPalette(true)}>
               <Search className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Search</span>
-              <kbd className="ml-1 hidden rounded border border-border-default px-1 font-mono text-[10px] text-fg-muted sm:inline">Cmd+K</kbd>
+              <kbd className="ml-1 hidden rounded border border-border-default px-1 font-mono text-[10px] text-fg-muted sm:inline">
+                Cmd+K
+              </kbd>
             </Button>
           </Tooltip>
           <Tooltip content="Shortcuts (?)">
-            <Button type="button" variant="ghost" size="icon" aria-label="Keyboard shortcuts" onClick={() => setShortcuts(true)}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Keyboard shortcuts"
+              onClick={() => setShortcuts(true)}
+            >
               <HelpCircle className="h-4 w-4" />
             </Button>
           </Tooltip>
         </div>
       </div>
 
-      <nav className="flex flex-wrap items-center gap-1 border-t border-border-default/80 px-2 py-1.5 sm:px-3" aria-label="Primary">
+      <nav
+        className="flex flex-wrap items-center gap-x-1 gap-y-2 border-t border-border-default/80 px-2 py-1.5 sm:px-3"
+        aria-label="Primary"
+      >
         {NAV.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
@@ -194,7 +227,7 @@ export function TopBar() {
             end={end}
             className={({ isActive }) =>
               cn(
-                'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition sm:text-sm',
+                'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition sm:text-sm',
                 isActive ? 'bg-white/12 text-white shadow-sm' : 'text-fg-muted hover:bg-white/5 hover:text-fg',
               )
             }
@@ -207,9 +240,11 @@ export function TopBar() {
             )}
           </NavLink>
         ))}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex w-full min-w-[12rem] flex-1 flex-wrap items-center justify-end gap-2 sm:w-auto">
           {runningRefresh ? (
-            <Badge variant="default" className="gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Profile refresh running</Badge>
+            <Badge variant="default" className="gap-1">
+              <Loader2 className="h-3 w-3 animate-spin" /> Profile refresh running
+            </Badge>
           ) : null}
           <Button
             type="button"
@@ -220,7 +255,8 @@ export function TopBar() {
             onClick={() => onRefresh()}
           >
             <RefreshCw className="h-3.5 w-3.5" />
-            Refresh profile
+            <span className="hidden sm:inline">Refresh profile</span>
+            <span className="sm:hidden">Refresh</span>
           </Button>
           <Button
             type="button"

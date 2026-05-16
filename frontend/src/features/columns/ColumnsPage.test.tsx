@@ -78,6 +78,18 @@ describe('ColumnsPage', () => {
     await waitFor(() => expect(screen.getByText('e1')).toBeInTheDocument())
   })
 
+  it('truncates long column names but keeps full title', async () => {
+    const long = 'world_cup_squad_tournament_year_extra_suffix_for_test'
+    h.getProfile.mockResolvedValue(
+      mkProfile({
+        column_profiles: [mkColumn({ name: long, semantic_type: 'text' })],
+      }),
+    )
+    useUiStore.setState({ activeDatasetId: 'ds_1' })
+    wrap(<ColumnsPage />)
+    await waitFor(() => expect(screen.getByTitle(long)).toBeInTheDocument())
+  })
+
   it('filters sorts and opens drawer', async () => {
     const user = userEvent.setup()
     useUiStore.setState({ activeDatasetId: 'ds_1', columnSearch: '', semanticFilter: 'all' })

@@ -118,6 +118,21 @@ describe('OverviewPage', () => {
     await waitFor(() => expect(screen.getByText(/2\.0 GB/)).toBeInTheDocument())
   })
 
+  it('structure summary shows overflow for many main measures', async () => {
+    const measures = Array.from({ length: 12 }, (_, i) => ({
+      name: `measure_col_${i}`,
+      score: 0.5,
+      confidence: 'high' as const,
+    }))
+    h.getProfile.mockResolvedValue(mkProfile({ measure_candidates: measures }))
+    useUiStore.setState({ activeDatasetId: 'ds_001' })
+    wrap(<OverviewPage />)
+    await waitFor(() => expect(screen.getByText('+4 more')).toBeInTheDocument())
+    expect(
+      screen.getByTitle('measure_col_8, measure_col_9, measure_col_10, measure_col_11'),
+    ).toBeInTheDocument()
+  })
+
   it('shows error state', async () => {
     h.getProfile.mockRejectedValue(new Error('boom'))
     useUiStore.setState({ activeDatasetId: 'ds_001' })

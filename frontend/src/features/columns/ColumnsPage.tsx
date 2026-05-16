@@ -143,15 +143,40 @@ export function ColumnsPage() {
     () => [
       colHelper.accessor('name', {
         header: 'Column',
-        cell: (ctx) => (
-          <div className="flex items-center gap-2">
-            <TypeIcon sem={ctx.row.original.semantic_type} />
-            <span className="font-mono text-sm">{ctx.getValue()}</span>
-          </div>
-        ),
+        cell: (ctx) => {
+          const name = ctx.getValue()
+          return (
+            <div className="flex min-w-0 max-w-[min(32rem,70vw)] items-center gap-2">
+              <TypeIcon sem={ctx.row.original.semantic_type} />
+              <span className="min-w-0 truncate font-mono text-sm" title={name}>
+                {name}
+              </span>
+            </div>
+          )
+        },
       }),
-      colHelper.accessor('physical_type', { header: 'Physical type' }),
-      colHelper.accessor('semantic_type', { header: 'Semantic' }),
+      colHelper.accessor('physical_type', {
+        header: 'Physical type',
+        cell: (ctx) => {
+          const v = ctx.getValue()
+          return (
+            <span className="block max-w-[12rem] truncate font-mono text-xs text-fg" title={v}>
+              {v}
+            </span>
+          )
+        },
+      }),
+      colHelper.accessor('semantic_type', {
+        header: 'Semantic',
+        cell: (ctx) => {
+          const v = ctx.getValue()
+          return (
+            <span className="block max-w-[10rem] truncate text-xs capitalize" title={v}>
+              {v}
+            </span>
+          )
+        },
+      }),
       colHelper.accessor('null_pct', {
         header: 'Null %',
         cell: (ctx) => <NullBar pct={ctx.getValue()} />,
@@ -162,9 +187,12 @@ export function ColumnsPage() {
           const flags = ctx.getValue()
           if (!flags.length) return <span className="text-[hsl(var(--muted))]">—</span>
           return (
-            <div className="flex max-w-[200px] flex-wrap gap-1">
+            <div
+              className="flex max-w-[min(14rem,30vw)] min-w-0 flex-wrap gap-1"
+              title={flags.join(', ')}
+            >
               {flags.map((f) => (
-                <Badge key={f} variant="warning" className="font-normal">
+                <Badge key={f} variant="warning" className="max-w-full truncate font-normal" title={f}>
                   {f}
                 </Badge>
               ))}
@@ -251,34 +279,38 @@ export function ColumnsPage() {
 
   return (
     <PageContainer>
-      <div className="space-y-3">
-        <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-end">
-          <div className="min-w-[220px] flex-1">
+      <div className="rounded-lg border border-border-default bg-white/[0.02] p-3 sm:p-4">
+        <div className="mb-3 text-xs font-semibold tracking-tight text-white">Filter columns</div>
+        <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end lg:gap-x-4 lg:gap-y-3">
+          <div className="min-w-[200px] flex-1 lg:max-w-md">
             <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
-              Filter
+              Name contains
             </div>
-            <div className="relative max-w-md">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" aria-hidden />
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted"
+                aria-hidden
+              />
               <Input
                 placeholder="Column name…"
                 value={columnSearch}
                 onChange={(e) => setColumnSearch(e.target.value)}
-                className="max-w-md pl-9"
+                className="pl-9"
               />
             </div>
           </div>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 lg:min-w-[320px]">
             <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
               Semantic type
             </div>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1.5">
               {SEM_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
                   type="button"
                   onClick={() => setSemanticFilter(opt.value)}
                   className={cn(
-                    'rounded-full px-3 py-1 text-xs transition',
+                    'rounded-full px-3 py-1.5 text-xs transition',
                     semanticFilter === opt.value
                       ? 'bg-white/12 text-white'
                       : 'text-[hsl(var(--muted))] hover:bg-white/5 hover:text-white',
@@ -289,71 +321,78 @@ export function ColumnsPage() {
               ))}
             </div>
           </div>
-          <div>
-            <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
-              Quality
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+            <div>
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+                Quality
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {CQ_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setColumnQualityFilter(opt.value)}
+                    className={cn(
+                      'rounded-full px-3 py-1.5 text-xs transition',
+                      columnQualityFilter === opt.value
+                        ? 'bg-white/12 text-white'
+                        : 'text-[hsl(var(--muted))] hover:bg-white/5 hover:text-white',
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-1">
-              {CQ_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setColumnQualityFilter(opt.value)}
-                  className={cn(
-                    'rounded-full px-3 py-1 text-xs transition',
-                    columnQualityFilter === opt.value
-                      ? 'bg-white/12 text-white'
-                      : 'text-[hsl(var(--muted))] hover:bg-white/5 hover:text-white',
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" size="sm" className="shrink-0 gap-1">
+                  <Eye className="h-3.5 w-3.5" />
+                  Columns
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Visible in table</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {COLUMN_TOOLBAR_IDS.map(({ id, label }) => (
+                  <DropdownMenuCheckboxItem
+                    key={id}
+                    checked={!hiddenCols.includes(id)}
+                    onCheckedChange={() => toggleColVis(activeId, id)}
+                  >
+                    {label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" size="sm" className="gap-1">
-                <Eye className="h-3.5 w-3.5" />
-                Columns
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Visible in table</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {COLUMN_TOOLBAR_IDS.map(({ id, label }) => (
-                <DropdownMenuCheckboxItem
-                  key={id}
-                  checked={!hiddenCols.includes(id)}
-                  onCheckedChange={() => toggleColVis(activeId, id)}
-                >
-                  {label}
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
 
-      <Table className="min-w-[800px]">
+      <Table className="min-w-[760px]">
         <caption className="sr-only">Columns for dataset {activeId}</caption>
-          <THead className="sticky top-0 z-10 bg-[hsl(var(--background))]/95 backdrop-blur">
-            {table.getHeaderGroups().map((hg) => (
-              <TR key={hg.id}>
-                {hg.headers.map((h) => {
-                  const sorted = h.column.getIsSorted()
-                  return (
-                    <TH
-                      key={h.id}
-                      scope="col"
-                      aria-sort={
-                        sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'
-                      }
-                    >
+        <THead className="sticky top-0 z-10 bg-[hsl(var(--background))]/95 backdrop-blur">
+          {table.getHeaderGroups().map((hg) => (
+            <TR key={hg.id}>
+              {hg.headers.map((h) => {
+                const sorted = h.column.getIsSorted()
+                const isName = h.column.id === 'name'
+                return (
+                  <TH
+                    key={h.id}
+                    scope="col"
+                    className={cn(
+                      isName &&
+                        'sticky left-0 z-30 w-[min(28rem,40vw)] min-w-[12rem] max-w-[min(28rem,40vw)] border-r border-border-default bg-[hsl(var(--background))]/95 backdrop-blur',
+                    )}
+                    aria-sort={
+                      sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'
+                    }
+                  >
                     {h.isPlaceholder ? null : (
                       <button
                         type="button"
-                        className="inline-flex items-center gap-1 font-medium"
+                        className="inline-flex items-center gap-2 font-medium"
                         onClick={h.column.getToggleSortingHandler()}
                       >
                         {flexRender(h.column.columnDef.header, h.getContext())}
@@ -364,38 +403,46 @@ export function ColumnsPage() {
                       </button>
                     )}
                   </TH>
-                  )
-                })}
-              </TR>
-            ))}
-          </THead>
-          <TBody>
-            {table.getRowModel().rows.map((row) => (
-              <TR
-                key={row.id}
-                className="cursor-pointer"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    const name = row.original.name
-                    setSelectedColumn(name)
-                    setDrawerOpen(true)
-                  }
-                }}
-                onClick={() => {
+                )
+              })}
+            </TR>
+          ))}
+        </THead>
+        <TBody>
+          {table.getRowModel().rows.map((row) => (
+            <TR
+              key={row.id}
+              className="group cursor-pointer"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
                   const name = row.original.name
                   setSelectedColumn(name)
                   setDrawerOpen(true)
-                }}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TD key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TD>
-                ))}
-              </TR>
-            ))}
-          </TBody>
-        </Table>
+                }
+              }}
+              onClick={() => {
+                const name = row.original.name
+                setSelectedColumn(name)
+                setDrawerOpen(true)
+              }}
+            >
+              {row.getVisibleCells().map((cell) => (
+                <TD
+                  key={cell.id}
+                  className={cn(
+                    cell.column.id === 'name' &&
+                      'sticky left-0 z-20 w-[min(28rem,40vw)] min-w-[12rem] max-w-[min(28rem,40vw)] border-r border-border-default bg-[hsl(var(--background))]/95 backdrop-blur group-hover:bg-white/[0.04]',
+                  )}
+                >
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </TD>
+              ))}
+            </TR>
+          ))}
+        </TBody>
+      </Table>
 
       <ColumnDetailDrawer
         open={drawerOpen}
