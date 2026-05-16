@@ -17,9 +17,12 @@ from app.services.workspace import Workspace
 def reg(tmp_path: Path) -> DatasetRegistry:
     csv = tmp_path / "x.csv"
     csv.write_text("a\n1\n")
-    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    settings = Settings(
+        workspace_db_path=tmp_path / "w.duckdb",
+        allow_arbitrary_registration_paths=True,
+    )
     ws = Workspace(settings)
-    reg = DatasetRegistry(ws)
+    reg = DatasetRegistry(ws, settings)
     reg.register_path(csv)
     return reg
 

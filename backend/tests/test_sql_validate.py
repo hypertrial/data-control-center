@@ -6,6 +6,8 @@ import pytest
 
 from app.services.sql_validate import (
     blank_string_literals,
+    extract_cte_names,
+    extract_relations,
     split_sql_statements,
     strip_sql_comments,
     validate_workspace_sql,
@@ -73,6 +75,14 @@ def test_validate_workspace_sql_accepts_with_cte() -> None:
     assert "WITH" in norm.upper()
 
 
+def test_extract_relations_supports_quoted_names() -> None:
+    assert extract_relations('SELECT * FROM "my_table"') == {"my_table"}
+
+
+def test_extract_cte_names_handles_named_ctes() -> None:
+    assert extract_cte_names('WITH "a" AS (SELECT 1), b AS (SELECT 2) SELECT * FROM b') == {"a", "b"}
+
+
 @pytest.mark.parametrize(
     ("sql", "expect_err"),
     [
@@ -84,6 +94,7 @@ def test_validate_workspace_sql_accepts_with_cte() -> None:
         ("DELETE FROM v_ds_001", "forbidden"),
         ("UPDATE v_ds_001 SET a=1", "forbidden"),
         ("PRAGMA table_info('x')", "forbidden"),
+        ("SELECT * FROM read_csv_auto('x.csv')", "forbidden"),
         ("EXPLAIN SELECT 1", "SELECT"),
     ],
 )
@@ -112,3 +123,9 @@ def test_validate_workspace_sql_strips_trailing_semicolon_via_split() -> None:
     err, norm = validate_workspace_sql("SELECT 1;")
     assert err is None
     assert norm == "SELECT 1"
+
+
+def test_validate_workspace_sql_rejects_unknown_non_cte_relation() -> None:
+    err, norm = validate_workspace_sql("WITH local AS (SELECT 1) SELECT * FROM missing", {"real"})
+    assert norm is None
+    assert err and "non-registered relations" in err

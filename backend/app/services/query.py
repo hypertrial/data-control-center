@@ -17,6 +17,15 @@ class QueryExecError(Exception):
     code: str
 
 
+def _apply_statement_timeout(con: object, timeout_seconds: float) -> None:
+    timeout_ms = max(100, int(timeout_seconds * 1000))
+    try:
+        con.execute(f"SET statement_timeout='{timeout_ms}ms'")
+    except Exception as exc:  # noqa: BLE001
+        if "unrecognized configuration parameter" not in str(exc):
+            raise
+
+
 def execute_query(
     registry: DatasetRegistry,
     settings: Settings,
@@ -36,8 +45,7 @@ def execute_query(
 
     try:
         with registry.workspace.read_db() as con:
-            timeout_ms = max(100, int(settings.query_timeout_seconds * 1000))
-            con.execute(f"SET statement_timeout='{timeout_ms}ms'")
+            _apply_statement_timeout(con, settings.query_timeout_seconds)
             res = con.execute(wrapped)
             cols_meta = res.description or []
             colnames = [c[0] for c in cols_meta]

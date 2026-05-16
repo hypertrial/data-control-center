@@ -467,8 +467,6 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
         key_candidates.extend(g.columns)
     key_candidates = list(dict.fromkeys(key_candidates))
 
-    grain_col = primary_grain[0] if len(primary_grain) == 1 else None
-
     narrative_parts = [
         f"Dataset **{ds.source_path.name}** has **{row_count:,}** rows and **{col_count}** columns.",
     ]
@@ -478,8 +476,6 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
         else:
             joined = " + ".join(f"`{x}`" for x in primary_grain)
             narrative_parts.append(f"This appears to be one row per composite grain: **{joined}**.")
-    elif grain_col:
-        narrative_parts.append(f"This appears to be **one row per `{grain_col}`**.")
     elif id_candidates:
         narrative_parts.append(f"Likely identifier columns: {', '.join(f'`{x}`' for x in id_candidates[:5])}.")
     if primary_date:

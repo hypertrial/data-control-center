@@ -152,6 +152,8 @@ def register_file(
         raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="File not found")
     except IsADirectoryError:
         raise to_http_error(status_code=400, code=CODES.BAD_REQUEST, message="Path must be a file")
+    except ValueError as exc:
+        raise to_http_error(status_code=400, code=CODES.BAD_REQUEST, message=str(exc))
     return registry.to_summary(ds)
 
 
@@ -337,15 +339,22 @@ def sample_rows(
 
     try:
         with registry.workspace.read_db() as con:
-            timeout_ms = max(100, int(settings.query_timeout_seconds * 1000))
-            con.execute(f"SET statement_timeout='{timeout_ms}ms'")
+            try:
+                timeout_ms = max(100, int(settings.query_timeout_seconds * 1000))
+                con.execute(f"SET statement_timeout='{timeout_ms}ms'")
+            except Exception as exc:  # noqa: BLE001
+                if "unrecognized configuration parameter" not in str(exc):
+                    raise
             res = con.execute(f"SELECT * FROM {safe_view} LIMIT {int(ps)} OFFSET {int(offset)}")
             cols_meta = res.description or []
             colnames = [c[0] for c in cols_meta]
             fetched = res.fetchall()
 
         rows = [{colnames[i]: row[i] for i in range(len(colnames))} for row in fetched]
-        total_rows = ds.row_count if ds.row_count is not None else 0
+        total_rows = ds.row_count
+        if total_rows is None:
+            total_rows = registry.workspace.query_count(ds.view_name, settings.registration_count_timeout_seconds)
+        total_rows = total_rows if total_rows is not None else 0
         return {
             "page": page,
             "page_size": ps,

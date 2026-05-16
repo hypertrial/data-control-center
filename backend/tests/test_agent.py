@@ -43,9 +43,12 @@ def test_system_prompt_discourages_any_value_without_group_for_frequency() -> No
 def registry_csv(tmp_path: Path) -> DatasetRegistry:
     csv = tmp_path / "rows.csv"
     csv.write_text("id,val\n1,10\n2,20\n")
-    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    settings = Settings(
+        workspace_db_path=tmp_path / "w.duckdb",
+        allow_arbitrary_registration_paths=True,
+    )
     ws = Workspace(settings)
-    reg = DatasetRegistry(ws)
+    reg = DatasetRegistry(ws, settings)
     reg.register_path(csv)
     return reg
 
@@ -53,7 +56,7 @@ def registry_csv(tmp_path: Path) -> DatasetRegistry:
 def test_build_dataset_context_no_datasets(tmp_path: Path) -> None:
     settings = Settings(workspace_db_path=tmp_path / "empty.duckdb")
     ws = Workspace(settings)
-    reg = DatasetRegistry(ws)
+    reg = DatasetRegistry(ws, settings)
     ctx, err = build_dataset_context(reg, ws, None)
     assert ctx is None
     assert err and "No datasets are registered" in err
@@ -483,7 +486,7 @@ def test_build_dataset_context_no_columns_resolved(
 def test_run_agent_no_datasets(tmp_path: Path) -> None:
     settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
     ws = Workspace(settings)
-    reg = DatasetRegistry(ws)
+    reg = DatasetRegistry(ws, settings)
     out = run_agent_ask(reg, settings, AgentAskRequest(question="x"), ollama_call=lambda *a, **k: "")
     assert out.error and "No datasets" in out.error
 
@@ -791,7 +794,7 @@ def test_ollama_chat_stream_yields_chunks(monkeypatch: pytest.MonkeyPatch) -> No
 def test_run_agent_ask_stream_no_datasets(tmp_path: Path) -> None:
     settings = Settings(workspace_db_path=tmp_path / "empty.duckdb")
     ws = Workspace(settings)
-    reg = DatasetRegistry(ws)
+    reg = DatasetRegistry(ws, settings)
     events = list(
         run_agent_ask_stream(reg, settings, AgentAskRequest(question="q")),
     )

@@ -2,9 +2,22 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from app.services.workspace import Workspace
+
+
+def _wait_for_job(client, job_id: str, *, timeout: float = 2.0) -> dict:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        res = client.get(f"/api/jobs/{job_id}")
+        assert res.status_code == 200
+        body = res.json()
+        if body["status"] in {"completed", "failed", "canceled"}:
+            return body
+        time.sleep(0.02)
+    raise AssertionError(f"job {job_id} did not finish within {timeout}s")
 
 
 def test_health(client):
@@ -17,6 +30,25 @@ def test_list_datasets_empty(client):
     r = client.get("/api/datasets")
     assert r.status_code == 200
     assert r.json() == []
+
+
+def test_queue_count_job_handles_missing_dataset(client):
+    from app.api.datasets import _queue_count_job
+    from app.config import Settings
+
+    captured: dict[str, object] = {}
+
+    class Jobs:
+        def submit(self, *, kind, dataset_id, fn):  # noqa: ANN001
+            captured["kind"] = kind
+            captured["dataset_id"] = dataset_id
+            captured["result"] = fn("job_x")
+            return "job_x"
+
+    job_id = _queue_count_job("ds_missing", Jobs(), client.app.state.registry, Settings())
+    assert job_id == "job_x"
+    assert captured["kind"] == "dataset_count"
+    assert captured["result"] == {"dataset_id": "ds_missing", "row_count": None, "column_count": None}
 
 
 def test_list_datasets_includes_quality_score_from_profile_cache(client, tmp_path):
@@ -299,7 +331,8 @@ def test_upload_only_unsupported_types(tmp_path, monkeypatch):
             files=[("files", ("nope.txt", b"x", "text/plain"))],
         )
     assert r.status_code == 400
-    assert "skipped" in r.json()["detail"].lower() or "No supported" in r.json()["detail"]
+    msg = r.json()["error"]["message"]
+    assert "skipped" in msg.lower() or "No supported" in msg
 
 
 def test_upload_duplicate_names_in_one_batch(tmp_path, monkeypatch):
@@ -360,10 +393,10 @@ def test_upload_register_valueerror_skips_file(tmp_path, monkeypatch):
 
     orig = DatasetRegistry.register_path
 
-    def boom(self, path: Path):
+    def boom(self, path: Path, *, compute_counts=True):
         if path.name == "bad.csv":
             raise ValueError("no")
-        return orig(self, path)
+        return orig(self, path, compute_counts=compute_counts)
 
     monkeypatch.setattr(DatasetRegistry, "register_path", boom)
     with TestClient(create_app()) as c:
@@ -385,7 +418,10 @@ def test_refresh_profile(client, tmp_path):
     did = reg.json()["dataset_id"]
     pr = client.post(f"/api/datasets/{did}/profile/refresh")
     assert pr.status_code == 200
-    assert pr.json()["dataset_id"] == did
+    assert pr.json()["status"] == "queued"
+    job = _wait_for_job(client, pr.json()["job_id"])
+    assert job["status"] == "completed"
+    assert job["result"]["dataset_id"] == did
 
 
 def test_refresh_profile_not_found(client):
@@ -403,7 +439,10 @@ def test_refresh_profile_build_failure(client, tmp_path, monkeypatch):
 
     monkeypatch.setattr("app.api.datasets.build_profile", boom)
     pr = client.post(f"/api/datasets/{did}/profile/refresh")
-    assert pr.status_code == 500
+    assert pr.status_code == 200
+    job = _wait_for_job(client, pr.json()["job_id"])
+    assert job["status"] == "failed"
+    assert job["error_code"] == "JOB_FAILED"
 
 
 def test_profile_history_and_diff(client, tmp_path) -> None:
@@ -412,7 +451,8 @@ def test_profile_history_and_diff(client, tmp_path) -> None:
     reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
     did = reg.json()["dataset_id"]
     client.get(f"/api/datasets/{did}/profile")
-    client.post(f"/api/datasets/{did}/profile/refresh")
+    refresh = client.post(f"/api/datasets/{did}/profile/refresh")
+    _wait_for_job(client, refresh.json()["job_id"])
     h = client.get(f"/api/datasets/{did}/profile/history")
     assert h.status_code == 200
     assert len(h.json()) >= 2
@@ -438,7 +478,8 @@ def test_profile_diff_unknown_history(client, tmp_path) -> None:
     reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
     did = reg.json()["dataset_id"]
     client.get(f"/api/datasets/{did}/profile")
-    client.post(f"/api/datasets/{did}/profile/refresh")
+    refresh = client.post(f"/api/datasets/{did}/profile/refresh")
+    _wait_for_job(client, refresh.json()["job_id"])
     assert (
         client.get(f"/api/datasets/{did}/profile/diff?a=nope&b=alsono").status_code == 404
     )
@@ -485,7 +526,8 @@ def test_profile_diff_explicit_ids(client, tmp_path) -> None:
     reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
     did = reg.json()["dataset_id"]
     client.get(f"/api/datasets/{did}/profile")
-    client.post(f"/api/datasets/{did}/profile/refresh")
+    refresh = client.post(f"/api/datasets/{did}/profile/refresh")
+    _wait_for_job(client, refresh.json()["job_id"])
     h = client.get(f"/api/datasets/{did}/profile/history").json()
     assert len(h) >= 2
     ha, hb = h[1]["history_id"], h[0]["history_id"]
@@ -500,7 +542,8 @@ def test_profile_diff_blobs_missing(client, tmp_path, monkeypatch) -> None:
     reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
     did = reg.json()["dataset_id"]
     client.get(f"/api/datasets/{did}/profile")
-    client.post(f"/api/datasets/{did}/profile/refresh")
+    refresh = client.post(f"/api/datasets/{did}/profile/refresh")
+    _wait_for_job(client, refresh.json()["job_id"])
     monkeypatch.setattr(
         Workspace,
         "load_profile_history_blob",
@@ -559,10 +602,65 @@ def test_profile_diff_explicit_ids_missing_blobs(client, tmp_path, monkeypatch) 
     csv.write_text("a\n1\n")
     did = client.post("/api/datasets/register-file", json={"path": str(csv)}).json()["dataset_id"]
     client.get(f"/api/datasets/{did}/profile")
-    client.post(f"/api/datasets/{did}/profile/refresh")
+    refresh = client.post(f"/api/datasets/{did}/profile/refresh")
+    _wait_for_job(client, refresh.json()["job_id"])
     h = client.get(f"/api/datasets/{did}/profile/history").json()
     ha, hb = h[1]["history_id"], h[0]["history_id"]
     monkeypatch.setattr(Workspace, "load_profile_history_blob", lambda self, _hid: None)
     assert (
         client.get(f"/api/datasets/{did}/profile/diff?a={ha}&b={hb}").status_code == 404
     )
+
+
+def test_refresh_profile_canceled_before_build(client, tmp_path, monkeypatch) -> None:
+    csv = tmp_path / "cancel.csv"
+    csv.write_text("a\n1\n")
+    did = client.post("/api/datasets/register-file", json={"path": str(csv)}).json()["dataset_id"]
+    monkeypatch.setattr(Workspace, "job_cancel_requested", lambda self, job_id: True)
+    pr = client.post(f"/api/datasets/{did}/profile/refresh")
+    job = _wait_for_job(client, pr.json()["job_id"])
+    assert job["status"] == "canceled"
+
+
+def test_refresh_profile_canceled_after_build(client, tmp_path, monkeypatch) -> None:
+    from app.models.api import DatasetProfile
+
+    csv = tmp_path / "cancel2.csv"
+    csv.write_text("a\n1\n")
+    did = client.post("/api/datasets/register-file", json={"path": str(csv)}).json()["dataset_id"]
+    cached_profile = client.get(f"/api/datasets/{did}/profile").json()
+    calls = {"count": 0}
+
+    def fake_cancel(self, job_id):  # noqa: ANN001
+        calls["count"] += 1
+        return calls["count"] in {2, 3}
+
+    monkeypatch.setattr(
+        "app.api.datasets.build_profile",
+        lambda ds: DatasetProfile.model_validate(cached_profile),
+    )
+    monkeypatch.setattr(Workspace, "job_cancel_requested", fake_cancel)
+    pr = client.post(f"/api/datasets/{did}/profile/refresh")
+    job = _wait_for_job(client, pr.json()["job_id"])
+    assert job["status"] == "canceled"
+
+
+def test_sample_rows_raises_on_timeout_setup_failure(client, tmp_path, monkeypatch) -> None:
+    csv = tmp_path / "sample.csv"
+    csv.write_text("a\n1\n")
+    did = client.post("/api/datasets/register-file", json={"path": str(csv)}).json()["dataset_id"]
+
+    class BadCtx:
+        def __enter__(self):  # noqa: ANN204
+            class Con:
+                def execute(self, _sql: str):
+                    raise RuntimeError("broken setup")
+
+            return Con()
+
+        def __exit__(self, exc_type, exc, tb):  # noqa: ANN001, ANN204
+            return False
+
+    monkeypatch.setattr(client.app.state.workspace, "read_db", lambda: BadCtx())
+    res = client.get(f"/api/datasets/{did}/sample?page=1&page_size=5")
+    assert res.status_code == 400

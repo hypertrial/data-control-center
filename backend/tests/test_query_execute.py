@@ -8,7 +8,7 @@ import pytest
 
 from app.config import Settings
 from app.models.api import QueryRequest
-from app.services.query import execute_query
+from app.services.query import _apply_statement_timeout, execute_query
 from app.services.registry import DatasetRegistry
 from app.services.workspace import Workspace
 
@@ -17,9 +17,12 @@ from app.services.workspace import Workspace
 def registry_with_view(tmp_path: Path) -> DatasetRegistry:
     csv = tmp_path / "d.csv"
     csv.write_text("id\n1\n2\n")
-    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    settings = Settings(
+        workspace_db_path=tmp_path / "w.duckdb",
+        allow_arbitrary_registration_paths=True,
+    )
     ws = Workspace(settings)
-    reg = DatasetRegistry(ws)
+    reg = DatasetRegistry(ws, settings)
     reg.register_path(csv)
     return reg
 
@@ -87,9 +90,12 @@ def test_execute_success_and_truncation(registry_with_view: DatasetRegistry) -> 
 def test_execute_preserves_aggregate_date_range_rows(tmp_path: Path) -> None:
     csv = tmp_path / "daily.csv"
     csv.write_text("day_utc\n2009-01-03\n2026-03-13\n")
-    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    settings = Settings(
+        workspace_db_path=tmp_path / "w.duckdb",
+        allow_arbitrary_registration_paths=True,
+    )
     ws = Workspace(settings)
-    reg = DatasetRegistry(ws)
+    reg = DatasetRegistry(ws, settings)
     ds = reg.register_path(csv)
 
     out = execute_query(
@@ -108,9 +114,12 @@ def test_execute_preserves_aggregate_date_range_rows(tmp_path: Path) -> None:
 def test_execute_preserves_empty_aggregate_null_row(tmp_path: Path) -> None:
     csv = tmp_path / "daily.csv"
     csv.write_text("day_utc\n2009-01-03\n2026-03-13\n")
-    settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
+    settings = Settings(
+        workspace_db_path=tmp_path / "w.duckdb",
+        allow_arbitrary_registration_paths=True,
+    )
     ws = Workspace(settings)
-    reg = DatasetRegistry(ws)
+    reg = DatasetRegistry(ws, settings)
     ds = reg.register_path(csv)
 
     out = execute_query(
@@ -150,3 +159,34 @@ def test_empty_registry_allows_select(registry_with_view: DatasetRegistry, monke
     out = execute_query(registry_with_view, Settings(), QueryRequest(sql="SELECT 1 AS x"))
     assert not out.error
     assert out.rows == [{"x": 1}]
+
+
+def test_apply_statement_timeout_reraises_unknown_errors() -> None:
+    class Con:
+        def execute(self, _sql: str) -> None:
+            raise RuntimeError("different failure")
+
+    with pytest.raises(RuntimeError, match="different failure"):
+        _apply_statement_timeout(Con(), 1.0)
+
+
+def test_execute_query_timeout_error_message(
+    registry_with_view: DatasetRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Con:
+        def __enter__(self):  # noqa: ANN204
+            return self
+
+        def __exit__(self, exc_type, exc, tb):  # noqa: ANN001, ANN204
+            return False
+
+        def execute(self, _sql: str):
+            raise RuntimeError("statement timeout")
+
+    monkeypatch.setattr(registry_with_view.workspace, "read_db", lambda: Con())
+    out = execute_query(
+        registry_with_view,
+        Settings(),
+        QueryRequest(sql=f"SELECT * FROM {registry_with_view.list_all()[0].view_name}"),
+    )
+    assert out.error == "Query timed out."

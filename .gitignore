@@ -216,6 +216,10 @@ __marimo__/
 
 *.duckdb
 *.duckdb.wal
+*.duckdb.corrupt
+*.duckdb.corrupt.*
+*.duckdb.wal.corrupt
+*.duckdb.wal.corrupt.*
 .dcc_workspace.duckdb
 .dcc_uploads/
 node_modules/
@@ -226,4 +230,3 @@ backend/.venv/
 
 # Streamlit
 .streamlit/secrets.toml
-

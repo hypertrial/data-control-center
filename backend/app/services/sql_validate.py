@@ -29,6 +29,11 @@ QUOTED_FROM_JOIN_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+CTE_NAME_PATTERN = re.compile(
+    r'(?:^|,)\s*(?:"([A-Za-z0-9_]+)"|([A-Za-z_][A-Za-z0-9_]*))\s+AS\s*\(',
+    re.IGNORECASE,
+)
+
 
 def strip_sql_comments(sql: str) -> str:
     out: list[str] = []
@@ -164,6 +169,19 @@ def extract_relations(sql: str) -> set[str]:
     return refs
 
 
+def extract_cte_names(sql: str) -> set[str]:
+    stripped = sql.lstrip()
+    if not stripped[:4].upper().startswith("WITH"):
+        return set()
+    body = stripped[4:]
+    names: set[str] = set()
+    for match in CTE_NAME_PATTERN.finditer(body):
+        name = match.group(1) or match.group(2)
+        if name:
+            names.add(name)
+    return names
+
+
 def validate_workspace_sql(sql: str, view_names: set[str] | None = None) -> tuple[str | None, str | None]:
     if not sql or not sql.strip():
         return ("SQL must not be empty.", None)
@@ -186,8 +204,9 @@ def validate_workspace_sql(sql: str, view_names: set[str] | None = None) -> tupl
         return ("Only read-only SELECT queries (optionally starting with WITH) are allowed.", None)
 
     refs = extract_relations(blanked)
+    cte_names = extract_cte_names(blanked)
     if view_names and refs:
-        unknown = {r for r in refs if r not in view_names}
+        unknown = {r for r in refs if r not in view_names and r not in cte_names}
         if unknown:
             return (
                 f"SQL references non-registered relations: {', '.join(sorted(unknown)[:5])}.",

@@ -76,7 +76,6 @@ describe('DatasetSidebar', () => {
 
   it('removes ds from the URL when deleting that dataset (stale ?ds would 404)', async () => {
     const user = userEvent.setup()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     wrap(
       <>
         <SearchProbe />
@@ -87,6 +86,8 @@ describe('DatasetSidebar', () => {
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
 
     await user.click(screen.getByRole('button', { name: 'Remove a' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Remove$/ })).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /^Remove$/ }))
 
     await waitFor(() => expect(api.deleteDataset).toHaveBeenCalledWith('ds_001'))
     await waitFor(() => expect(screen.getByTestId('ds-param').textContent).toBe(''))
@@ -94,26 +95,25 @@ describe('DatasetSidebar', () => {
 
   it('removes a dataset after confirmation', async () => {
     const user = userEvent.setup()
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
 
     await user.click(screen.getByRole('button', { name: 'Remove a' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Remove$/ })).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /^Remove$/ }))
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      'Remove a.csv from this workspace? The source file will not be deleted.',
-    )
     await waitFor(() => expect(api.deleteDataset).toHaveBeenCalledWith('ds_001'))
     expect(toastMock.success).toHaveBeenCalledWith('Removed a.csv.')
   })
 
   it('does not remove a dataset when confirmation is cancelled', async () => {
     const user = userEvent.setup()
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
     wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
 
     await user.click(screen.getByRole('button', { name: 'Remove a' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Cancel$/ })).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /^Cancel$/ }))
 
     expect(api.deleteDataset).not.toHaveBeenCalled()
   })
