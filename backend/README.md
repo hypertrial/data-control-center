@@ -2,7 +2,7 @@
 
 FastAPI service with a DuckDB **workspace** database (metadata, profile cache, Ask transcripts, jobs) and **Polars** profiling of registered datasets.
 
-Feature-level documentation (tabs, REST shapes, structure inference **v3**) is in the root [`README.md`](../README.md).
+Feature-level documentation (tabs, REST shapes, structure inference **v4**) is in the root [`README.md`](../README.md).
 
 ## Run locally
 

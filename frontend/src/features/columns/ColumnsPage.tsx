@@ -5,6 +5,7 @@ import {
   flexRender,
   getCoreRowModel,
   getSortedRowModel,
+  type SortingFn,
   type SortingState,
   useReactTable,
 } from '@tanstack/react-table'
@@ -29,6 +30,7 @@ import { TableSkeleton } from '@/components/ui/skeleton'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
 import { useUiStore } from '@/store/uiStore'
 import { ColumnDetailDrawer } from '@/features/columns/ColumnDetailDrawer'
+import { formatCount, formatPercent } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -62,13 +64,25 @@ const CQ_OPTIONS: Array<{ value: 'all' | 'has_flags' | 'critical_only'; label: s
 
 const COLUMN_TOOLBAR_IDS: Array<{ id: string; label: string }> = [
   { id: 'name', label: 'Column' },
-  { id: 'physical_type', label: 'Physical type' },
-  { id: 'semantic_type', label: 'Semantic' },
-  { id: 'null_pct', label: 'Null %' },
+  { id: 'type_col', label: 'Type' },
+  { id: 'missing', label: 'Missing' },
+  { id: 'unique_pct', label: 'Unique' },
+  { id: 'range_col', label: 'Range' },
+  { id: 'mean_sort', label: 'Center' },
+  { id: 'spread_sort', label: 'Spread' },
+  { id: 'top_pct', label: 'Top' },
   { id: 'quality_flags', label: 'Flags' },
-  { id: 'unique_count', label: 'Unique' },
   { id: 'cardinality', label: 'Cardinality' },
 ]
+
+const sortOptionalNumber: SortingFn<ColumnProfile> = (rowA, rowB, columnId) => {
+  const a = rowA.getValue(columnId) as number | null | undefined
+  const b = rowB.getValue(columnId) as number | null | undefined
+  const na = a == null || Number.isNaN(a) ? Number.NEGATIVE_INFINITY : a
+  const nb = b == null || Number.isNaN(b) ? Number.NEGATIVE_INFINITY : b
+  if (na === nb) return 0
+  return na < nb ? -1 : 1
+}
 
 function TypeIcon({ sem }: { sem: SemanticType }) {
   const cls = 'h-3.5 w-3.5 shrink-0 text-[hsl(var(--muted))]'
@@ -125,7 +139,7 @@ export function ColumnsPage() {
   const hiddenCols = activeId ? (hiddenMap[activeId] ?? EMPTY_HIDDEN) : EMPTY_HIDDEN
   const toggleColVis = useUiStore((s) => s.toggleColumnTableVisibility)
 
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'null_pct', desc: true }])
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'missing', desc: true }])
 
   const q = useQuery({
     queryKey: ['profile', activeId],
@@ -155,34 +169,155 @@ export function ColumnsPage() {
           )
         },
       }),
-      colHelper.accessor('physical_type', {
-        header: 'Physical type',
+      colHelper.accessor((r) => `${r.physical_type}|${r.semantic_type}`, {
+        id: 'type_col',
+        header: 'Type',
+        enableSorting: false,
         cell: (ctx) => {
-          const v = ctx.getValue()
+          const r = ctx.row.original
           return (
-            <span className="block max-w-[12rem] truncate font-mono text-xs text-fg" title={v}>
-              {v}
+            <div className="flex min-w-0 max-w-[10rem] flex-col gap-0.5">
+              <span className="truncate font-mono text-xs text-fg" title={r.physical_type}>
+                {r.physical_type}
+              </span>
+              <span className="truncate text-[10px] capitalize text-[hsl(var(--muted))]" title={r.semantic_type}>
+                {r.semantic_type.replaceAll('_', ' ')}
+              </span>
+            </div>
+          )
+        },
+      }),
+      colHelper.accessor((r) => r.null_count ?? null, {
+        id: 'missing',
+        header: 'Missing',
+        sortingFn: sortOptionalNumber,
+        cell: (ctx) => {
+          const r = ctx.row.original
+          return (
+            <div className="flex min-w-[150px] flex-col gap-1">
+              <span className="tabular-nums text-xs text-fg">{formatCount(r.null_count)} null</span>
+              <NullBar pct={r.null_pct} />
+            </div>
+          )
+        },
+      }),
+      colHelper.accessor((r) => r.unique_pct ?? null, {
+        id: 'unique_pct',
+        header: 'Unique',
+        sortingFn: sortOptionalNumber,
+        cell: (ctx) => {
+          const r = ctx.row.original
+          return (
+            <div className="min-w-[110px] text-xs">
+              <span className="tabular-nums text-fg">{formatCount(r.unique_count)}</span>
+              <span className="text-[hsl(var(--muted))]"> · </span>
+              <span className="tabular-nums text-fg">{formatPercent(r.unique_pct)}</span>
+            </div>
+          )
+        },
+      }),
+      colHelper.accessor((r) => `${r.min_value ?? ''}→${r.max_value ?? ''}`, {
+        id: 'range_col',
+        header: 'Range',
+        enableSorting: false,
+        cell: (ctx) => {
+          const r = ctx.row.original
+          if (r.min_value == null && r.max_value == null) {
+            return <span className="text-[hsl(var(--muted))]">—</span>
+          }
+          return (
+            <span className="block max-w-[14rem] truncate font-mono text-xs text-fg" title={`${r.min_value ?? ''} → ${r.max_value ?? ''}`}>
+              {r.min_value ?? '—'} → {r.max_value ?? '—'}
             </span>
           )
         },
       }),
-      colHelper.accessor('semantic_type', {
-        header: 'Semantic',
+      colHelper.accessor((r) => {
+        if (r.mean_value == null || r.mean_value === '') return null
+        const n = Number(r.mean_value)
+        return Number.isFinite(n) ? n : null
+      }, {
+        id: 'mean_sort',
+        header: 'Center',
+        sortingFn: sortOptionalNumber,
         cell: (ctx) => {
-          const v = ctx.getValue()
+          const r = ctx.row.original
+          const mean = r.mean_value
+          const med = r.median_value
+          if (!mean && !med) return <span className="text-[hsl(var(--muted))]">—</span>
           return (
-            <span className="block max-w-[10rem] truncate text-xs capitalize" title={v}>
-              {v}
-            </span>
+            <div className="max-w-[12rem] text-xs">
+              {mean ? (
+                <div className="truncate font-mono text-fg" title={`mean ${mean}`}>
+                  μ {mean}
+                </div>
+              ) : null}
+              {med ? (
+                <div className="truncate font-mono text-[hsl(var(--muted))]" title={`median ${med}`}>
+                  med {med}
+                </div>
+              ) : null}
+            </div>
           )
         },
       }),
-      colHelper.accessor('null_pct', {
-        header: 'Null %',
-        cell: (ctx) => <NullBar pct={ctx.getValue()} />,
+      colHelper.accessor((r) => {
+        if (r.std_value == null || r.std_value === '') return null
+        const n = Number(r.std_value)
+        return Number.isFinite(n) ? n : null
+      }, {
+        id: 'spread_sort',
+        header: 'Spread',
+        sortingFn: sortOptionalNumber,
+        cell: (ctx) => {
+          const r = ctx.row.original
+          const std = r.std_value
+          const iqr =
+            r.p25_value != null && r.p75_value != null ? `${r.p25_value}–${r.p75_value}` : null
+          if (!std && !iqr) return <span className="text-[hsl(var(--muted))]">—</span>
+          return (
+            <div className="max-w-[12rem] text-xs">
+              {std ? (
+                <div className="truncate font-mono text-fg" title={`std ${std}`}>
+                  σ {std}
+                </div>
+              ) : null}
+              {iqr ? (
+                <div className="truncate font-mono text-[hsl(var(--muted))]" title="interquartile range">
+                  IQR {iqr}
+                </div>
+              ) : null}
+            </div>
+          )
+        },
+      }),
+      colHelper.accessor((r) => r.top_pct ?? null, {
+        id: 'top_pct',
+        header: 'Top',
+        sortingFn: sortOptionalNumber,
+        cell: (ctx) => {
+          const r = ctx.row.original
+          if (r.top_value == null && r.top_count == null) {
+            return <span className="text-[hsl(var(--muted))]">—</span>
+          }
+          const title = `${r.top_value ?? ''} (${r.top_count}, ${r.top_pct ?? ''}%)`
+          return (
+            <div className="max-w-[min(14rem,30vw)] min-w-0" title={title}>
+              <span className="block truncate font-mono text-xs text-fg">{r.top_value ?? '—'}</span>
+              <span className="block truncate tabular-nums text-[10px] text-[hsl(var(--muted))]">
+                {formatCount(r.top_count)} · {formatPercent(r.top_pct)}
+              </span>
+            </div>
+          )
+        },
       }),
       colHelper.accessor('quality_flags', {
         header: 'Flags',
+        sortingFn: (ra, rb, colId) => {
+          const a = (ra.getValue(colId) as string[]).length
+          const b = (rb.getValue(colId) as string[]).length
+          return a === b ? 0 : a < b ? -1 : 1
+        },
         cell: (ctx) => {
           const flags = ctx.getValue()
           if (!flags.length) return <span className="text-[hsl(var(--muted))]">—</span>
@@ -199,10 +334,6 @@ export function ColumnsPage() {
             </div>
           )
         },
-      }),
-      colHelper.accessor('unique_count', {
-        header: 'Unique',
-        cell: (ctx) => <span className="tabular-nums">{ctx.getValue() ?? '—'}</span>,
       }),
       colHelper.accessor('cardinality', {
         header: 'Cardinality',
@@ -253,6 +384,19 @@ export function ColumnsPage() {
     [data, selectedColumn],
   )
 
+  const totalCols = q.data?.column_profiles.length ?? 0
+  const sampleRows = q.data?.profiler_sample_rows
+  const fullRows = q.data?.rows
+
+  const summaryParts = useMemo(() => {
+    const bits: string[] = []
+    if (columnSearch.trim()) bits.push(`name contains "${columnSearch.trim()}"`)
+    if (semanticFilter !== 'all') bits.push(`semantic: ${semanticFilter}`)
+    if (columnQualityFilter === 'has_flags') bits.push('quality: has flags')
+    if (columnQualityFilter === 'critical_only') bits.push('quality: critical flags')
+    return bits
+  }, [columnSearch, semanticFilter, columnQualityFilter])
+
   if (!activeId) {
     return (
       <PageContainer>
@@ -264,7 +408,7 @@ export function ColumnsPage() {
   if (q.isLoading) {
     return (
       <PageContainer>
-        <TableSkeleton rows={8} cols={7} />
+        <TableSkeleton rows={8} cols={10} />
       </PageContainer>
     )
   }
@@ -369,7 +513,18 @@ export function ColumnsPage() {
         </div>
       </div>
 
-      <Table className="min-w-[760px]">
+      <p className="mt-3 text-xs leading-relaxed text-[hsl(var(--muted))]">
+        Showing <span className="tabular-nums text-fg">{data.length}</span> of{' '}
+        <span className="tabular-nums text-fg">{totalCols}</span> columns
+        {summaryParts.length ? ` · ${summaryParts.join(' · ')}` : ''}.{' '}
+        {sampleRows != null && fullRows != null && sampleRows < fullRows
+          ? `EDA stats use the first ${sampleRows.toLocaleString()} rows (sample; full table has ${fullRows.toLocaleString()} rows). Uniqueness and distributions follow this sample.`
+          : sampleRows != null && fullRows != null && sampleRows === fullRows
+            ? `EDA stats use all ${fullRows.toLocaleString()} rows in this table.`
+            : 'EDA stats follow the profiler sample window for large datasets.'}
+      </p>
+
+      <Table className="min-w-[1180px]">
         <caption className="sr-only">Columns for dataset {activeId}</caption>
         <THead className="sticky top-0 z-10 bg-[hsl(var(--background))]/95 backdrop-blur">
           {table.getHeaderGroups().map((hg) => (
@@ -389,7 +544,7 @@ export function ColumnsPage() {
                       sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'
                     }
                   >
-                    {h.isPlaceholder ? null : (
+                    {h.isPlaceholder ? null : h.column.getCanSort() ? (
                       <button
                         type="button"
                         className="inline-flex items-center gap-2 font-medium"
@@ -401,6 +556,10 @@ export function ColumnsPage() {
                           desc: '↓',
                         }[h.column.getIsSorted() as string] ?? null}
                       </button>
+                    ) : (
+                      <span className="font-medium">
+                        {flexRender(h.column.columnDef.header, h.getContext())}
+                      </span>
                     )}
                   </TH>
                 )

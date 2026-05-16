@@ -74,13 +74,13 @@ def test_profile_rebuilds_when_cached_structure_version_stale(client, tmp_path):
     pr = client.get(f"/api/datasets/{did}/profile")
     assert pr.status_code == 200
     body = pr.json()
-    assert body["structure_version"] == "v3"
+    assert body["structure_version"] == "v4"
     stale = {**body, "structure_version": "v2", "entity_id_columns": [], "potential_id_columns": []}
     client.app.state.workspace.save_profile_cache(did, stale)
     pr2 = client.get(f"/api/datasets/{did}/profile")
     assert pr2.status_code == 200
     refreshed = pr2.json()
-    assert refreshed["structure_version"] == "v3"
+    assert refreshed["structure_version"] == "v4"
     assert refreshed["entity_id_columns"] or refreshed["potential_id_columns"]
 
 

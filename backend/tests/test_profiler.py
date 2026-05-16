@@ -7,6 +7,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
+from app.config import Settings
 from app.models.api import (
     ColumnProfile,
     EntityIdCandidate,
@@ -25,8 +26,10 @@ from app.services.profiler import (
     _infer_semantic,
     _lazy_frame_for,
     _merge_entity_candidates,
+    _numeric_describe_strings,
     _numeric_histogram,
     _rank_measure_candidates,
+    _series_quantile_str,
     _severity_order,
     _top_values,
     build_profile,
@@ -300,7 +303,7 @@ def test_build_profile_detects_discrete_temporal_and_composite_grain(tmp_path: P
         file_size_bytes=path.stat().st_size,
     )
     prof = build_profile(ds)
-    assert prof.structure_version == "v3"
+    assert prof.structure_version == "v4"
     assert prof.primary_temporal_column is not None
     assert prof.primary_temporal_column.name == "year"
     assert prof.primary_temporal_column.kind.value == "discrete_period"
@@ -334,7 +337,7 @@ def test_build_profile_finds_panel_grain_with_player_id_late_in_schema(tmp_path:
         file_size_bytes=path.stat().st_size,
     )
     prof = build_profile(ds)
-    assert prof.structure_version == "v3"
+    assert prof.structure_version == "v4"
     assert {*prof.primary_grain_key_columns} == {"playerId", "year"}
     assert any(e.name == "playerId" for e in prof.entity_id_columns)
 
@@ -798,3 +801,160 @@ def test_build_profile_narrative_likely_identifier_columns(
     prof = build_profile(ds)
     assert prof.potential_id_columns
     assert "Likely identifier columns" in prof.narrative
+
+
+def test_build_profile_unique_count_when_full_table_exceeds_sample(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.services.profiler.get_settings",
+        lambda: Settings(profile_structure_sample_max_rows=2_000, profile_structure_sample_min_rows=500),
+    )
+    n = 5_000
+    df = pl.DataFrame(
+        {
+            "id": list(range(n)),
+            "score": [float(i % 17) for i in range(n)],
+            "region": (["east", "west", "north", "south"] * (n // 4 + 1))[:n],
+        }
+    )
+    path = tmp_path / "sample_big.parquet"
+    df.write_parquet(path)
+    ds = RegisteredDataset(
+        dataset_id="ds_sample_big",
+        source_path=path,
+        source_label="test",
+        view_name="vsb",
+        format="parquet",
+        row_count=n,
+        column_count=3,
+        file_size_bytes=path.stat().st_size,
+    )
+    prof = build_profile(ds)
+    assert prof.profiler_sample_rows == 2_000
+    id_col = next(c for c in prof.column_profiles if c.name == "id")
+    assert id_col.unique_count == 2_000
+    assert id_col.unique_pct is not None
+    assert id_col.unique_pct > 99.0
+    region = next(c for c in prof.column_profiles if c.name == "region")
+    assert region.top_value in {"east", "west", "north", "south"}
+    assert region.top_count is not None
+    assert region.top_pct is not None
+
+
+def test_build_profile_numeric_describe_stats(tmp_path: Path) -> None:
+    path = tmp_path / "nums.csv"
+    path.write_text("x\n" + "\n".join(str(i) for i in range(1, 101)))
+    ds = RegisteredDataset(
+        dataset_id="ds_numd",
+        source_path=path,
+        source_label="test",
+        view_name="vnumd",
+        format="csv",
+        row_count=100,
+        column_count=1,
+        file_size_bytes=path.stat().st_size,
+    )
+    prof = build_profile(ds)
+    col = next(c for c in prof.column_profiles if c.name == "x")
+    assert col.mean_value is not None
+    assert col.std_value is not None
+    assert col.p25_value is not None
+    assert col.median_value is not None
+    assert col.p75_value is not None
+
+
+def test_build_profile_categorical_top_value_pct(tmp_path: Path) -> None:
+    path = tmp_path / "tops.csv"
+    path.write_text("c\n" + "a\n" * 5 + "b\n" * 3)
+    ds = RegisteredDataset(
+        dataset_id="ds_tops",
+        source_path=path,
+        source_label="test",
+        view_name="vtops",
+        format="csv",
+        row_count=8,
+        column_count=1,
+        file_size_bytes=path.stat().st_size,
+    )
+    prof = build_profile(ds)
+    col = next(c for c in prof.column_profiles if c.name == "c")
+    assert col.top_value == "a"
+    assert col.top_count == 5
+    assert col.top_pct is not None
+    assert abs(col.top_pct - 62.5) < 0.1
+
+
+def test_numeric_describe_strings_empty_series() -> None:
+    s = pl.Series([], dtype=pl.Float64)
+    assert _numeric_describe_strings(s) == (None, None, None, None, None)
+
+
+def test_series_quantile_str_handles_empty_and_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    empty = pl.Series([], dtype=pl.Float64)
+    assert _series_quantile_str(empty, 0.25) is None
+
+    s = pl.Series([1.0, 2.0, 3.0])
+
+    def _bad_q(*_a, **_k):
+        raise RuntimeError("quantile")
+
+    monkeypatch.setattr(s, "quantile", _bad_q)
+    assert _series_quantile_str(s, 0.25) is None
+
+
+def test_series_quantile_str_none_and_nonfinite(monkeypatch: pytest.MonkeyPatch) -> None:
+    s = pl.Series([1.0, 2.0])
+    monkeypatch.setattr(s, "quantile", lambda *a, **k: None)
+    assert _series_quantile_str(s, 0.5) is None
+
+    s2 = pl.Series([1.0, 2.0])
+    monkeypatch.setattr(s2, "quantile", lambda *a, **k: float("nan"))
+    assert _series_quantile_str(s2, 0.5) is None
+
+
+def test_numeric_describe_strings_handles_mean_std_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    s = pl.Series([1, 2, 3])
+
+    def _bad_mean(_self):
+        raise TypeError("mean")
+
+    monkeypatch.setattr(pl.Series, "mean", _bad_mean)
+    mean_v, std_v, p25_v, med_v, p75_v = _numeric_describe_strings(s)
+    assert mean_v is None
+    assert std_v is not None
+    assert p25_v is not None
+
+
+def test_numeric_describe_strings_handles_std_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    s = pl.Series([1, 2, 3])
+
+    def _bad_std(_self, ddof: int = 1):
+        raise ValueError("std")
+
+    monkeypatch.setattr(pl.Series, "std", _bad_std)
+    mean_v, std_v, *_rest = _numeric_describe_strings(s)
+    assert mean_v is not None
+    assert std_v is None
+
+
+def test_numeric_describe_strings_median_non_numeric_str(monkeypatch: pytest.MonkeyPatch) -> None:
+    s = pl.Series([1, 2, 3])
+
+    def _weird_median(_self):
+        return "custom"
+
+    monkeypatch.setattr(pl.Series, "median", _weird_median)
+    *_, med_v, _ = _numeric_describe_strings(s)
+    assert med_v == "custom"
+
+
+def test_numeric_describe_strings_median_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    s = pl.Series([1, 2, 3])
+
+    def _boom(_self):
+        raise TypeError("median")
+
+    monkeypatch.setattr(pl.Series, "median", _boom)
+    *_, med_v, _ = _numeric_describe_strings(s)
+    assert med_v is None
