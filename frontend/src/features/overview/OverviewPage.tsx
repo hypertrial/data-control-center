@@ -396,30 +396,40 @@ function chipCols(
 }
 
 function StructureSummary({ profile, onPick }: { profile: DatasetProfile; onPick: (c: string) => void }) {
-  const idCount = profile.potential_id_columns.length
-  const keyCount = profile.potential_key_columns.length
-  const measureCount = profile.main_numeric_measures.length
+  const idCols = profile.entity_id_columns.length
+    ? profile.entity_id_columns.map((x) => x.name)
+    : profile.potential_id_columns
+  const keyCols = profile.primary_grain_key_columns.length
+    ? profile.primary_grain_key_columns
+    : profile.potential_key_columns
+  const measureCols = profile.measure_candidates.length
+    ? profile.measure_candidates.map((x) => x.name)
+    : profile.main_numeric_measures
+  const dateLabel = profile.primary_temporal_column?.name ?? profile.primary_date_column
+  const dateKind = profile.primary_temporal_column?.kind
+  const dateHint = dateKind === 'discrete_period' ? 'discrete period' : dateKind === 'continuous_datetime' ? 'datetime' : null
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div className="rounded-lg border border-border-default bg-white/[0.03] px-2 py-2 text-center">
           <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">Date</div>
-          <div className="mt-0.5 truncate font-mono text-xs text-white" title={profile.primary_date_column ?? ''}>
-            {profile.primary_date_column ?? '—'}
+          <div className="mt-0.5 truncate font-mono text-xs text-white" title={dateLabel ?? ''}>
+            {dateLabel ?? '—'}
+            {dateHint ? <span className="ml-1 text-[10px] text-[hsl(var(--muted))]">({dateHint})</span> : null}
           </div>
         </div>
         <div className="rounded-lg border border-border-default bg-white/[0.03] px-2 py-2 text-center">
           <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">IDs</div>
-          <div className="mt-0.5 tabular-nums text-lg font-semibold text-white">{idCount}</div>
+          <div className="mt-0.5 tabular-nums text-lg font-semibold text-white">{idCols.length}</div>
         </div>
         <div className="rounded-lg border border-border-default bg-white/[0.03] px-2 py-2 text-center">
           <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">Keys</div>
-          <div className="mt-0.5 tabular-nums text-lg font-semibold text-white">{keyCount}</div>
+          <div className="mt-0.5 tabular-nums text-lg font-semibold text-white">{keyCols.length}</div>
         </div>
         <div className="rounded-lg border border-border-default bg-white/[0.03] px-2 py-2 text-center">
           <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">Measures</div>
-          <div className="mt-0.5 tabular-nums text-lg font-semibold text-white">{measureCount}</div>
+          <div className="mt-0.5 tabular-nums text-lg font-semibold text-white">{measureCols.length}</div>
         </div>
       </div>
       {profile.likely_grain ? (
@@ -428,13 +438,26 @@ function StructureSummary({ profile, onPick }: { profile: DatasetProfile; onPick
           <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-white/90">{profile.likely_grain}</p>
         </div>
       ) : null}
+      {profile.structure_warnings.length ? (
+        <div
+          className="rounded-lg border border-border-default bg-white/[0.02] px-3 py-2"
+          title={profile.structure_warnings.join('\n')}
+        >
+          <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">Inference notes</div>
+          <ul className="mt-1 space-y-1 text-xs text-white/85">
+            {profile.structure_warnings.slice(0, 2).map((w) => (
+              <li key={w}>• {w}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <div className="space-y-2.5 border-t border-border-default pt-3">
-        {profile.primary_date_column
-          ? chipCols('Primary date', [profile.primary_date_column], onPick)
+        {dateLabel
+          ? chipCols('Primary date', [dateLabel], onPick)
           : null}
-        {chipCols('Potential IDs', profile.potential_id_columns, onPick)}
-        {chipCols('Potential keys', profile.potential_key_columns, onPick)}
-        {chipCols('Main measures', profile.main_numeric_measures, onPick)}
+        {chipCols('Entity IDs', idCols, onPick)}
+        {chipCols('Primary key', keyCols, onPick)}
+        {chipCols('Main measures', measureCols.slice(0, 8), onPick)}
       </div>
     </div>
   )

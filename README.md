@@ -67,6 +67,7 @@ Open `http://localhost:5173`. The dev server proxies `/api` to the backend.
 - Profiles and quality issues are cached in `DCC_WORKSPACE_DB_PATH` (default `./.dcc_workspace.duckdb` relative to the backend process cwd).
 - **`POST /api/datasets/{dataset_id}/profile/refresh`** recomputes the cached profile for one dataset (records an in-process job row in the workspace DB).
 - **`GET /api/datasets`** responses may include an optional **`quality_score`** (0–100) on each dataset when a cached profile exists for that id.
+- Profile structure inference is **composite-aware**: the API now detects likely multi-column row grain keys (e.g. `player_id + year`), discrete temporal axes (such as integer `year` / `season`), entity IDs, and ranked measure candidates with confidence labels.
 - **`GET /api/datasets/{dataset_id}/sample`** includes **`total_rows`**: a full-table row count before `LIMIT` / `OFFSET` are applied.
 - Profile refreshes are retained as recent snapshots. Use **`GET /api/datasets/{dataset_id}/profile/history`** to list them and **`GET /api/datasets/{dataset_id}/profile/diff`** to compare the latest two snapshots.
 - Saved SQL snippets are persisted in the workspace DB via **`/api/saved-queries`** and are available from the SQL tab and command palette.

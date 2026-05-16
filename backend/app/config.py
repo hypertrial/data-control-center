@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     # Profile/build timeout controls.
     profile_timeout_seconds: float = Field(default=20.0, ge=0.5, le=600.0)
     registration_count_timeout_seconds: float = Field(default=6.0, ge=0.2, le=300.0)
+    profile_structure_sample_max_rows: int = Field(default=50_000, ge=1_000, le=300_000)
+    profile_structure_sample_min_rows: int = Field(default=5_000, ge=500, le=100_000)
+    profile_structure_max_key_candidates: int = Field(default=10, ge=3, le=50)
+    profile_structure_max_pair_checks: int = Field(default=40, ge=1, le=500)
+    profile_structure_max_triple_checks: int = Field(default=20, ge=0, le=500)
+    profile_structure_high_confidence_threshold: float = Field(default=0.999, ge=0.9, le=1.0)
+    profile_structure_medium_confidence_threshold: float = Field(default=0.98, ge=0.5, le=1.0)
 
     # Sample pagination
     sample_max_page_size: int = 500

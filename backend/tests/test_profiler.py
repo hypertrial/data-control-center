@@ -24,6 +24,7 @@ def test_lazy_frame_unsupported_format(tmp_path: Path) -> None:
     ds = RegisteredDataset(
         dataset_id="ds_unit",
         source_path=tmp_path / "x.csv",
+        source_label="test",
         view_name="v_ds_unit",
         format="weird",
         row_count=1,
@@ -132,6 +133,7 @@ def test_build_profile_from_parquet_list_column(tmp_path: Path) -> None:
     ds = RegisteredDataset(
         dataset_id="ds_x",
         source_path=path,
+        source_label="test",
         view_name="vx",
         format="parquet",
         row_count=2,
@@ -148,6 +150,7 @@ def test_build_profile_jsonl(tmp_path: Path) -> None:
     ds = RegisteredDataset(
         dataset_id="ds_j",
         source_path=path,
+        source_label="test",
         view_name="vj",
         format="json",
         row_count=2,
@@ -171,6 +174,7 @@ def test_build_profile_triggers_quality_branches(tmp_path: Path) -> None:
     ds = RegisteredDataset(
         dataset_id="ds_wide",
         source_path=path,
+        source_label="test",
         view_name="vw",
         format="csv",
         row_count=50,
@@ -188,6 +192,7 @@ def test_build_profile_high_null_column_flag(tmp_path: Path) -> None:
     ds = RegisteredDataset(
         dataset_id="ds_null",
         source_path=path,
+        source_label="test",
         view_name="vn",
         format="parquet",
         row_count=5,
@@ -210,6 +215,7 @@ def test_build_profile_collects_wide_null_counts_once(
     ds = RegisteredDataset(
         dataset_id="ds_wide_nulls",
         source_path=path,
+        source_label="test",
         view_name="vw_nulls",
         format="csv",
         row_count=5,
@@ -238,6 +244,7 @@ def test_build_profile_utf8_text_top_values(tmp_path: Path) -> None:
     ds = RegisteredDataset(
         dataset_id="ds_t",
         source_path=path,
+        source_label="test",
         view_name="vt",
         format="csv",
         row_count=80,
@@ -250,12 +257,74 @@ def test_build_profile_utf8_text_top_values(tmp_path: Path) -> None:
     assert col.top_values
 
 
+def test_build_profile_detects_discrete_temporal_and_composite_grain(tmp_path: Path) -> None:
+    path = tmp_path / "players.parquet"
+    rows = []
+    for year in (2022, 2023, 2024):
+        for pid in range(1, 25):
+            rows.append(
+                {
+                    "player_id": pid,
+                    "year": year,
+                    "league": "A",
+                    "overall": 60 + (pid % 10),
+                }
+            )
+    pl.DataFrame(rows).write_parquet(path)
+    ds = RegisteredDataset(
+        dataset_id="ds_players",
+        source_path=path,
+        source_label="test",
+        view_name="v_players",
+        format="parquet",
+        row_count=len(rows),
+        column_count=4,
+        file_size_bytes=path.stat().st_size,
+    )
+    prof = build_profile(ds)
+    assert prof.structure_version == "v2"
+    assert prof.primary_temporal_column is not None
+    assert prof.primary_temporal_column.name == "year"
+    assert prof.primary_temporal_column.kind.value == "discrete_period"
+    assert prof.primary_grain_key_columns == ["player_id", "year"]
+    assert prof.grain_key_candidates
+    assert prof.grain_key_candidates[0].uniqueness_ratio >= 0.99
+
+
+def test_build_profile_role_specific_sparse_columns_are_downgraded(tmp_path: Path) -> None:
+    path = tmp_path / "roles.csv"
+    lines = [
+        "player_id,year,gk_diving,gk_reflexes,pace,position",
+        "1,2024,,,80,FW",
+        "2,2024,,,77,MF",
+        "3,2024,75,70,40,GK",
+        "4,2024,,,82,FW",
+        "5,2024,72,71,39,GK",
+    ]
+    path.write_text("\n".join(lines))
+    ds = RegisteredDataset(
+        dataset_id="ds_roles",
+        source_path=path,
+        source_label="test",
+        view_name="v_roles",
+        format="csv",
+        row_count=5,
+        column_count=6,
+        file_size_bytes=path.stat().st_size,
+    )
+    prof = build_profile(ds)
+    gk_issue = next(i for i in prof.quality_issues if i.id.endswith("_miss_gk_diving"))
+    assert gk_issue.severity == QualitySeverity.info
+    assert "role-specific metric" in gk_issue.why_it_matters.lower()
+
+
 def test_lazy_frame_json_array_file(tmp_path: Path) -> None:
     path = tmp_path / "data.json"
     path.write_text('[{"a": 1}, {"a": 2}]')
     ds = RegisteredDataset(
         dataset_id="ds_j2",
         source_path=path,
+        source_label="test",
         view_name="vj2",
         format="json",
         row_count=2,
@@ -294,6 +363,7 @@ def test_detect_quality_issues_empty_cols_branch(tmp_path: Path) -> None:
     ds = RegisteredDataset(
         dataset_id="ds_e",
         source_path=tmp_path / "e.csv",
+        source_label="test",
         view_name="ve",
         format="csv",
         row_count=10,
@@ -311,6 +381,7 @@ def test_detect_quality_issues_suggested_sql_with_columns(tmp_path: Path) -> Non
     ds = RegisteredDataset(
         dataset_id="ds_sql",
         source_path=tmp_path / "e2.csv",
+        source_label="test",
         view_name="ve2",
         format="csv",
         row_count=10,
@@ -332,6 +403,7 @@ def test_detect_quality_column_null_issue(tmp_path: Path) -> None:
     ds = RegisteredDataset(
         dataset_id="ds_nc",
         source_path=tmp_path / "e3.csv",
+        source_label="test",
         view_name="ve3",
         format="csv",
         row_count=10,
@@ -349,6 +421,7 @@ def test_build_profile_duplicate_rows_exception_path(tmp_path: Path, monkeypatch
     ds = RegisteredDataset(
         dataset_id="ds_dup",
         source_path=path,
+        source_label="test",
         view_name="vr",
         format="csv",
         row_count=1,
@@ -374,6 +447,7 @@ def test_build_profile_high_cardinality_categorical_issue(tmp_path: Path) -> Non
     ds = RegisteredDataset(
         dataset_id="ds_cat",
         source_path=path,
+        source_label="test",
         view_name="vcat",
         format="csv",
         row_count=600,

@@ -59,6 +59,26 @@ describe('OverviewPage', () => {
     expect(screen.getByText(/100 B/)).toBeInTheDocument()
   })
 
+  it('renders v2 structure signals', async () => {
+    h.getProfile.mockResolvedValue(
+      mkProfile({
+        primary_grain_key_columns: ['player_id', 'year'],
+        likely_grain: 'One row per player_id + year.',
+        primary_temporal_column: { name: 'year', kind: 'discrete_period', confidence: 'high' },
+        temporal_columns: [{ name: 'year', kind: 'discrete_period', confidence: 'high' }],
+        entity_id_columns: [{ name: 'player_id', confidence: 'high' }],
+        measure_candidates: [{ name: 'overall', score: 0.9, confidence: 'high' }],
+        structure_warnings: ['Primary grain key confidence is medium (sample-based uniqueness).'],
+      }),
+    )
+    useUiStore.setState({ activeDatasetId: 'ds_001' })
+    wrap(<OverviewPage />)
+    await waitFor(() => expect(screen.getByText(/Primary grain key confidence is medium/i)).toBeInTheDocument())
+    expect(screen.getAllByText('player_id').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('year').length).toBeGreaterThan(0)
+    expect(screen.getByText(/discrete period/)).toBeInTheDocument()
+  })
+
   it('formatBytes scales', async () => {
     h.getProfile.mockResolvedValue(
       mkProfile({

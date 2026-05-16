@@ -27,6 +27,8 @@ export type SemanticType =
   | 'text'
 
 export type QualitySeverity = 'critical' | 'warning' | 'info'
+export type StructureConfidence = 'low' | 'medium' | 'high'
+export type TemporalKind = 'continuous_datetime' | 'discrete_period'
 
 export type ColumnProfile = {
   name: string
@@ -73,6 +75,19 @@ export type DatasetProfile = {
   likely_grain: string | null
   primary_date_column: string | null
   main_numeric_measures: string[]
+  structure_version: string
+  temporal_columns: Array<{ name: string; kind: TemporalKind; confidence: StructureConfidence }>
+  entity_id_columns: Array<{ name: string; confidence: StructureConfidence }>
+  grain_key_candidates: Array<{
+    columns: string[]
+    uniqueness_ratio: number
+    confidence: StructureConfidence
+    rank: number
+  }>
+  primary_grain_key_columns: string[]
+  primary_temporal_column: { name: string; kind: TemporalKind; confidence: StructureConfidence } | null
+  measure_candidates: Array<{ name: string; score: number; confidence: StructureConfidence }>
+  structure_warnings: string[]
   column_profiles: ColumnProfile[]
   quality_issues: QualityIssue[]
 }

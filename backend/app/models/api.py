@@ -60,6 +60,17 @@ class QualitySeverity(str, Enum):
     info = "info"
 
 
+class StructureConfidence(str, Enum):
+    low = "low"
+    medium = "medium"
+    high = "high"
+
+
+class TemporalKind(str, Enum):
+    continuous_datetime = "continuous_datetime"
+    discrete_period = "discrete_period"
+
+
 class ColumnProfile(BaseModel):
     name: str
     physical_type: str
@@ -87,6 +98,30 @@ class QualityIssue(BaseModel):
     score_impact: float = 0.0
 
 
+class TemporalColumnInfo(BaseModel):
+    name: str
+    kind: TemporalKind
+    confidence: StructureConfidence
+
+
+class EntityIdCandidate(BaseModel):
+    name: str
+    confidence: StructureConfidence
+
+
+class GrainKeyCandidate(BaseModel):
+    columns: list[str] = Field(default_factory=list)
+    uniqueness_ratio: float = 0.0
+    confidence: StructureConfidence = StructureConfidence.low
+    rank: int = 1
+
+
+class MeasureCandidate(BaseModel):
+    name: str
+    score: float = 0.0
+    confidence: StructureConfidence = StructureConfidence.low
+
+
 class DatasetProfile(BaseModel):
     dataset_id: str
     name: str
@@ -105,6 +140,14 @@ class DatasetProfile(BaseModel):
     likely_grain: str | None = None
     primary_date_column: str | None = None
     main_numeric_measures: list[str] = Field(default_factory=list)
+    structure_version: str = "v2"
+    temporal_columns: list[TemporalColumnInfo] = Field(default_factory=list)
+    entity_id_columns: list[EntityIdCandidate] = Field(default_factory=list)
+    grain_key_candidates: list[GrainKeyCandidate] = Field(default_factory=list)
+    primary_grain_key_columns: list[str] = Field(default_factory=list)
+    primary_temporal_column: TemporalColumnInfo | None = None
+    measure_candidates: list[MeasureCandidate] = Field(default_factory=list)
+    structure_warnings: list[str] = Field(default_factory=list)
     column_profiles: list[ColumnProfile] = Field(default_factory=list)
     quality_issues: list[QualityIssue] = Field(default_factory=list)
 
