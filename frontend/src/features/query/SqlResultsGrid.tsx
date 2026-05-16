@@ -287,7 +287,7 @@ export function SqlResultsGrid({ queryResult, busy }: SqlResultsGridProps) {
       <div className="flex flex-wrap items-center gap-2 border-b border-border-default pb-2">
         <div className="text-xs text-[hsl(var(--muted))]">
           {busy ? (
-            <span>Running...</span>
+            <span>Running…</span>
           ) : (
             <>
               <span className="tabular-nums text-white/90">{queryResult.row_count}</span> rows

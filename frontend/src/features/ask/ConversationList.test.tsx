@@ -106,10 +106,11 @@ describe('ConversationList', () => {
   it('deletes a conversation', async () => {
     const user = userEvent.setup()
     useUiStore.setState({ activeConversationId: 'c1' })
-    window.confirm = vi.fn(() => true)
     wrap(<ConversationList />)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Delete conversation' })).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'Delete conversation' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Delete$/ })).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /^Delete$/ }))
     await waitFor(() => expect(h.deleteAskConversation).toHaveBeenCalledWith('c1'))
   })
 })

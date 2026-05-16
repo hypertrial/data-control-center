@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DCC_WORKSPACE_DB_PATH", str(tmp_path / "test_workspace.duckdb"))
+    monkeypatch.setenv("DCC_ALLOW_ARBITRARY_REGISTRATION_PATHS", "true")
     from app.main import create_app
     from fastapi.testclient import TestClient
 

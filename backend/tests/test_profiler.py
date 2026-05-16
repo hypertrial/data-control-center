@@ -7,12 +7,16 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from app.models.api import QualitySeverity, SemanticType
+from app.models.api import ColumnProfile, GrainKeyCandidate, QualitySeverity, SemanticType, StructureConfidence
 from app.services.profiler import (
+    _build_composite_key_candidates,
+    _confidence_from_ratio,
     _detect_quality_issues,
+    _is_discrete_temporal_column,
     _infer_semantic,
     _lazy_frame_for,
     _numeric_histogram,
+    _rank_measure_candidates,
     _severity_order,
     _top_values,
     build_profile,
@@ -359,6 +363,84 @@ def test_numeric_histogram_cut_exception(monkeypatch: pytest.MonkeyPatch) -> Non
     assert _numeric_histogram(pl.Series("x", [1.0, 5.0, 9.0, 13.0]), bins=4) is None
 
 
+def test_confidence_from_ratio_thresholds() -> None:
+    assert _confidence_from_ratio(0.9, 0.8, 0.5) == StructureConfidence.high
+    assert _confidence_from_ratio(0.6, 0.8, 0.5) == StructureConfidence.medium
+    assert _confidence_from_ratio(0.1, 0.8, 0.5) == StructureConfidence.low
+
+
+def test_is_discrete_temporal_column_integer_empty_and_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert _is_discrete_temporal_column("season_year", pl.Int64, pl.Series("y", []), 10)
+
+    def bad_min(self, *args, **kwargs):  # noqa: ANN001
+        raise RuntimeError("broken")
+
+    monkeypatch.setattr(pl.Series, "min", bad_min)
+    assert _is_discrete_temporal_column("season_year", pl.Int64, pl.Series("y", [2020, 2021]), 10)
+
+
+def test_is_discrete_temporal_column_utf8_variants() -> None:
+    assert not _is_discrete_temporal_column("label", pl.Utf8, pl.Series("x", ["1", "2"]), 10)
+    assert _is_discrete_temporal_column("season", pl.Utf8, pl.Series("x", []), 10)
+    assert _is_discrete_temporal_column("season", pl.Utf8, pl.Series("x", ["2023", "2024"]), 10)
+    assert not _is_discrete_temporal_column("season", pl.Utf8, pl.Series("x", ["A", "B"]), 10)
+
+
+def test_rank_measure_candidates_handles_std_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    df = pl.DataFrame({"value": [1, 2, 3]})
+    cols = [ColumnProfile(name="value", physical_type="Int64", semantic_type=SemanticType.numeric, cardinality=3)]
+
+    def bad_std(self, *args, **kwargs):  # noqa: ANN001
+        raise RuntimeError("no std")
+
+    monkeypatch.setattr(pl.Series, "std", bad_std)
+    out = _rank_measure_candidates(df, cols)
+    assert out and out[0].name == "value"
+
+
+def test_build_composite_key_candidates_pair_and_triple_paths() -> None:
+    pair_df = pl.DataFrame(
+        {"a": [1, 1, 2, 2], "b": [1, 2, 1, 2], "c": [0, 0, 0, 0]}
+    )
+    pair = _build_composite_key_candidates(pair_df, ["a", "b", "c"], 0.95, 0.5, 10, 10)
+    assert pair and pair[0].columns == ["a", "b"]
+
+    triple_df = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 2],
+            "b": [1, 1, 2, 1],
+            "c": [1, 2, 1, 1],
+        }
+    )
+    triple = _build_composite_key_candidates(triple_df, ["a", "b", "c"], 0.95, 0.9, 10, 10)
+    assert triple and triple[0].columns == ["a", "b", "c"]
+
+
+def test_build_composite_key_candidates_respects_zero_pair_checks() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [1, 2], "c": [1, 2]})
+    assert _build_composite_key_candidates(df, ["a", "b", "c"], 0.95, 0.5, 0, 0) == []
+
+
+def test_build_composite_key_candidates_pair_limit_break() -> None:
+    df = pl.DataFrame({"a": [1, 1, 1], "b": [1, 1, 1], "c": [1, 1, 1]})
+    assert _build_composite_key_candidates(df, ["a", "b", "c"], 0.95, 0.5, 1, 0) == []
+
+
+def test_build_composite_key_candidates_pair_and_triple_check_limits() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 1],
+            "b": [1, 1, 1, 1],
+            "c": [1, 1, 1, 1],
+            "d": [1, 1, 1, 1],
+        }
+    )
+    out = _build_composite_key_candidates(df, ["a", "b", "c", "d"], 0.99, 0.95, 0, 1)
+    assert out == []
+
+
 def test_detect_quality_issues_empty_cols_branch(tmp_path: Path) -> None:
     ds = RegisteredDataset(
         dataset_id="ds_e",
@@ -456,3 +538,55 @@ def test_build_profile_high_cardinality_categorical_issue(tmp_path: Path) -> Non
     )
     prof = build_profile(ds)
     assert any("High-cardinality categorical" in i.title for i in prof.quality_issues)
+
+
+def test_build_profile_narrative_single_grain_and_medium_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "single.csv"
+    path.write_text("player_id,points\n1,10\n2,20\n")
+    ds = RegisteredDataset(
+        dataset_id="ds_single",
+        source_path=path,
+        source_label="test",
+        view_name="vsingle",
+        format="csv",
+        row_count=2,
+        column_count=2,
+        file_size_bytes=path.stat().st_size,
+    )
+    monkeypatch.setattr(
+        "app.services.profiler._build_composite_key_candidates",
+        lambda *a, **k: [
+            GrainKeyCandidate(
+                columns=["player_id"],
+                uniqueness_ratio=0.8,
+                confidence=StructureConfidence.medium,
+                rank=1,
+            )
+        ],
+    )
+    prof = build_profile(ds)
+    assert "one row per `player_id`" in prof.narrative
+    assert any("medium" in warning.lower() for warning in prof.structure_warnings)
+
+
+def test_build_profile_narrative_likely_identifier_columns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "ids.parquet"
+    pl.DataFrame({"player_id": ["u1", "u2", "u3"], "name": ["a", "b", "c"]}).write_parquet(path)
+    ds = RegisteredDataset(
+        dataset_id="ds_ids",
+        source_path=path,
+        source_label="test",
+        view_name="vids",
+        format="parquet",
+        row_count=3,
+        column_count=2,
+        file_size_bytes=path.stat().st_size,
+    )
+    monkeypatch.setattr("app.services.profiler._build_composite_key_candidates", lambda *a, **k: [])
+    prof = build_profile(ds)
+    assert prof.potential_id_columns
+    assert "Likely identifier columns" in prof.narrative

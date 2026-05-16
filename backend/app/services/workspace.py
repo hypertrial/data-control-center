@@ -24,6 +24,13 @@ def sanitize_sql_identifier(raw: str) -> str:
     return raw
 
 
+def _is_recoverable_open_error(exc: Exception) -> bool:
+    if not isinstance(exc, duckdb.Error):
+        return False
+    msg = str(exc)
+    return "Failure while replaying WAL file" in msg and "GetDefaultDatabase" in msg
+
+
 class Workspace:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -33,15 +40,44 @@ class Workspace:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._path = path
 
-        self._writer_con = duckdb.connect(str(path))
+        self._writer_con = self._open_writer_connection()
         self._db_lock = threading.RLock()
 
         self._read_pool: queue.SimpleQueue[duckdb.DuckDBPyConnection] = queue.SimpleQueue()
         self._read_pool_size = settings.db_reader_pool_size
         for _ in range(self._read_pool_size):
-            self._read_pool.put(duckdb.connect(str(path)))
+            self._read_pool.put(self._connect_database())
 
         self._init_schema()
+
+    def _connect_database(self) -> duckdb.DuckDBPyConnection:
+        return duckdb.connect(str(self._path))
+
+    def _open_writer_connection(self) -> duckdb.DuckDBPyConnection:
+        try:
+            return self._connect_database()
+        except Exception as exc:
+            if not _is_recoverable_open_error(exc):
+                raise
+            self._backup_corrupt_workspace_files()
+            return self._connect_database()
+
+    def _backup_corrupt_workspace_files(self) -> None:
+        db_path = self._path
+        wal_path = db_path.with_name(f"{db_path.name}.wal")
+        paths = [p for p in (db_path, wal_path) if p.exists()]
+        if not paths:
+            return
+        suffix = ".corrupt"
+        attempt = 0
+        while True:
+            attempt_suffix = suffix if attempt == 0 else f"{suffix}.{attempt}"
+            targets = [p.with_name(f"{p.name}{attempt_suffix}") for p in paths]
+            if all(not target.exists() for target in targets):
+                break
+            attempt += 1
+        for source, target in zip(paths, targets, strict=False):
+            source.replace(target)
 
     def _init_schema(self) -> None:
         with self._db_lock:
@@ -212,6 +248,10 @@ class Workspace:
     def path(self) -> Path:
         return self._path
 
+    @property
+    def connection(self) -> duckdb.DuckDBPyConnection:
+        return self._writer_con
+
     @contextmanager
     def lock_db(self) -> Iterator[duckdb.DuckDBPyConnection]:
         with self._db_lock:
@@ -279,7 +319,11 @@ class Workspace:
         safe = sanitize_sql_identifier(view_name)
         with self.read_db() as con:
             con.execute("PRAGMA disable_progress_bar")
-            con.execute(f"SET statement_timeout='{max(1, int(timeout_seconds * 1000))}ms'")
+            try:
+                con.execute(f"SET statement_timeout='{max(1, int(timeout_seconds * 1000))}ms'")
+            except Exception as exc:  # noqa: BLE001
+                if "unrecognized configuration parameter" not in str(exc):
+                    raise
             try:
                 row = con.execute(f"SELECT COUNT(*) AS c FROM {safe}").fetchone()
             except Exception:
