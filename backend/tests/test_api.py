@@ -65,6 +65,25 @@ def test_list_datasets_includes_quality_score_from_profile_cache(client, tmp_pat
     assert row.get("quality_score") == int(expected_qs)
 
 
+def test_profile_rebuilds_when_cached_structure_version_stale(client, tmp_path):
+    csv = tmp_path / "grain.csv"
+    csv.write_text("player_id,year\n1,2024\n2,2024\n")
+    reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
+    assert reg.status_code == 200
+    did = reg.json()["dataset_id"]
+    pr = client.get(f"/api/datasets/{did}/profile")
+    assert pr.status_code == 200
+    body = pr.json()
+    assert body["structure_version"] == "v3"
+    stale = {**body, "structure_version": "v2", "entity_id_columns": [], "potential_id_columns": []}
+    client.app.state.workspace.save_profile_cache(did, stale)
+    pr2 = client.get(f"/api/datasets/{did}/profile")
+    assert pr2.status_code == 200
+    refreshed = pr2.json()
+    assert refreshed["structure_version"] == "v3"
+    assert refreshed["entity_id_columns"] or refreshed["potential_id_columns"]
+
+
 def test_list_datasets_invalid_cached_quality_score_ignored(client, tmp_path, monkeypatch):
     csv = tmp_path / "q.csv"
     csv.write_text("id\n1\n")

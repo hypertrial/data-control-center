@@ -7,14 +7,24 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from app.models.api import ColumnProfile, GrainKeyCandidate, QualitySeverity, SemanticType, StructureConfidence
+from app.models.api import (
+    ColumnProfile,
+    EntityIdCandidate,
+    GrainKeyCandidate,
+    QualitySeverity,
+    SemanticType,
+    StructureConfidence,
+)
 from app.services.profiler import (
-    _build_composite_key_candidates,
+    _build_grain_key_candidates,
+    _build_key_candidate_pool,
     _confidence_from_ratio,
     _detect_quality_issues,
+    _entity_name_strength,
     _is_discrete_temporal_column,
     _infer_semantic,
     _lazy_frame_for,
+    _merge_entity_candidates,
     _numeric_histogram,
     _rank_measure_candidates,
     _severity_order,
@@ -41,6 +51,10 @@ def test_lazy_frame_unsupported_format(tmp_path: Path) -> None:
 
 def test_infer_semantic_id_name_pattern() -> None:
     assert _infer_semantic("row_id", pl.Int64, 0, 1, 5, [1]) == SemanticType.id_like
+
+
+def test_infer_semantic_camel_case_player_id() -> None:
+    assert _infer_semantic("playerId", pl.Int64, 0, 50, 200, []) == SemanticType.id_like
 
 
 def test_infer_semantic_int_unique_all_rows() -> None:
@@ -286,13 +300,207 @@ def test_build_profile_detects_discrete_temporal_and_composite_grain(tmp_path: P
         file_size_bytes=path.stat().st_size,
     )
     prof = build_profile(ds)
-    assert prof.structure_version == "v2"
+    assert prof.structure_version == "v3"
     assert prof.primary_temporal_column is not None
     assert prof.primary_temporal_column.name == "year"
     assert prof.primary_temporal_column.kind.value == "discrete_period"
-    assert prof.primary_grain_key_columns == ["player_id", "year"]
+    assert {*prof.primary_grain_key_columns} == {"player_id", "year"}
     assert prof.grain_key_candidates
     assert prof.grain_key_candidates[0].uniqueness_ratio >= 0.99
+    assert any(e.name == "player_id" for e in prof.entity_id_columns)
+    assert "player_id" in prof.potential_id_columns
+
+
+def test_build_profile_finds_panel_grain_with_player_id_late_in_schema(tmp_path: Path) -> None:
+    """Many leading categoricals should not push the period axis out of the key candidate budget."""
+    rows = []
+    for yr in (2022, 2023, 2024, 2025):
+        for pid in range(1, 30):
+            row: dict = {f"dim_{i}": ((pid + i + yr) % 9) for i in range(12)}
+            row["playerId"] = pid
+            row["year"] = yr
+            row["overall"] = 60.0 + (pid % 10)
+            rows.append(row)
+    path = tmp_path / "wide_panel.parquet"
+    pl.DataFrame(rows).write_parquet(path)
+    ds = RegisteredDataset(
+        dataset_id="ds_wide_panel",
+        source_path=path,
+        source_label="test",
+        view_name="vwide",
+        format="parquet",
+        row_count=len(rows),
+        column_count=len(rows[0]),
+        file_size_bytes=path.stat().st_size,
+    )
+    prof = build_profile(ds)
+    assert prof.structure_version == "v3"
+    assert {*prof.primary_grain_key_columns} == {"playerId", "year"}
+    assert any(e.name == "playerId" for e in prof.entity_id_columns)
+
+
+def test_detect_quality_skips_dup_id_warning_when_grain_is_composite(tmp_path: Path) -> None:
+    ds = RegisteredDataset(
+        dataset_id="ds_dq",
+        source_path=tmp_path / "z.csv",
+        source_label="test",
+        view_name="vz",
+        format="csv",
+        row_count=100,
+        column_count=2,
+        file_size_bytes=1,
+    )
+    cols = [
+        ColumnProfile(
+            name="player_id",
+            physical_type="Int64",
+            semantic_type=SemanticType.id_like,
+            null_pct=0,
+            unique_count=20,
+            cardinality=20,
+        ),
+    ]
+    issues = _detect_quality_issues(
+        ds,
+        cols,
+        100,
+        0,
+        100,
+        100,
+        primary_grain_columns=["player_id", "year"],
+    )
+    assert not any("Duplicate values" in i.title for i in issues)
+
+    issues_single = _detect_quality_issues(
+        ds,
+        cols,
+        100,
+        0,
+        100,
+        100,
+        primary_grain_columns=["player_id"],
+    )
+    assert any("Duplicate values" in i.title for i in issues_single)
+
+
+def test_entity_name_strength_short_tokens() -> None:
+    assert _entity_name_strength("pid") == 2
+
+
+def test_key_candidate_pool_includes_numeric_vendor_suffix() -> None:
+    cols = [
+        ColumnProfile(
+            name="vendor_no",
+            physical_type="Int64",
+            semantic_type=SemanticType.numeric,
+            null_pct=0,
+            cardinality=40,
+        ),
+    ]
+    assert _build_key_candidate_pool(cols, [], 10) == ["vendor_no"]
+
+
+def test_key_candidate_pool_boosts_entity_like_categorical_when_wide() -> None:
+    profiles = [
+        ColumnProfile(name="low", physical_type="Utf8", semantic_type=SemanticType.categorical, null_pct=0, cardinality=2),
+        ColumnProfile(
+            name="vendor_no",
+            physical_type="Utf8",
+            semantic_type=SemanticType.categorical,
+            null_pct=0,
+            cardinality=30,
+        ),
+    ]
+    pool = _build_key_candidate_pool(profiles, [], 10)
+    assert pool[0] == "vendor_no"
+
+
+def test_merge_entity_candidates_adds_named_high_cardinality_columns() -> None:
+    cols = [
+        ColumnProfile(
+            name="vendor_code",
+            physical_type="Utf8",
+            semantic_type=SemanticType.categorical,
+            null_pct=0,
+            cardinality=40,
+        ),
+    ]
+    out = _merge_entity_candidates([], cols)
+    assert any(e.name == "vendor_code" for e in out)
+
+
+def test_merge_entity_candidates_skips_unsupported_or_weak_columns() -> None:
+    seed = [EntityIdCandidate(name="keep", confidence=StructureConfidence.high)]
+    cols = [
+        ColumnProfile(name="b", physical_type="Boolean", semantic_type=SemanticType.boolean_like, null_pct=0),
+        ColumnProfile(
+            name="lbl", physical_type="Utf8", semantic_type=SemanticType.categorical, null_pct=0, cardinality=5
+        ),
+        ColumnProfile(name="z", physical_type="Int64", semantic_type=SemanticType.numeric, null_pct=0, cardinality=20),
+    ]
+    names = {e.name for e in _merge_entity_candidates(seed, cols)}
+    assert names == {"keep"}
+
+
+def test_merge_entity_candidates_skips_non_tabular_semantics() -> None:
+    cols = [
+        ColumnProfile(name="vendor_no", physical_type="Date", semantic_type=SemanticType.datetime, null_pct=0),
+    ]
+    assert _merge_entity_candidates([], cols) == []
+
+
+def test_merge_entity_candidates_skips_duplicate_name_when_seeded() -> None:
+    seed = [EntityIdCandidate(name="vendor_code", confidence=StructureConfidence.high)]
+    cols = [
+        ColumnProfile(
+            name="vendor_code",
+            physical_type="Utf8",
+            semantic_type=SemanticType.categorical,
+            null_pct=0,
+            cardinality=40,
+        ),
+    ]
+    assert len(_merge_entity_candidates(seed, cols)) == 1
+
+
+def test_merge_entity_candidates_skips_low_cardinality_code_like_column() -> None:
+    cols = [
+        ColumnProfile(
+            name="vendor_code",
+            physical_type="Utf8",
+            semantic_type=SemanticType.categorical,
+            null_pct=0,
+            cardinality=10,
+        ),
+    ]
+    assert _merge_entity_candidates([], cols) == []
+
+
+def test_merge_entity_candidates_merges_numeric_with_identifier_name() -> None:
+    cols = [
+        ColumnProfile(
+            name="batch_id",
+            physical_type="Int64",
+            semantic_type=SemanticType.numeric,
+            null_pct=0,
+            cardinality=50,
+        ),
+    ]
+    out = _merge_entity_candidates([], cols)
+    assert any(e.name == "batch_id" for e in out)
+
+
+def test_merge_entity_candidates_skips_numeric_with_only_medium_name_strength() -> None:
+    cols = [
+        ColumnProfile(
+            name="vendor_no",
+            physical_type="Int64",
+            semantic_type=SemanticType.numeric,
+            null_pct=0,
+            cardinality=50,
+        ),
+    ]
+    assert _merge_entity_candidates([], cols) == []
 
 
 def test_build_profile_role_specific_sparse_columns_are_downgraded(tmp_path: Path) -> None:
@@ -400,11 +608,11 @@ def test_rank_measure_candidates_handles_std_exception(monkeypatch: pytest.Monke
     assert out and out[0].name == "value"
 
 
-def test_build_composite_key_candidates_pair_and_triple_paths() -> None:
+def test_build_grain_key_candidates_pair_and_triple_paths() -> None:
     pair_df = pl.DataFrame(
         {"a": [1, 1, 2, 2], "b": [1, 2, 1, 2], "c": [0, 0, 0, 0]}
     )
-    pair = _build_composite_key_candidates(pair_df, ["a", "b", "c"], 0.95, 0.5, 10, 10)
+    pair = _build_grain_key_candidates(pair_df, ["a", "b", "c"], 0.95, 0.5, 10, 10)
     assert pair and pair[0].columns == ["a", "b"]
 
     triple_df = pl.DataFrame(
@@ -414,21 +622,21 @@ def test_build_composite_key_candidates_pair_and_triple_paths() -> None:
             "c": [1, 2, 1, 1],
         }
     )
-    triple = _build_composite_key_candidates(triple_df, ["a", "b", "c"], 0.95, 0.9, 10, 10)
+    triple = _build_grain_key_candidates(triple_df, ["a", "b", "c"], 0.95, 0.9, 10, 10)
     assert triple and triple[0].columns == ["a", "b", "c"]
 
 
-def test_build_composite_key_candidates_respects_zero_pair_checks() -> None:
-    df = pl.DataFrame({"a": [1, 2], "b": [1, 2], "c": [1, 2]})
-    assert _build_composite_key_candidates(df, ["a", "b", "c"], 0.95, 0.5, 0, 0) == []
-
-
-def test_build_composite_key_candidates_pair_limit_break() -> None:
+def test_build_grain_key_candidates_respects_zero_pair_checks() -> None:
     df = pl.DataFrame({"a": [1, 1, 1], "b": [1, 1, 1], "c": [1, 1, 1]})
-    assert _build_composite_key_candidates(df, ["a", "b", "c"], 0.95, 0.5, 1, 0) == []
+    assert _build_grain_key_candidates(df, ["a", "b", "c"], 0.95, 0.5, 0, 0) == []
 
 
-def test_build_composite_key_candidates_pair_and_triple_check_limits() -> None:
+def test_build_grain_key_candidates_pair_limit_break() -> None:
+    df = pl.DataFrame({"a": [1, 1, 1], "b": [1, 1, 1], "c": [1, 1, 1]})
+    assert _build_grain_key_candidates(df, ["a", "b", "c"], 0.95, 0.5, 1, 0) == []
+
+
+def test_build_grain_key_candidates_pair_and_triple_check_limits() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 1, 1, 1],
@@ -437,7 +645,7 @@ def test_build_composite_key_candidates_pair_and_triple_check_limits() -> None:
             "d": [1, 1, 1, 1],
         }
     )
-    out = _build_composite_key_candidates(df, ["a", "b", "c", "d"], 0.99, 0.95, 0, 1)
+    out = _build_grain_key_candidates(df, ["a", "b", "c", "d"], 0.99, 0.95, 0, 1)
     assert out == []
 
 
@@ -556,7 +764,7 @@ def test_build_profile_narrative_single_grain_and_medium_warning(
         file_size_bytes=path.stat().st_size,
     )
     monkeypatch.setattr(
-        "app.services.profiler._build_composite_key_candidates",
+        "app.services.profiler._build_grain_key_candidates",
         lambda *a, **k: [
             GrainKeyCandidate(
                 columns=["player_id"],
@@ -586,7 +794,7 @@ def test_build_profile_narrative_likely_identifier_columns(
         column_count=2,
         file_size_bytes=path.stat().st_size,
     )
-    monkeypatch.setattr("app.services.profiler._build_composite_key_candidates", lambda *a, **k: [])
+    monkeypatch.setattr("app.services.profiler._build_grain_key_candidates", lambda *a, **k: [])
     prof = build_profile(ds)
     assert prof.potential_id_columns
     assert "Likely identifier columns" in prof.narrative

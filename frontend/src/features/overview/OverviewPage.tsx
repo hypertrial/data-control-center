@@ -420,11 +420,15 @@ function StructureSummary({ profile, onPick }: { profile: DatasetProfile; onPick
           </div>
         </div>
         <div className="rounded-lg border border-border-default bg-white/[0.03] px-2 py-2 text-center">
-          <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">IDs</div>
+          <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+            Entities
+          </div>
           <div className="mt-0.5 tabular-nums text-lg font-semibold text-white">{idCols.length}</div>
         </div>
         <div className="rounded-lg border border-border-default bg-white/[0.03] px-2 py-2 text-center">
-          <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">Keys</div>
+          <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+            Grain cols
+          </div>
           <div className="mt-0.5 tabular-nums text-lg font-semibold text-white">{keyCols.length}</div>
         </div>
         <div className="rounded-lg border border-border-default bg-white/[0.03] px-2 py-2 text-center">
@@ -434,7 +438,9 @@ function StructureSummary({ profile, onPick }: { profile: DatasetProfile; onPick
       </div>
       {profile.likely_grain ? (
         <div className="rounded-lg border border-border-default bg-white/[0.02] px-3 py-2">
-          <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">Grain</div>
+          <div className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+            Grain (natural language)
+          </div>
           <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-white/90">{profile.likely_grain}</p>
         </div>
       ) : null}
@@ -456,7 +462,7 @@ function StructureSummary({ profile, onPick }: { profile: DatasetProfile; onPick
           ? chipCols('Primary date', [dateLabel], onPick)
           : null}
         {chipCols('Entity IDs', idCols, onPick)}
-        {chipCols('Primary key', keyCols, onPick)}
+        {chipCols('Row grain', keyCols, onPick)}
         {chipCols('Main measures', measureCols.slice(0, 8), onPick)}
       </div>
     </div>

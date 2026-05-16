@@ -19,7 +19,7 @@ export function mkProfile(overrides: Partial<DatasetProfile> = {}): DatasetProfi
     likely_grain: 'One row per id.',
     primary_date_column: 'created',
     main_numeric_measures: ['x'],
-    structure_version: 'v2',
+    structure_version: 'v3',
     temporal_columns: [{ name: 'created', kind: 'continuous_datetime', confidence: 'high' }],
     entity_id_columns: [{ name: 'id', confidence: 'high' }],
     grain_key_candidates: [{ columns: ['id'], uniqueness_ratio: 1, confidence: 'high', rank: 1 }],

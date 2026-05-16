@@ -27,7 +27,7 @@ const minimalProfile: DatasetProfile = {
   likely_grain: null,
   primary_date_column: null,
   main_numeric_measures: [],
-  structure_version: 'v2',
+  structure_version: 'v3',
   temporal_columns: [],
   entity_id_columns: [],
   grain_key_candidates: [],
