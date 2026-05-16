@@ -53,7 +53,20 @@ describe('ColumnsPage', () => {
       mkProfile({
         column_profiles: [
           mkColumn({ name: 'alpha', semantic_type: 'numeric' }),
-          mkColumn({ name: 'beta', semantic_type: 'text' }),
+          mkColumn({
+            name: 'beta',
+            semantic_type: 'text',
+            physical_type: 'Utf8',
+            top_value: 'hello',
+            top_count: 8,
+            top_pct: 80,
+            unique_pct: 45.5,
+            mean_value: null,
+            std_value: null,
+            median_value: null,
+            p25_value: null,
+            p75_value: null,
+          }),
         ],
       }),
     )
@@ -76,6 +89,14 @@ describe('ColumnsPage', () => {
     useUiStore.setState({ activeDatasetId: 'ds_1' })
     wrap(<ColumnsPage />)
     await waitFor(() => expect(screen.getByText('e1')).toBeInTheDocument())
+  })
+
+  it('shows unique counts with percent and EDA summary', async () => {
+    useUiStore.setState({ activeDatasetId: 'ds_1' })
+    wrap(<ColumnsPage />)
+    await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument())
+    expect(screen.getAllByText(/100\.00%/).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText(/EDA stats use all 10 rows/)).toBeInTheDocument()
   })
 
   it('truncates long column names but keeps full title', async () => {

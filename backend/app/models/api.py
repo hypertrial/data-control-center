@@ -76,10 +76,21 @@ class ColumnProfile(BaseModel):
     physical_type: str
     semantic_type: SemanticType = SemanticType.unknown
     null_pct: float = 0.0
+    non_null_count: int | None = None
+    null_count: int | None = None
     unique_count: int | None = None
+    unique_pct: float | None = None
     cardinality: int | None = None
     min_value: str | None = None
     max_value: str | None = None
+    mean_value: str | None = None
+    std_value: str | None = None
+    median_value: str | None = None
+    p25_value: str | None = None
+    p75_value: str | None = None
+    top_value: str | None = None
+    top_count: int | None = None
+    top_pct: float | None = None
     top_values: list[dict[str, Any]] = Field(default_factory=list)
     quality_flags: list[str] = Field(default_factory=list)
     histogram: list[dict[str, Any]] | None = None
@@ -127,6 +138,10 @@ class DatasetProfile(BaseModel):
     name: str
     rows: int
     columns: int
+    profiler_sample_rows: int = Field(
+        default=0,
+        description="Rows included in per-column EDA stats (sample head; equals full rows when small).",
+    )
     file_size_bytes: int | None = None
     missing_cell_pct: float | None = None
     duplicate_row_pct: float | None = None
@@ -140,7 +155,7 @@ class DatasetProfile(BaseModel):
     likely_grain: str | None = None
     primary_date_column: str | None = None
     main_numeric_measures: list[str] = Field(default_factory=list)
-    structure_version: str = "v3"
+    structure_version: str = "v4"
     temporal_columns: list[TemporalColumnInfo] = Field(default_factory=list)
     entity_id_columns: list[EntityIdCandidate] = Field(default_factory=list)
     grain_key_candidates: list[GrainKeyCandidate] = Field(default_factory=list)

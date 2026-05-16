@@ -27,7 +27,7 @@ from app.services.registry import RegisteredDataset
 from app.telemetry import emit
 
 # Bump when structure inference output shape or semantics change materially (cache invalidation).
-CURRENT_PROFILE_STRUCTURE_VERSION = "v3"
+CURRENT_PROFILE_STRUCTURE_VERSION = "v4"
 
 ID_NAME_PATTERN = re.compile(
     r"(^|_)(id|key|uuid|guid|pk|sk|code)(_|$)", re.IGNORECASE
@@ -117,6 +117,58 @@ def _top_values(series: pl.Series, k: int = 8) -> list[dict[str, Any]]:
         cnt = row.get("count", row.get("counts"))
         out.append({"value": val, "count": int(cnt) if cnt is not None else 0})
     return out
+
+
+def _series_quantile_str(series: pl.Series, q: float) -> str | None:
+    try:
+        if series.len() == 0:
+            return None
+        v = series.quantile(q, interpolation="linear")
+        if v is None:
+            return None
+        fv = float(v)
+        if not math.isfinite(fv):
+            return None
+        return str(v)
+    except Exception:
+        return None
+
+
+def _numeric_describe_strings(st: pl.Series) -> tuple[str | None, str | None, str | None, str | None, str | None]:
+    """Mean, std, p25, median, p75 as strings from a numeric non-null series."""
+    mean_v = std_v = p25_v = med_v = p75_v = None
+    if st.len() == 0:
+        return mean_v, std_v, p25_v, med_v, p75_v
+    try:
+        m = st.mean()
+        if m is not None:
+            fm = float(m)
+            if math.isfinite(fm):
+                mean_v = str(m)
+    except (TypeError, ValueError):
+        pass
+    try:
+        sd = st.std()
+        if sd is not None:
+            fsd = float(sd)
+            if math.isfinite(fsd):
+                std_v = str(sd)
+    except (TypeError, ValueError):
+        pass
+    p25_v = _series_quantile_str(st, 0.25)
+    p75_v = _series_quantile_str(st, 0.75)
+    try:
+        med = st.median()
+        if med is not None:
+            if isinstance(med, float | int):
+                fd = float(med)
+                if math.isfinite(fd):
+                    med_v = str(med)
+            else:
+                med_v = str(med)
+    except (TypeError, ValueError):
+        pass
+    return mean_v, std_v, p25_v, med_v, p75_v
 
 
 def _numeric_histogram(series: pl.Series, bins: int = 12) -> list[dict[str, Any]] | None:
@@ -446,6 +498,7 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
         max(settings.profile_structure_sample_min_rows, row_count),
     )
     df_sample = lf.head(sample_n).collect()
+    profile_sample_rows = len(df_sample)
 
     col_profiles: list[ColumnProfile] = []
     total_cells = row_count * col_count if col_count else 0
@@ -533,16 +586,52 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
         if row_count and n_unique == 1 and col_count:
             flags.append("constant_column")
 
+        unique_pct = round((n_unique / profile_sample_rows) * 100, 4) if profile_sample_rows else None
+        mean_value = std_value = median_value = p25_value = p75_value = None
+        top_value_str: str | None = None
+        top_count_val: int | None = None
+        top_pct_val: float | None = None
+
+        if dtype.is_numeric():
+            st_nn = df_sample[col].drop_nulls()
+            if st_nn.len() > 0:
+                mean_value, std_value, p25_value, median_value, p75_value = _numeric_describe_strings(st_nn)
+        elif sem == SemanticType.datetime or dtype in (pl.Date, pl.Datetime):
+            st_nn = df_sample[col].drop_nulls()
+            if st_nn.len() > 0:
+                med = st_nn.median()
+                if med is not None:
+                    median_value = str(med)
+
+        if not dtype.is_numeric() and top_vals:
+            raw = top_vals[0]["value"]
+            top_value_str = "(null)" if raw is None else str(raw)
+            top_count_val = int(top_vals[0].get("count", 0))
+            top_pct_val = (
+                round((top_count_val / profile_sample_rows) * 100, 4) if profile_sample_rows else None
+            )
+
         col_profiles.append(
             ColumnProfile(
                 name=col,
                 physical_type=str(dtype),
                 semantic_type=sem,
                 null_pct=round(null_pct, 4),
-                unique_count=n_unique if row_count <= sample_n else None,
+                non_null_count=(row_count - nulls_full) if row_count else None,
+                null_count=nulls_full,
+                unique_count=n_unique,
+                unique_pct=unique_pct,
                 cardinality=cardinality,
                 min_value=min_v,
                 max_value=max_v,
+                mean_value=mean_value,
+                std_value=std_value,
+                median_value=median_value,
+                p25_value=p25_value,
+                p75_value=p75_value,
+                top_value=top_value_str,
+                top_count=top_count_val,
+                top_pct=top_pct_val,
                 top_values=top_vals,
                 quality_flags=flags,
                 histogram=hist,
@@ -664,6 +753,7 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
         name=ds.source_path.name,
         rows=row_count,
         columns=col_count,
+        profiler_sample_rows=profile_sample_rows,
         file_size_bytes=ds.file_size_bytes,
         missing_cell_pct=missing_cell_pct,
         duplicate_row_pct=dup_pct,

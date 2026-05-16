@@ -6,7 +6,7 @@ import { Sheet } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useDisposableEChart } from '@/hooks/useDisposableEChart'
 import { useOpenInSql } from '@/hooks/useOpenInSql'
-import { formatPercent } from '@/lib/format'
+import { formatCount, formatPercent } from '@/lib/format'
 import { sqlSelectColumnFromView, sqlSelectStarFromView } from '@/lib/sql'
 
 const FLAG_HELP: Record<string, string> = {
@@ -121,17 +121,43 @@ export function ColumnDetailDrawer({
         </TabsContent>
 
         <TabsContent value="stats" className="mt-0">
-          <div className="grid grid-cols-2 gap-2 text-xs text-[hsl(var(--muted))]">
+          <p className="mb-2 text-[10px] text-[hsl(var(--muted))]">
+            Values reflect the profiler sample (see dataset profile). Percentages use sampled row counts unless the full
+            table is small enough to fit in one pass.
+          </p>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-[hsl(var(--muted))]">
+            <div>Count (non-null, full table)</div>
+            <div className="break-all text-white tabular-nums">{formatCount(column.non_null_count)}</div>
+            <div>Null count (full table)</div>
+            <div className="break-all text-white tabular-nums">{formatCount(column.null_count)}</div>
             <div>Null %</div>
             <div className="text-white tabular-nums">{formatPercent(column.null_pct)}</div>
             <div>Unique (sample)</div>
-            <div className="text-white tabular-nums">{column.unique_count ?? '—'}</div>
-            <div>Cardinality</div>
-            <div className="text-white tabular-nums">{column.cardinality ?? '—'}</div>
+            <div className="text-white tabular-nums">{formatCount(column.unique_count)}</div>
+            <div>Unique % (sample)</div>
+            <div className="text-white tabular-nums">{formatPercent(column.unique_pct)}</div>
+            <div>Cardinality (sample)</div>
+            <div className="text-white tabular-nums">{formatCount(column.cardinality)}</div>
             <div>Min</div>
-            <div className="text-white">{column.min_value ?? '—'}</div>
+            <div className="max-w-prose break-all text-white">{column.min_value ?? '—'}</div>
+            <div>p25</div>
+            <div className="max-w-prose break-all text-white">{column.p25_value ?? '—'}</div>
+            <div>Median</div>
+            <div className="max-w-prose break-all text-white">{column.median_value ?? '—'}</div>
+            <div>p75</div>
+            <div className="max-w-prose break-all text-white">{column.p75_value ?? '—'}</div>
             <div>Max</div>
-            <div className="text-white">{column.max_value ?? '—'}</div>
+            <div className="max-w-prose break-all text-white">{column.max_value ?? '—'}</div>
+            <div>Mean</div>
+            <div className="max-w-prose break-all text-white">{column.mean_value ?? '—'}</div>
+            <div>Std dev</div>
+            <div className="max-w-prose break-all text-white">{column.std_value ?? '—'}</div>
+            <div>Top value (sample)</div>
+            <div className="max-w-prose break-all text-white">{column.top_value ?? '—'}</div>
+            <div>Top count / %</div>
+            <div className="text-white tabular-nums">
+              {formatCount(column.top_count)} · {formatPercent(column.top_pct)}
+            </div>
           </div>
         </TabsContent>
 

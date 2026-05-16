@@ -23,6 +23,26 @@ describe('ColumnDetailDrawer', () => {
     expect(container.firstChild).toBeNull()
   })
 
+  it('stats tab lists describe metrics', async () => {
+    const user = userEvent.setup()
+    const col = mkColumn({
+      mean_value: '3.5',
+      p25_value: '1',
+      top_value: 'mode-x',
+      top_count: 2,
+      top_pct: 40,
+    })
+    render(
+      <MemoryRouter>
+        <ColumnDetailDrawer open onOpenChange={vi.fn()} column={col} viewName="metrics" />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByRole('button', { name: 'Stats' }))
+    expect(screen.getByText(/Unique \(sample\)/)).toBeInTheDocument()
+    expect(screen.getByText('3.5')).toBeInTheDocument()
+    expect(screen.getByText('mode-x')).toBeInTheDocument()
+  })
+
   it('renders sheet and triggers chart', async () => {
     const user = userEvent.setup()
     const onOpenChange = vi.fn()

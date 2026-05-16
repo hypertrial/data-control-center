@@ -35,10 +35,21 @@ export type ColumnProfile = {
   physical_type: string
   semantic_type: SemanticType
   null_pct: number
+  non_null_count?: number | null
+  null_count?: number | null
   unique_count: number | null
+  unique_pct?: number | null
   cardinality: number | null
   min_value: string | null
   max_value: string | null
+  mean_value?: string | null
+  std_value?: string | null
+  median_value?: string | null
+  p25_value?: string | null
+  p75_value?: string | null
+  top_value?: string | null
+  top_count?: number | null
+  top_pct?: number | null
   top_values: Array<{ value: unknown; count: number }>
   quality_flags: string[]
   histogram: Array<{ bin: string; count: number }> | null
@@ -62,6 +73,7 @@ export type DatasetProfile = {
   name: string
   rows: number
   columns: number
+  profiler_sample_rows?: number
   file_size_bytes: number | null
   missing_cell_pct: number | null
   duplicate_row_pct: number | null
