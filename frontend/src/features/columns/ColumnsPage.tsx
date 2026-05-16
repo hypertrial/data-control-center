@@ -72,7 +72,6 @@ const COLUMN_TOOLBAR_IDS: Array<{ id: string; label: string }> = [
   { id: 'spread_sort', label: 'Spread' },
   { id: 'top_pct', label: 'Top' },
   { id: 'quality_flags', label: 'Flags' },
-  { id: 'cardinality', label: 'Cardinality' },
 ]
 
 const sortOptionalNumber: SortingFn<ColumnProfile> = (rowA, rowB, columnId) => {
@@ -344,10 +343,6 @@ export function ColumnsPage() {
           )
         },
       }),
-      colHelper.accessor('cardinality', {
-        header: 'Cardinality',
-        cell: (ctx) => <span className="tabular-nums">{ctx.getValue() ?? '—'}</span>,
-      }),
     ],
     [],
   )
@@ -417,7 +412,7 @@ export function ColumnsPage() {
   if (q.isLoading) {
     return (
       <PageContainer>
-        <TableSkeleton rows={8} cols={10} />
+        <TableSkeleton rows={8} cols={9} />
       </PageContainer>
     )
   }
