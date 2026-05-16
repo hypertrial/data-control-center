@@ -101,6 +101,45 @@ class Workspace:
                 );
                 """
             )
+            # Back-compat migration for earlier schema with only `error` column.
+            self._writer_con.execute(
+                """
+                ALTER TABLE dcc_jobs ADD COLUMN IF NOT EXISTS error_code VARCHAR;
+                """
+            )
+            self._writer_con.execute(
+                """
+                ALTER TABLE dcc_jobs ADD COLUMN IF NOT EXISTS error_message VARCHAR;
+                """
+            )
+            self._writer_con.execute(
+                """
+                ALTER TABLE dcc_jobs ADD COLUMN IF NOT EXISTS result_json VARCHAR;
+                """
+            )
+            self._writer_con.execute(
+                """
+                ALTER TABLE dcc_jobs ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN DEFAULT FALSE;
+                """
+            )
+            self._writer_con.execute(
+                """
+                ALTER TABLE dcc_jobs ADD COLUMN IF NOT EXISTS finished_at TIMESTAMP;
+                """
+            )
+            # If a legacy `error` column exists, copy it into error_message once.
+            job_cols = {
+                str(row[1]).lower()
+                for row in self._writer_con.execute("PRAGMA table_info('dcc_jobs')").fetchall()
+            }
+            if "error" in job_cols:
+                self._writer_con.execute(
+                    """
+                    UPDATE dcc_jobs
+                    SET error_message = COALESCE(error_message, error)
+                    WHERE error IS NOT NULL
+                    """
+                )
             self._writer_con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS dcc_profile_history (
