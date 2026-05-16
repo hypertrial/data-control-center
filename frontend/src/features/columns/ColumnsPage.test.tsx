@@ -99,6 +99,51 @@ describe('ColumnsPage', () => {
     expect(screen.getByText(/EDA stats use all 10 rows/)).toBeInTheDocument()
   })
 
+  it('shows Role badges from dataset profile structure metadata', async () => {
+    h.getProfile.mockResolvedValue(
+      mkProfile({
+        primary_grain_key_columns: ['player_id', 'season_year'],
+        entity_id_columns: [{ name: 'player_id', confidence: 'high' }],
+        primary_temporal_column: { name: 'season_year', kind: 'discrete_period', confidence: 'high' },
+        temporal_columns: [{ name: 'season_year', kind: 'discrete_period', confidence: 'high' }],
+        measure_candidates: [{ name: 'goals', score: 0.9, confidence: 'high' }],
+        column_profiles: [
+          mkColumn({ name: 'player_id', semantic_type: 'id_like' }),
+          mkColumn({ name: 'season_year', semantic_type: 'categorical' }),
+          mkColumn({ name: 'goals', semantic_type: 'numeric' }),
+          mkColumn({ name: 'notes', semantic_type: 'text' }),
+        ],
+      }),
+    )
+    useUiStore.setState({ activeDatasetId: 'ds_1' })
+    wrap(<ColumnsPage />)
+    await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument())
+
+    const grid = screen.getByRole('table')
+    const rows = within(grid).getAllByRole('row')
+    const dataRows = rows.filter((r) => within(r).queryAllByRole('cell').length > 0)
+
+    const rowFor = (name: string): HTMLElement => {
+      const r = dataRows.find((row) => within(row).queryByText(name))
+      expect(r).toBeTruthy()
+      return r as HTMLElement
+    }
+
+    expect(within(rowFor('player_id')).getByText('grain key')).toBeInTheDocument()
+    expect(within(rowFor('player_id')).getByText('entity id')).toBeInTheDocument()
+
+    expect(within(rowFor('season_year')).getByText('grain key')).toBeInTheDocument()
+    expect(within(rowFor('season_year')).getByText('time')).toBeInTheDocument()
+
+    expect(within(rowFor('goals')).getByText('measure')).toBeInTheDocument()
+
+    const notesRow = rowFor('notes')
+    expect(within(notesRow).queryByText('grain key')).toBeNull()
+    expect(within(notesRow).queryByText('entity id')).toBeNull()
+    expect(within(notesRow).queryByText('time')).toBeNull()
+    expect(within(notesRow).queryByText('measure')).toBeNull()
+  })
+
   it('truncates long column names but keeps full title', async () => {
     const long = 'world_cup_squad_tournament_year_extra_suffix_for_test'
     h.getProfile.mockResolvedValue(
