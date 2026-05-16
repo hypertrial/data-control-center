@@ -6,13 +6,16 @@ import uuid
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, File, Query, Response, UploadFile
 
-from app.api.deps import RegistryDep, SettingsDep, WorkspaceDep
+from app.api.deps import JobsDep, RegistryDep, SettingsDep, WorkspaceDep
+from app.errors import CODES, to_http_error
 from app.models.api import (
     ColumnProfile,
     DatasetProfile,
     DatasetSummary,
+    JobCreateResponse,
+    JobStatus,
     NullPctChange,
     ProfileDiffResponse,
     ProfileHistoryEntry,
@@ -24,6 +27,7 @@ from app.services.profile_diff import diff_profile_dicts
 from app.services.profiler import build_profile
 from app.services.registry import SUPPORTED_EXTENSIONS
 from app.services.workspace import sanitize_sql_identifier
+from app.telemetry import emit, timed_event
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
@@ -31,26 +35,44 @@ router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 def _safe_upload_filename(raw: str) -> str:
     name = Path(raw).name
     if not name or name != Path(name).name:
-        raise HTTPException(status_code=400, detail="Invalid filename")
+        raise to_http_error(status_code=400, code=CODES.BAD_REQUEST, message="Invalid filename")
     if ".." in name or "/" in name or "\\" in name:
-        raise HTTPException(status_code=400, detail="Invalid filename")
+        raise to_http_error(status_code=400, code=CODES.BAD_REQUEST, message="Invalid filename")
     return name
+
+
+def _queue_count_job(dataset_id: str, jobs: JobsDep, registry: RegistryDep, settings: SettingsDep) -> str:
+    def _count(_: str) -> dict:
+        ds = registry.get(dataset_id)
+        if not ds:
+            return {"dataset_id": dataset_id, "row_count": None, "column_count": None}
+        rows = registry.workspace.query_count(ds.view_name, settings.registration_count_timeout_seconds)
+        cols = ds.column_count
+        if cols is None:
+            _, cols = registry.workspace.get_row_column_counts(ds.view_name)
+        registry.set_counts(dataset_id, rows, cols)
+        emit("dataset.count", dataset_id=dataset_id, row_count=rows, column_count=cols)
+        return {"dataset_id": dataset_id, "row_count": rows, "column_count": cols}
+
+    return jobs.submit(kind="dataset_count", dataset_id=dataset_id, fn=_count)
 
 
 @router.post("/upload", response_model=list[DatasetSummary])
 async def upload_datasets(
     registry: RegistryDep,
     settings: SettingsDep,
+    jobs: JobsDep,
     files: Annotated[list[UploadFile], File(default_factory=list)],
 ):
     if not files:
-        raise HTTPException(status_code=400, detail="No files uploaded")
+        raise to_http_error(status_code=400, code=CODES.BAD_REQUEST, message="No files uploaded")
     upload_root = settings.upload_dir
     if not upload_root.is_absolute():
         upload_root = Path.cwd() / upload_root
     upload_root.mkdir(parents=True, exist_ok=True)
     batch_dir = upload_root / uuid.uuid4().hex[:16]
     batch_dir.mkdir(parents=True)
+
     summaries: list[DatasetSummary] = []
     skipped: list[str] = []
     for uf in files:
@@ -70,26 +92,30 @@ async def upload_datasets(
                 while chunk := await uf.read(1024 * 1024):
                     size += len(chunk)
                     if size > settings.upload_max_bytes_per_file:
-                        raise HTTPException(
+                        raise to_http_error(
                             status_code=400,
-                            detail=f"File exceeds max size ({settings.upload_max_bytes_per_file} bytes): {safe}",
+                            code=CODES.BAD_REQUEST,
+                            message=f"File exceeds max size ({settings.upload_max_bytes_per_file} bytes): {safe}",
                         )
                     out.write(chunk)
-        except HTTPException:
+        except Exception:
             dest.unlink(missing_ok=True)
             raise
+
         try:
-            ds = registry.register_path(dest)
+            ds = registry.register_path(dest, compute_counts=False)
             summaries.append(registry.to_summary(ds))
+            _queue_count_job(ds.dataset_id, jobs, registry, settings)
         except ValueError:
             dest.unlink(missing_ok=True)
             skipped.append(safe)
+
     if not summaries:
-        raise HTTPException(
-            status_code=400,
-            detail="No supported data files in upload "
-            + (f"(skipped: {', '.join(skipped)})" if skipped else ""),
-        )
+        detail = "No supported data files in upload"
+        if skipped:
+            detail += f" (skipped: {', '.join(skipped)})"
+        raise to_http_error(status_code=400, code=CODES.BAD_REQUEST, message=detail)
+
     return summaries
 
 
@@ -112,24 +138,37 @@ def list_datasets(registry: RegistryDep, workspace: WorkspaceDep) -> list[Datase
 
 
 @router.post("/register-file", response_model=DatasetSummary)
-def register_file(body: RegisterFileRequest, registry: RegistryDep) -> DatasetSummary:
+def register_file(
+    body: RegisterFileRequest,
+    registry: RegistryDep,
+    jobs: JobsDep,
+    settings: SettingsDep,
+) -> DatasetSummary:
     p = Path(body.path)
     try:
-        ds = registry.register_path(p)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except (ValueError, IsADirectoryError) as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        ds = registry.register_path(p, compute_counts=False)
+        _queue_count_job(ds.dataset_id, jobs, registry, settings)
+    except FileNotFoundError:
+        raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="File not found")
+    except IsADirectoryError:
+        raise to_http_error(status_code=400, code=CODES.BAD_REQUEST, message="Path must be a file")
     return registry.to_summary(ds)
 
 
 @router.post("/register-folder", response_model=list[DatasetSummary])
-def register_folder(body: RegisterFolderRequest, registry: RegistryDep) -> list[DatasetSummary]:
+def register_folder(
+    body: RegisterFolderRequest,
+    registry: RegistryDep,
+    jobs: JobsDep,
+    settings: SettingsDep,
+) -> list[DatasetSummary]:
     p = Path(body.path)
     try:
         dss = registry.register_folder(p, recursive=body.recursive)
-    except NotADirectoryError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        for ds in dss:
+            _queue_count_job(ds.dataset_id, jobs, registry, settings)
+    except NotADirectoryError:
+        raise to_http_error(status_code=400, code=CODES.BAD_REQUEST, message="Path must be a directory")
     return [registry.to_summary(ds) for ds in dss]
 
 
@@ -137,21 +176,21 @@ def register_folder(body: RegisterFolderRequest, registry: RegistryDep) -> list[
 def get_dataset(dataset_id: str, registry: RegistryDep) -> DatasetSummary:
     ds = registry.get(dataset_id)
     if not ds:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+        raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="Dataset not found")
     return registry.to_summary(ds)
 
 
 @router.delete("/{dataset_id}", status_code=204)
 def delete_dataset(dataset_id: str, registry: RegistryDep) -> Response:
     if not registry.unregister(dataset_id):
-        raise HTTPException(status_code=404, detail="Dataset not found")
+        raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="Dataset not found")
     return Response(status_code=204)
 
 
 def _cached_profile(dataset_id: str, registry: RegistryDep, workspace: WorkspaceDep) -> DatasetProfile:
     ds = registry.get(dataset_id)
     if not ds:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+        raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="Dataset not found")
     cached = workspace.load_profile_cache(dataset_id)
     if cached:
         return DatasetProfile.model_validate(cached)
@@ -161,34 +200,34 @@ def _cached_profile(dataset_id: str, registry: RegistryDep, workspace: Workspace
 
 
 @router.get("/{dataset_id}/profile", response_model=DatasetProfile)
-def get_profile(
-    dataset_id: str,
-    registry: RegistryDep,
-    workspace: WorkspaceDep,
-) -> DatasetProfile:
-    return _cached_profile(dataset_id, registry, workspace)
+def get_profile(dataset_id: str, registry: RegistryDep, workspace: WorkspaceDep) -> DatasetProfile:
+    with timed_event("dataset.profile.get", dataset_id=dataset_id):
+        return _cached_profile(dataset_id, registry, workspace)
 
 
-@router.post("/{dataset_id}/profile/refresh", response_model=DatasetProfile)
+@router.post("/{dataset_id}/profile/refresh", response_model=JobCreateResponse)
 def refresh_profile(
     dataset_id: str,
     registry: RegistryDep,
     workspace: WorkspaceDep,
-) -> DatasetProfile:
+    jobs: JobsDep,
+) -> JobCreateResponse:
     ds = registry.get(dataset_id)
     if not ds:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-    job_id = uuid.uuid4().hex
-    workspace.job_insert(job_id, "profile_refresh", dataset_id, "running")
-    try:
+        raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="Dataset not found")
+
+    def _refresh(job_id: str) -> dict:
+        if workspace.job_cancel_requested(job_id):
+            return {"dataset_id": dataset_id, "status": "canceled"}
         workspace.delete_profile_cache(dataset_id)
         prof = build_profile(ds)
+        if workspace.job_cancel_requested(job_id):
+            return {"dataset_id": dataset_id, "status": "canceled"}
         workspace.save_profile_cache(dataset_id, prof.model_dump(mode="json"))
-        workspace.job_finish(job_id, "completed")
-        return prof
-    except Exception as e:
-        workspace.job_finish(job_id, "failed", str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        return {"dataset_id": dataset_id, "quality_score": prof.quality_score}
+
+    job_id = jobs.submit(kind="profile_refresh", dataset_id=dataset_id, fn=_refresh)
+    return JobCreateResponse(job_id=job_id, status=JobStatus.queued)
 
 
 @router.get("/{dataset_id}/profile/history", response_model=list[ProfileHistoryEntry])
@@ -199,7 +238,7 @@ def profile_history(
     limit: int = Query(10, ge=1, le=50),
 ) -> list[ProfileHistoryEntry]:
     if not registry.get(dataset_id):
-        raise HTTPException(status_code=404, detail="Dataset not found")
+        raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="Dataset not found")
     rows = workspace.list_profile_history(dataset_id, limit)
     return [ProfileHistoryEntry(**r) for r in rows]
 
@@ -213,19 +252,20 @@ def profile_diff_route(
     b: str | None = Query(None),
 ) -> ProfileDiffResponse:
     if not registry.get(dataset_id):
-        raise HTTPException(status_code=404, detail="Dataset not found")
+        raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="Dataset not found")
     hist = workspace.list_profile_history(dataset_id, 50)
+
     if a and b:
         ma = workspace.get_profile_history_meta(a)
         mb = workspace.get_profile_history_meta(b)
         if not ma or ma["dataset_id"] != dataset_id:
-            raise HTTPException(status_code=404, detail="Unknown history snapshot a")
+            raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="Unknown history snapshot a")
         if not mb or mb["dataset_id"] != dataset_id:
-            raise HTTPException(status_code=404, detail="Unknown history snapshot b")
+            raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="Unknown history snapshot b")
         blob_a = workspace.load_profile_history_blob(a)
         blob_b = workspace.load_profile_history_blob(b)
         if not blob_a or not blob_b:
-            raise HTTPException(status_code=404, detail="Profile snapshot not found")
+            raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="Profile snapshot not found")
         diff = diff_profile_dicts(blob_a, blob_b)
         return ProfileDiffResponse(
             history_id_a=a,
@@ -237,16 +277,16 @@ def profile_diff_route(
             null_pct_changes=[NullPctChange(**x) for x in diff["null_pct_changes"]],
             quality_score_delta=diff["quality_score_delta"],
         )
+
     if len(hist) < 2:
-        raise HTTPException(
-            status_code=404,
-            detail="At least two profile snapshots are required for diff",
-        )
+        raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="At least two profile snapshots are required for diff")
+
     id_new, id_old = hist[0]["history_id"], hist[1]["history_id"]
     blob_new = workspace.load_profile_history_blob(id_new)
     blob_old = workspace.load_profile_history_blob(id_old)
     if not blob_new or not blob_old:
-        raise HTTPException(status_code=404, detail="Profile snapshot not found")
+        raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="Profile snapshot not found")
+
     diff = diff_profile_dicts(blob_old, blob_new)
     return ProfileDiffResponse(
         history_id_a=id_old,
@@ -261,21 +301,13 @@ def profile_diff_route(
 
 
 @router.get("/{dataset_id}/columns", response_model=list[ColumnProfile])
-def get_columns(
-    dataset_id: str,
-    registry: RegistryDep,
-    workspace: WorkspaceDep,
-):
+def get_columns(dataset_id: str, registry: RegistryDep, workspace: WorkspaceDep):
     prof = _cached_profile(dataset_id, registry, workspace)
     return prof.column_profiles
 
 
 @router.get("/{dataset_id}/quality-issues", response_model=list[QualityIssue])
-def get_quality(
-    dataset_id: str,
-    registry: RegistryDep,
-    workspace: WorkspaceDep,
-) -> list[QualityIssue]:
+def get_quality(dataset_id: str, registry: RegistryDep, workspace: WorkspaceDep) -> list[QualityIssue]:
     prof = _cached_profile(dataset_id, registry, workspace)
     return prof.quality_issues
 
@@ -290,25 +322,30 @@ def sample_rows(
 ):
     ds = registry.get(dataset_id)
     if not ds:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+        raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="Dataset not found")
+
     ps = page_size or settings.sample_default_page_size
     if ps > settings.sample_max_page_size:
-        raise HTTPException(
+        raise to_http_error(
             status_code=400,
-            detail=f"page_size must be <= {settings.sample_max_page_size}",
+            code=CODES.BAD_REQUEST,
+            message=f"page_size must be <= {settings.sample_max_page_size}",
         )
+
     offset = (page - 1) * ps
-    view = ds.view_name
-    safe_view = sanitize_sql_identifier(view)
+    safe_view = sanitize_sql_identifier(ds.view_name)
+
     try:
-        with registry.workspace.lock_db() as con:
-            count_row = con.execute(f"SELECT COUNT(*) AS c FROM {safe_view}").fetchone()
-            total_rows = int(count_row[0]) if count_row else 0
+        with registry.workspace.read_db() as con:
+            timeout_ms = max(100, int(settings.query_timeout_seconds * 1000))
+            con.execute(f"SET statement_timeout='{timeout_ms}ms'")
             res = con.execute(f"SELECT * FROM {safe_view} LIMIT {int(ps)} OFFSET {int(offset)}")
             cols_meta = res.description or []
             colnames = [c[0] for c in cols_meta]
             fetched = res.fetchall()
+
         rows = [{colnames[i]: row[i] for i in range(len(colnames))} for row in fetched]
+        total_rows = ds.row_count if ds.row_count is not None else 0
         return {
             "page": page,
             "page_size": ps,
@@ -317,5 +354,5 @@ def sample_rows(
             "columns": colnames,
             "rows": rows,
         }
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception:  # noqa: BLE001
+        raise to_http_error(status_code=400, code=CODES.BAD_REQUEST, message="Unable to read sample rows")
