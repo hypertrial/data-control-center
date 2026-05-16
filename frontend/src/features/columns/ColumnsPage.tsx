@@ -22,7 +22,7 @@ import {
   ToggleLeft,
 } from 'lucide-react'
 import { api } from '@/api/client'
-import type { ColumnProfile, SemanticType } from '@/api/types'
+import type { ColumnProfile, DatasetProfile, SemanticType } from '@/api/types'
 import { Input } from '@/components/ui/input'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { PageContainer } from '@/components/ui/section'
@@ -65,6 +65,7 @@ const CQ_OPTIONS: Array<{ value: 'all' | 'has_flags' | 'critical_only'; label: s
 const COLUMN_TOOLBAR_IDS: Array<{ id: string; label: string }> = [
   { id: 'name', label: 'Column' },
   { id: 'type_col', label: 'Type' },
+  { id: 'role_col', label: 'Role' },
   { id: 'missing', label: 'Missing' },
   { id: 'unique_pct', label: 'Unique' },
   { id: 'range_col', label: 'Range' },
@@ -81,6 +82,60 @@ const sortOptionalNumber: SortingFn<ColumnProfile> = (rowA, rowB, columnId) => {
   const nb = b == null || Number.isNaN(b) ? Number.NEGATIVE_INFINITY : b
   if (na === nb) return 0
   return na < nb ? -1 : 1
+}
+
+const COLUMN_ROLE_LABELS = ['grain key', 'entity id', 'time', 'measure'] as const
+type ColumnRoleLabel = (typeof COLUMN_ROLE_LABELS)[number]
+
+function roleSortKey(roles: ColumnRoleLabel[]): number {
+  if (!roles.length) return 0
+  const minPri = Math.min(...roles.map((r) => COLUMN_ROLE_LABELS.indexOf(r)))
+  return roles.length * 100 + (COLUMN_ROLE_LABELS.length - minPri)
+}
+
+function buildColumnRoleMap(profile: DatasetProfile | undefined): Map<string, ColumnRoleLabel[]> {
+  const out = new Map<string, ColumnRoleLabel[]>()
+  if (!profile) return out
+
+  const grainCols =
+    profile.primary_grain_key_columns.length > 0
+      ? profile.primary_grain_key_columns
+      : profile.potential_key_columns
+
+  const entityCols =
+    profile.entity_id_columns.length > 0
+      ? profile.entity_id_columns.map((e) => e.name)
+      : profile.potential_id_columns
+
+  const measureCols =
+    profile.measure_candidates.length > 0
+      ? profile.measure_candidates.map((m) => m.name)
+      : profile.main_numeric_measures
+
+  const timeNames = new Set<string>()
+  if (profile.primary_temporal_column?.name) timeNames.add(profile.primary_temporal_column.name)
+  if (profile.primary_date_column) timeNames.add(profile.primary_date_column)
+  for (const t of profile.temporal_columns) timeNames.add(t.name)
+
+  const addRole = (col: string, role: ColumnRoleLabel) => {
+    const cur = out.get(col) ?? []
+    if (!cur.includes(role)) cur.push(role)
+    out.set(col, cur)
+  }
+
+  const orderRank = (roles: ColumnRoleLabel[]) =>
+    [...roles].sort((a, b) => COLUMN_ROLE_LABELS.indexOf(a) - COLUMN_ROLE_LABELS.indexOf(b))
+
+  for (const c of grainCols) addRole(c, 'grain key')
+  for (const c of entityCols) addRole(c, 'entity id')
+  for (const c of timeNames) addRole(c, 'time')
+  for (const c of measureCols) addRole(c, 'measure')
+
+  for (const [k, roles] of out.entries()) {
+    out.set(k, orderRank(roles))
+  }
+
+  return out
 }
 
 function TypeIcon({ sem }: { sem: SemanticType }) {
@@ -152,6 +207,8 @@ export function ColumnsPage() {
     [datasetsQ.data, activeId],
   )
 
+  const columnRoleMap = useMemo(() => buildColumnRoleMap(q.data), [q.data])
+
   const allColumnDefs = useMemo(
     () => [
       colHelper.accessor('name', {
@@ -182,6 +239,27 @@ export function ColumnsPage() {
               <span className="truncate text-[10px] capitalize text-[hsl(var(--muted))]" title={r.semantic_type}>
                 {r.semantic_type.replaceAll('_', ' ')}
               </span>
+            </div>
+          )
+        },
+      }),
+      colHelper.accessor((r) => roleSortKey(columnRoleMap.get(r.name) ?? []), {
+        id: 'role_col',
+        header: 'Role',
+        sortingFn: sortOptionalNumber,
+        cell: (ctx) => {
+          const roles = columnRoleMap.get(ctx.row.original.name) ?? []
+          if (!roles.length) return <span className="text-[hsl(var(--muted))]">—</span>
+          return (
+            <div
+              className="flex max-w-[min(14rem,28vw)] min-w-0 flex-wrap gap-1"
+              title={roles.join(', ')}
+            >
+              {roles.map((role) => (
+                <Badge key={role} variant="info" className="max-w-full truncate px-1.5 py-0 text-[10px] font-normal" title={role}>
+                  {role}
+                </Badge>
+              ))}
             </div>
           )
         },
@@ -344,7 +422,7 @@ export function ColumnsPage() {
         },
       }),
     ],
-    [],
+    [columnRoleMap],
   )
 
   const columns = useMemo(
@@ -412,7 +490,7 @@ export function ColumnsPage() {
   if (q.isLoading) {
     return (
       <PageContainer>
-        <TableSkeleton rows={8} cols={9} />
+        <TableSkeleton rows={8} cols={10} />
       </PageContainer>
     )
   }
@@ -528,7 +606,7 @@ export function ColumnsPage() {
             : 'EDA stats follow the profiler sample window for large datasets.'}
       </p>
 
-      <Table className="min-w-[1180px]">
+      <Table className="min-w-[1280px]">
         <caption className="sr-only">Columns for dataset {activeId}</caption>
         <THead className="sticky top-0 z-10 bg-[hsl(var(--background))]/95 backdrop-blur">
           {table.getHeaderGroups().map((hg) => (
