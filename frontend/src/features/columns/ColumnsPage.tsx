@@ -30,7 +30,7 @@ import { TableSkeleton } from '@/components/ui/skeleton'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
 import { useUiStore } from '@/store/uiStore'
 import { ColumnDetailDrawer } from '@/features/columns/ColumnDetailDrawer'
-import { formatCount, formatPercent } from '@/lib/format'
+import { formatCount, formatEdaNumericString, formatPercent } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -225,9 +225,14 @@ export function ColumnsPage() {
           if (r.min_value == null && r.max_value == null) {
             return <span className="text-[hsl(var(--muted))]">—</span>
           }
+          const minShown = r.min_value != null ? formatEdaNumericString(r.min_value) : '—'
+          const maxShown = r.max_value != null ? formatEdaNumericString(r.max_value) : '—'
           return (
-            <span className="block max-w-[14rem] truncate font-mono text-xs text-fg" title={`${r.min_value ?? ''} → ${r.max_value ?? ''}`}>
-              {r.min_value ?? '—'} → {r.max_value ?? '—'}
+            <span
+              className="block max-w-[14rem] truncate font-mono text-xs text-fg"
+              title={`${r.min_value ?? ''} → ${r.max_value ?? ''}`}
+            >
+              {minShown} → {maxShown}
             </span>
           )
         },
@@ -249,12 +254,12 @@ export function ColumnsPage() {
             <div className="max-w-[12rem] text-xs">
               {mean ? (
                 <div className="truncate font-mono text-fg" title={`mean ${mean}`}>
-                  μ {mean}
+                  μ {formatEdaNumericString(mean)}
                 </div>
               ) : null}
               {med ? (
                 <div className="truncate font-mono text-[hsl(var(--muted))]" title={`median ${med}`}>
-                  med {med}
+                  med {formatEdaNumericString(med)}
                 </div>
               ) : null}
             </div>
@@ -273,17 +278,21 @@ export function ColumnsPage() {
           const r = ctx.row.original
           const std = r.std_value
           const iqr =
-            r.p25_value != null && r.p75_value != null ? `${r.p25_value}–${r.p75_value}` : null
+            r.p25_value != null && r.p75_value != null
+              ? `${formatEdaNumericString(r.p25_value)}–${formatEdaNumericString(r.p75_value)}`
+              : null
+          const iqrTitle =
+            r.p25_value != null && r.p75_value != null ? `${r.p25_value}–${r.p75_value}` : undefined
           if (!std && !iqr) return <span className="text-[hsl(var(--muted))]">—</span>
           return (
             <div className="max-w-[12rem] text-xs">
               {std ? (
                 <div className="truncate font-mono text-fg" title={`std ${std}`}>
-                  σ {std}
+                  σ {formatEdaNumericString(std)}
                 </div>
               ) : null}
               {iqr ? (
-                <div className="truncate font-mono text-[hsl(var(--muted))]" title="interquartile range">
+                <div className="truncate font-mono text-[hsl(var(--muted))]" title={iqrTitle ? `IQR ${iqrTitle}` : undefined}>
                   IQR {iqr}
                 </div>
               ) : null}

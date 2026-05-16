@@ -6,7 +6,7 @@ import { Sheet } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useDisposableEChart } from '@/hooks/useDisposableEChart'
 import { useOpenInSql } from '@/hooks/useOpenInSql'
-import { formatCount, formatPercent } from '@/lib/format'
+import { formatCount, formatEdaNumericString, formatPercent } from '@/lib/format'
 import { sqlSelectColumnFromView, sqlSelectStarFromView } from '@/lib/sql'
 
 const FLAG_HELP: Record<string, string> = {
@@ -139,19 +139,33 @@ export function ColumnDetailDrawer({
             <div>Cardinality (sample)</div>
             <div className="text-white tabular-nums">{formatCount(column.cardinality)}</div>
             <div>Min</div>
-            <div className="max-w-prose break-all text-white">{column.min_value ?? '—'}</div>
+            <div className="max-w-prose break-all text-white" title={column.min_value ?? undefined}>
+              {formatEdaNumericString(column.min_value)}
+            </div>
             <div>p25</div>
-            <div className="max-w-prose break-all text-white">{column.p25_value ?? '—'}</div>
+            <div className="max-w-prose break-all text-white" title={column.p25_value ?? undefined}>
+              {formatEdaNumericString(column.p25_value)}
+            </div>
             <div>Median</div>
-            <div className="max-w-prose break-all text-white">{column.median_value ?? '—'}</div>
+            <div className="max-w-prose break-all text-white" title={column.median_value ?? undefined}>
+              {formatEdaNumericString(column.median_value)}
+            </div>
             <div>p75</div>
-            <div className="max-w-prose break-all text-white">{column.p75_value ?? '—'}</div>
+            <div className="max-w-prose break-all text-white" title={column.p75_value ?? undefined}>
+              {formatEdaNumericString(column.p75_value)}
+            </div>
             <div>Max</div>
-            <div className="max-w-prose break-all text-white">{column.max_value ?? '—'}</div>
+            <div className="max-w-prose break-all text-white" title={column.max_value ?? undefined}>
+              {formatEdaNumericString(column.max_value)}
+            </div>
             <div>Mean</div>
-            <div className="max-w-prose break-all text-white">{column.mean_value ?? '—'}</div>
+            <div className="max-w-prose break-all text-white" title={column.mean_value ?? undefined}>
+              {formatEdaNumericString(column.mean_value)}
+            </div>
             <div>Std dev</div>
-            <div className="max-w-prose break-all text-white">{column.std_value ?? '—'}</div>
+            <div className="max-w-prose break-all text-white" title={column.std_value ?? undefined}>
+              {formatEdaNumericString(column.std_value)}
+            </div>
             <div>Top value (sample)</div>
             <div className="max-w-prose break-all text-white">{column.top_value ?? '—'}</div>
             <div>Top count / %</div>

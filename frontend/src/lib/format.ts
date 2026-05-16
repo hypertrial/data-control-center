@@ -20,6 +20,22 @@ export function formatPercent(p: number | null | undefined, decimals = 2): strin
   return `${p.toFixed(decimals)}%`
 }
 
+const edaNumericDisplay = new Intl.NumberFormat('en-US', {
+  maximumSignificantDigits: 4,
+  maximumFractionDigits: 4,
+  useGrouping: false,
+})
+
+/** Compact display for profiler numeric strings (mean, std, quartiles, min/max); non-finite parse falls back to raw. */
+export function formatEdaNumericString(raw: string | null | undefined): string {
+  if (raw == null) return '—'
+  const trimmed = raw.trim()
+  if (trimmed === '') return '—'
+  const n = Number(trimmed)
+  if (!Number.isFinite(n)) return raw
+  return edaNumericDisplay.format(n)
+}
+
 /** Short relative time from epoch ms. */
 export function formatRelativeTime(ms: number): string {
   const s = Math.floor((Date.now() - ms) / 1000)
