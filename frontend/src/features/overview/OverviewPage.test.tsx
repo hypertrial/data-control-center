@@ -2,20 +2,25 @@ import * as React from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { OverviewPage } from '@/features/overview/OverviewPage'
 import { useUiStore } from '@/store/uiStore'
 import { mkProfile } from '@/test/profileFixtures'
 
 const h = vi.hoisted(() => ({ getProfile: vi.fn(), getProfileHistory: vi.fn() }))
+const chartFns = vi.hoisted(() => ({
+  on: vi.fn(),
+  off: vi.fn(),
+}))
 
 vi.mock('echarts', () => ({
   init: vi.fn(() => ({
     setOption: vi.fn(),
     resize: vi.fn(),
     dispose: vi.fn(),
-    on: vi.fn(),
-    off: vi.fn(),
+    on: chartFns.on,
+    off: chartFns.off,
   })),
 }))
 
@@ -37,6 +42,8 @@ function wrap(ui: React.ReactElement) {
 
 describe('OverviewPage', () => {
   beforeEach(() => {
+    chartFns.on.mockReset()
+    chartFns.off.mockReset()
     h.getProfileHistory.mockResolvedValue([
       { history_id: 'h1', dataset_id: 'ds_001', created_at: 't', quality_score: 90, rows: 1, columns: 1, missing_cell_pct: 0 },
       { history_id: 'h2', dataset_id: 'ds_001', created_at: 't2', quality_score: 88, rows: 1, columns: 1, missing_cell_pct: 0 },
@@ -138,5 +145,66 @@ describe('OverviewPage', () => {
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     wrap(<OverviewPage />)
     await waitFor(() => expect(screen.getByText('boom')).toBeInTheDocument())
+  })
+
+  it('opens the diff dialog and renders empty chart fallbacks', async () => {
+    const user = userEvent.setup()
+    h.getProfile.mockResolvedValue(
+      mkProfile({
+        columns: 0,
+        numeric_column_count: 0,
+        categorical_column_count: 0,
+        datetime_column_count: 0,
+        quality_score: 40,
+        quality_issues: [],
+        column_profiles: [],
+        missing_cell_pct: null,
+        duplicate_row_pct: null,
+        primary_temporal_column: null,
+        primary_date_column: null,
+        structure_warnings: [],
+      }),
+    )
+    useUiStore.setState({ activeDatasetId: 'ds_001' })
+    wrap(<OverviewPage />)
+
+    await waitFor(() => expect(screen.getByText(/No column metadata/i)).toBeInTheDocument())
+    expect(screen.getByText(/No quality issues detected/i)).toBeInTheDocument()
+    expect(screen.getByText(/No column stats/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /What changed/i }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('uses fallback structure columns and wires issue-click handlers', async () => {
+    h.getProfile.mockResolvedValue(
+      mkProfile({
+        entity_id_columns: [],
+        potential_id_columns: ['account_id'],
+        primary_grain_key_columns: [],
+        potential_key_columns: ['account_id', 'month'],
+        measure_candidates: [],
+        main_numeric_measures: ['m1', 'm2'],
+        primary_temporal_column: null,
+        primary_date_column: 'month',
+        quality_issues: [
+          {
+            severity: 'warning',
+            code: 'nulls',
+            title: 'Many nulls',
+            message: 'Many nulls in amount',
+            affected_columns: ['amount'],
+            score_impact: 7.5,
+          },
+        ],
+      }),
+    )
+    useUiStore.setState({ activeDatasetId: 'ds_001' })
+    wrap(<OverviewPage />)
+
+    await waitFor(() => expect(screen.getAllByText('account_id').length).toBeGreaterThan(0))
+    expect(screen.getAllByText('month').length).toBeGreaterThan(0)
+    expect(screen.getByText('m1')).toBeInTheDocument()
+    expect(chartFns.on).toHaveBeenCalledWith('click', expect.any(Function))
   })
 })

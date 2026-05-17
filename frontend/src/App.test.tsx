@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api/client'
 import App from '@/App'
+import { appQueryClient } from '@/appQueryClient'
 import { useUiStore } from '@/store/uiStore'
 import { mkProfile } from '@/test/profileFixtures'
 
@@ -36,6 +37,16 @@ function renderApp() {
 
 describe('App', () => {
   beforeEach(() => {
+    appQueryClient.clear()
+    useUiStore.setState({
+      activeDatasetId: null,
+      columnSearch: '',
+      semanticFilter: 'all',
+      qualitySeverityFilter: 'all',
+      columnQualityFilter: 'all',
+      selectedColumn: null,
+      columnDrawerOpen: false,
+    })
     vi.mocked(api.listDatasets).mockResolvedValue([
       {
         dataset_id: 'ds_001',
@@ -89,5 +100,18 @@ describe('App', () => {
 
     await user.click(screen.getByRole('link', { name: /Ask/i }))
     await waitFor(() => expect(screen.getByPlaceholderText(/plain language/i)).toBeInTheDocument())
+  })
+
+  it('shows loading skeletons while datasets are loading', () => {
+    vi.mocked(api.listDatasets).mockImplementation(() => new Promise(() => {}))
+    renderApp()
+    expect(screen.getAllByRole('status').length).toBeGreaterThan(0)
+  })
+
+  it('shows the empty workspace hero when there are no datasets', async () => {
+    vi.mocked(api.listDatasets).mockResolvedValue([])
+    renderApp()
+    await waitFor(() => expect(screen.getByText(/Welcome to Data Control Center/i)).toBeInTheDocument())
+    expect(screen.getAllByRole('button', { name: /Drop files here or click to choose files/i }).length).toBeGreaterThan(0)
   })
 })

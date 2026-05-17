@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import duckdb
 import polars as pl
@@ -10,6 +11,7 @@ import pytest
 
 from app.config import Settings
 from app.services.workspace import Workspace, _is_recoverable_open_error, sanitize_sql_identifier
+from app.services.workspace_engine import WorkspaceEngine
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -289,7 +291,7 @@ def test_sleep_poll_calls_time_sleep(tmp_path: Path, monkeypatch: pytest.MonkeyP
     def fake_sleep(seconds: float) -> None:
         seen.append(seconds)
 
-    monkeypatch.setattr("app.services.workspace.time.sleep", fake_sleep)
+    monkeypatch.setattr("app.services.workspace_engine.time.sleep", fake_sleep)
     try:
         ws.sleep_poll(0.25)
     finally:
@@ -304,10 +306,10 @@ def test_workspace_recovery_resets_broken_wal(tmp_path: Path, monkeypatch: pytes
     db_path.write_text("broken-db")
     wal_path.write_text("broken-wal")
 
-    real_connect = Workspace._connect_database
+    real_connect = WorkspaceEngine._connect_database
     calls = {"count": 0}
 
-    def flaky_connect(self: Workspace):
+    def flaky_connect(self: WorkspaceEngine):
         calls["count"] += 1
         if calls["count"] == 1:
             raise duckdb.InternalException(
@@ -316,9 +318,9 @@ def test_workspace_recovery_resets_broken_wal(tmp_path: Path, monkeypatch: pytes
             )
         return real_connect(self)
 
-    monkeypatch.setattr(Workspace, "_connect_database", flaky_connect)
+    monkeypatch.setattr(WorkspaceEngine, "_connect_database", flaky_connect)
 
-    ws = Workspace(_settings(tmp_path))
+    ws = WorkspaceEngine(_settings(tmp_path))
     try:
         assert ws.connection.execute("SELECT 1").fetchone() == (1,)
     finally:
@@ -333,13 +335,13 @@ def test_workspace_recovery_resets_broken_wal(tmp_path: Path, monkeypatch: pytes
 def test_workspace_recovery_ignores_nonrecoverable_open_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def bad_connect(self: Workspace):
+    def bad_connect(self: WorkspaceEngine):
         raise duckdb.IOException("permission denied")
 
-    monkeypatch.setattr(Workspace, "_connect_database", bad_connect)
+    monkeypatch.setattr(WorkspaceEngine, "_connect_database", bad_connect)
 
     with pytest.raises(duckdb.IOException, match="permission denied"):
-        Workspace(_settings(tmp_path))
+        WorkspaceEngine(_settings(tmp_path))
 
 
 def test_workspace_recovery_backup_suffix_avoids_collisions(
@@ -352,10 +354,10 @@ def test_workspace_recovery_backup_suffix_avoids_collisions(
     (tmp_path / "w.duckdb.corrupt").write_text("older-db")
     (tmp_path / "w.duckdb.wal.corrupt").write_text("older-wal")
 
-    real_connect = Workspace._connect_database
+    real_connect = WorkspaceEngine._connect_database
     calls = {"count": 0}
 
-    def flaky_connect(self: Workspace):
+    def flaky_connect(self: WorkspaceEngine):
         calls["count"] += 1
         if calls["count"] == 1:
             raise duckdb.InternalException(
@@ -364,9 +366,9 @@ def test_workspace_recovery_backup_suffix_avoids_collisions(
             )
         return real_connect(self)
 
-    monkeypatch.setattr(Workspace, "_connect_database", flaky_connect)
+    monkeypatch.setattr(WorkspaceEngine, "_connect_database", flaky_connect)
 
-    ws = Workspace(_settings(tmp_path))
+    ws = WorkspaceEngine(_settings(tmp_path))
     ws.close()
 
     assert (tmp_path / "w.duckdb.corrupt").read_text() == "older-db"
@@ -380,7 +382,7 @@ def test_recoverable_open_error_rejects_non_duckdb_exception() -> None:
 
 
 def test_backup_corrupt_workspace_files_noop_when_missing(tmp_path: Path) -> None:
-    ws = Workspace.__new__(Workspace)
+    ws = WorkspaceEngine.__new__(WorkspaceEngine)
     ws._path = tmp_path / "missing.duckdb"  # type: ignore[attr-defined]
     ws._backup_corrupt_workspace_files()
     assert not ws._path.exists()  # type: ignore[attr-defined]
@@ -389,7 +391,7 @@ def test_backup_corrupt_workspace_files_noop_when_missing(tmp_path: Path) -> Non
 def test_query_count_reraises_unknown_timeout_setup_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ws = Workspace(_settings(tmp_path))
+    ws = WorkspaceEngine(_settings(tmp_path))
 
     class BadCtx:
         def __enter__(self):  # noqa: ANN204
@@ -410,3 +412,240 @@ def test_query_count_reraises_unknown_timeout_setup_error(
             ws.query_count("view_name", 1.0)
     finally:
         ws.close()
+
+
+def test_query_count_returns_none_when_count_query_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = WorkspaceEngine(_settings(tmp_path))
+
+    class BadCtx:
+        def __enter__(self):  # noqa: ANN204
+            class Con:
+                def execute(self, sql: str):
+                    if sql.startswith("PRAGMA") or sql.startswith("SET statement_timeout"):
+                        return None
+                    raise RuntimeError("count failed")
+
+            return Con()
+
+        def __exit__(self, exc_type, exc, tb):  # noqa: ANN001, ANN204
+            return False
+
+    monkeypatch.setattr(ws, "read_db", lambda: BadCtx())
+    try:
+        assert ws.query_count("view_name", 1.0) is None
+    finally:
+        ws.close()
+
+
+def test_workspace_facade_delegates_to_engine_and_stores(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: dict[str, Any] = {}
+    lock_token = object()
+    read_token = object()
+    connection_token = object()
+
+    class FakeEngine:
+        def __init__(self, settings: Settings) -> None:
+            calls["engine_settings"] = settings
+            self.path = tmp_path / "facade.duckdb"
+            self.connection = connection_token
+
+        def lock_db(self):
+            calls["lock_db"] = True
+
+            class Ctx:
+                def __enter__(self_inner):  # noqa: ANN204
+                    return lock_token
+
+                def __exit__(self_inner, exc_type, exc, tb):  # noqa: ANN001, ANN204
+                    return False
+
+            return Ctx()
+
+        def read_db(self):
+            calls["read_db"] = True
+
+            class Ctx:
+                def __enter__(self_inner):  # noqa: ANN204
+                    return read_token
+
+                def __exit__(self_inner, exc_type, exc, tb):  # noqa: ANN001, ANN204
+                    return False
+
+            return Ctx()
+
+        def close(self) -> None:
+            calls["close"] = True
+
+        def drop_view_if_exists(self, view_name: str) -> None:
+            calls["drop_view_if_exists"] = view_name
+
+        def register_file_view(self, view_name: str, source_path: Path, file_format: str) -> None:
+            calls["register_file_view"] = (view_name, source_path, file_format)
+
+        def get_row_column_counts(self, view_name: str) -> tuple[int, int]:
+            calls["get_row_column_counts"] = view_name
+            return (12, 3)
+
+        def query_count(self, view_name: str, timeout_seconds: float) -> int | None:
+            calls["query_count"] = (view_name, timeout_seconds)
+            return 77
+
+        def sleep_poll(self, seconds: float) -> None:
+            calls["sleep_poll"] = seconds
+
+    class FakeSchema:
+        def initialize(self, con: object) -> None:
+            calls["schema_init"] = con
+
+    class FakeProfiles:
+        def __init__(self, engine: object) -> None:
+            calls["profiles_engine"] = engine
+
+        def save_profile_cache(self, dataset_id: str, profile: dict[str, Any]) -> None:
+            calls["save_profile_cache"] = (dataset_id, profile)
+
+        def list_profile_history(self, dataset_id: str, limit: int = 10) -> list[dict[str, Any]]:
+            calls["list_profile_history"] = (dataset_id, limit)
+            return [{"history_id": "h1"}]
+
+        def load_profile_history_blob(self, history_id: str) -> dict[str, Any] | None:
+            calls["load_profile_history_blob"] = history_id
+            return {"history_id": history_id}
+
+        def get_profile_history_meta(self, history_id: str) -> dict[str, Any] | None:
+            calls["get_profile_history_meta"] = history_id
+            return {"history_id": history_id}
+
+        def load_profile_cache(self, dataset_id: str) -> dict[str, Any] | None:
+            calls["load_profile_cache"] = dataset_id
+            return {"dataset_id": dataset_id}
+
+        def delete_profile_cache(self, dataset_id: str) -> None:
+            calls["delete_profile_cache"] = dataset_id
+
+    class FakeSavedQueries:
+        def __init__(self, engine: object) -> None:
+            calls["saved_engine"] = engine
+
+        def list_saved_queries(self) -> list[dict[str, Any]]:
+            calls["list_saved_queries"] = True
+            return [{"saved_id": "s1"}]
+
+        def insert_saved_query(self, name: str, sql: str) -> str:
+            calls["insert_saved_query"] = (name, sql)
+            return "saved-id"
+
+        def update_saved_query(self, saved_id: str, name: str | None = None, sql: str | None = None) -> bool:
+            calls["update_saved_query"] = (saved_id, name, sql)
+            return True
+
+        def delete_saved_query(self, saved_id: str) -> bool:
+            calls["delete_saved_query"] = saved_id
+            return True
+
+        def get_saved_query(self, saved_id: str) -> dict[str, Any] | None:
+            calls["get_saved_query"] = saved_id
+            return {"saved_id": saved_id}
+
+    class FakeJobs:
+        def __init__(self, engine: object) -> None:
+            calls["jobs_engine"] = engine
+
+        def job_insert(self, job_id: str, kind: str, dataset_id: str | None, status: str) -> None:
+            calls["job_insert"] = (job_id, kind, dataset_id, status)
+
+        def job_update(self, job_id: str, **kwargs: Any) -> None:
+            calls["job_update"] = (job_id, kwargs)
+
+        def job_finish(self, job_id: str, status: str, error: str | None = None) -> None:
+            calls["job_finish"] = (job_id, status, error)
+
+        def job_get(self, job_id: str) -> dict[str, Any] | None:
+            calls["job_get"] = job_id
+            return {"job_id": job_id}
+
+        def jobs_list(self, limit: int = 100, status: str | None = None) -> list[dict[str, Any]]:
+            calls["jobs_list"] = (limit, status)
+            return [{"job_id": "j1"}]
+
+        def job_request_cancel(self, job_id: str) -> bool:
+            calls["job_request_cancel"] = job_id
+            return True
+
+        def job_cancel_requested(self, job_id: str) -> bool:
+            calls["job_cancel_requested"] = job_id
+            return True
+
+    monkeypatch.setattr("app.services.workspace.WorkspaceEngine", FakeEngine)
+    monkeypatch.setattr("app.services.workspace.WorkspaceSchema", FakeSchema)
+    monkeypatch.setattr("app.services.workspace.ProfileStore", FakeProfiles)
+    monkeypatch.setattr("app.services.workspace.SavedQueryStore", FakeSavedQueries)
+    monkeypatch.setattr("app.services.workspace.JobStore", FakeJobs)
+
+    ws = Workspace(_settings(tmp_path))
+    assert ws.path == tmp_path / "facade.duckdb"
+    assert ws.connection is connection_token
+    assert calls["schema_init"] is lock_token
+    assert calls["profiles_engine"] is ws._engine
+    assert calls["saved_engine"] is ws._engine
+    assert calls["jobs_engine"] is ws._engine
+
+    assert ws.lock_db().__enter__() is lock_token
+    assert ws.read_db().__enter__() is read_token
+    ws.drop_view_if_exists("view_a")
+    ws.register_file_view("view_a", tmp_path / "a.csv", "csv")
+    assert ws.get_row_column_counts("view_a") == (12, 3)
+    assert ws.query_count("view_a", 1.5) == 77
+    ws.save_profile_cache("ds_1", {"quality_score": 88})
+    assert ws.list_profile_history("ds_1", 4) == [{"history_id": "h1"}]
+    assert ws.load_profile_history_blob("h1") == {"history_id": "h1"}
+    assert ws.list_saved_queries() == [{"saved_id": "s1"}]
+    assert ws.insert_saved_query("saved", "SELECT 1") == "saved-id"
+    assert ws.update_saved_query("saved-id", name="renamed", sql="SELECT 2") is True
+    assert ws.delete_saved_query("saved-id") is True
+    assert ws.get_saved_query("saved-id") == {"saved_id": "saved-id"}
+    assert ws.get_profile_history_meta("h1") == {"history_id": "h1"}
+    assert ws.load_profile_cache("ds_1") == {"dataset_id": "ds_1"}
+    ws.delete_profile_cache("ds_1")
+    ws.job_insert("job-1", "profile", "ds_1", "queued")
+    ws.job_update(
+        "job-1",
+        status="running",
+        progress=0.5,
+        error_code="E1",
+        error_message="boom",
+        result_json={"ok": True},
+        finished=True,
+    )
+    ws.job_finish("job-1", "completed", None)
+    assert ws.job_get("job-1") == {"job_id": "job-1"}
+    assert ws.jobs_list(8, "queued") == [{"job_id": "j1"}]
+    assert ws.job_request_cancel("job-1") is True
+    assert ws.job_cancel_requested("job-1") is True
+    ws.sleep_poll(0.25)
+    ws.close()
+
+    assert calls["drop_view_if_exists"] == "view_a"
+    assert calls["register_file_view"] == ("view_a", tmp_path / "a.csv", "csv")
+    assert calls["save_profile_cache"] == ("ds_1", {"quality_score": 88})
+    assert calls["update_saved_query"] == ("saved-id", "renamed", "SELECT 2")
+    assert calls["job_insert"] == ("job-1", "profile", "ds_1", "queued")
+    assert calls["job_update"] == (
+        "job-1",
+        {
+            "status": "running",
+            "progress": 0.5,
+            "error_code": "E1",
+            "error_message": "boom",
+            "result_json": {"ok": True},
+            "finished": True,
+        },
+    )
+    assert calls["job_finish"] == ("job-1", "completed", None)
+    assert calls["jobs_list"] == (8, "queued")
+    assert calls["sleep_poll"] == 0.25
+    assert calls["close"] is True

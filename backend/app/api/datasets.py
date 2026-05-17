@@ -189,22 +189,32 @@ def delete_dataset(dataset_id: str, registry: RegistryDep) -> Response:
     return Response(status_code=204)
 
 
-def _cached_profile(dataset_id: str, registry: RegistryDep, workspace: WorkspaceDep) -> DatasetProfile:
+def _cached_profile(
+    dataset_id: str,
+    registry: RegistryDep,
+    workspace: WorkspaceDep,
+    settings: SettingsDep,
+) -> DatasetProfile:
     ds = registry.get(dataset_id)
     if not ds:
         raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="Dataset not found")
     cached = workspace.load_profile_cache(dataset_id)
     if cached and cached.get("structure_version") == CURRENT_PROFILE_STRUCTURE_VERSION:
         return DatasetProfile.model_validate(cached)
-    prof = build_profile(ds)
+    prof = build_profile(ds, settings)
     workspace.save_profile_cache(dataset_id, prof.model_dump(mode="json"))
     return prof
 
 
 @router.get("/{dataset_id}/profile", response_model=DatasetProfile)
-def get_profile(dataset_id: str, registry: RegistryDep, workspace: WorkspaceDep) -> DatasetProfile:
+def get_profile(
+    dataset_id: str,
+    registry: RegistryDep,
+    workspace: WorkspaceDep,
+    settings: SettingsDep,
+) -> DatasetProfile:
     with timed_event("dataset.profile.get", dataset_id=dataset_id):
-        return _cached_profile(dataset_id, registry, workspace)
+        return _cached_profile(dataset_id, registry, workspace, settings)
 
 
 @router.post("/{dataset_id}/profile/refresh", response_model=JobCreateResponse)
@@ -213,6 +223,7 @@ def refresh_profile(
     registry: RegistryDep,
     workspace: WorkspaceDep,
     jobs: JobsDep,
+    settings: SettingsDep,
 ) -> JobCreateResponse:
     ds = registry.get(dataset_id)
     if not ds:
@@ -222,7 +233,7 @@ def refresh_profile(
         if workspace.job_cancel_requested(job_id):
             return {"dataset_id": dataset_id, "status": "canceled"}
         workspace.delete_profile_cache(dataset_id)
-        prof = build_profile(ds)
+        prof = build_profile(ds, settings)
         if workspace.job_cancel_requested(job_id):  # pragma: no cover
             return {"dataset_id": dataset_id, "status": "canceled"}
         workspace.save_profile_cache(dataset_id, prof.model_dump(mode="json"))
@@ -303,14 +314,24 @@ def profile_diff_route(
 
 
 @router.get("/{dataset_id}/columns", response_model=list[ColumnProfile])
-def get_columns(dataset_id: str, registry: RegistryDep, workspace: WorkspaceDep):
-    prof = _cached_profile(dataset_id, registry, workspace)
+def get_columns(
+    dataset_id: str,
+    registry: RegistryDep,
+    workspace: WorkspaceDep,
+    settings: SettingsDep,
+):
+    prof = _cached_profile(dataset_id, registry, workspace, settings)
     return prof.column_profiles
 
 
 @router.get("/{dataset_id}/quality-issues", response_model=list[QualityIssue])
-def get_quality(dataset_id: str, registry: RegistryDep, workspace: WorkspaceDep) -> list[QualityIssue]:
-    prof = _cached_profile(dataset_id, registry, workspace)
+def get_quality(
+    dataset_id: str,
+    registry: RegistryDep,
+    workspace: WorkspaceDep,
+    settings: SettingsDep,
+) -> list[QualityIssue]:
+    prof = _cached_profile(dataset_id, registry, workspace, settings)
     return prof.quality_issues
 
 

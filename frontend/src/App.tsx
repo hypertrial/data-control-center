@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { LayoutDashboard } from 'lucide-react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { api } from '@/api/client'
+import { appQueryClient } from '@/appQueryClient'
 import { CardSkeleton } from '@/components/ui/skeleton'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
 import { Toaster } from '@/components/ui/toaster'
@@ -20,20 +21,6 @@ import { ShortcutCheatsheet } from '@/features/shell/ShortcutCheatsheet'
 import { TopBar } from '@/features/shell/TopBar'
 import { useGlobalShortcuts } from '@/hooks/useGlobalShortcuts'
 import { UiUrlSync } from '@/hooks/UiUrlSync'
-import { isTransientNetworkError } from '@/lib/transientNetworkError'
-
-/** Extra retries for dev-only transport drops (Vite proxy `socket hang up` during Uvicorn reload). */
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: (failureCount, error) => {
-        if (isTransientNetworkError(error)) return failureCount < 5
-        return failureCount < 3
-      },
-      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10_000),
-    },
-  },
-})
 
 function Shell({ children }: { children: ReactNode }) {
   return (
@@ -114,7 +101,7 @@ function MainBody() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={appQueryClient}>
       <TooltipProvider delayDuration={280}>
         <Toaster />
         <BrowserRouter>

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from app.services.workspace import Workspace
@@ -228,6 +229,23 @@ def test_sample_pagination_and_bounds(client, tmp_path):
     too_big = client.get(f"/api/datasets/{did}/sample?page=1&page_size=99999")
     assert too_big.status_code == 400
     assert client.get("/api/datasets/ds_bad/sample").status_code == 404
+
+
+def test_sample_uses_query_count_when_registry_row_count_missing(client, tmp_path, monkeypatch) -> None:
+    csv = tmp_path / "missing_count.csv"
+    csv.write_text("a\n1\n2\n3\n")
+    did = client.post("/api/datasets/register-file", json={"path": str(csv)}).json()["dataset_id"]
+
+    registry = client.app.state.registry
+    original = registry.get(did)
+    assert original is not None
+
+    monkeypatch.setattr(registry, "get", lambda dataset_id: replace(original, row_count=None) if dataset_id == did else None)
+    monkeypatch.setattr(client.app.state.workspace, "query_count", lambda view_name, timeout_seconds: 3)
+
+    res = client.get(f"/api/datasets/{did}/sample?page=1&page_size=2")
+    assert res.status_code == 200
+    assert res.json()["total_rows"] == 3
 
 
 def test_sql_requires_view_reference(client, tmp_path):

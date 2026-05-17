@@ -82,3 +82,6 @@ class JobService:
         if ok:
             emit("job.cancel_requested", job_id=job_id)
         return ok
+
+    def shutdown(self) -> None:
+        self._executor.shutdown(wait=True, cancel_futures=False)

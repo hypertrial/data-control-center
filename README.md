@@ -139,7 +139,7 @@ cd frontend && npm run test:coverage
 
 - **Frontend SQL helpers:** [`frontend/src/lib/sql.ts`](frontend/src/lib/sql.ts)
 - **ECharts lifecycle hook:** [`frontend/src/hooks/useDisposableEChart.ts`](frontend/src/hooks/useDisposableEChart.ts)
-- **Workspace metadata (profile cache + job rows):** DuckDB tables in [`backend/app/services/workspace.py`](backend/app/services/workspace.py)
+- **Workspace metadata (profile cache + job rows):** façade in [`backend/app/services/workspace.py`](backend/app/services/workspace.py), low-level engine in [`backend/app/services/workspace_engine.py`](backend/app/services/workspace_engine.py), schema init in [`backend/app/services/workspace_schema.py`](backend/app/services/workspace_schema.py), focused stores in [`backend/app/services/workspace_stores.py`](backend/app/services/workspace_stores.py)
 - **Local LLM agent (Ollama client + prompts):** [`backend/app/services/agent.py`](backend/app/services/agent.py)
 
 ## Known limitations (MVP)

@@ -9,7 +9,7 @@ from typing import Any
 
 import polars as pl
 
-from app.config import get_settings
+from app.config import Settings
 from app.models.api import (
     ColumnProfile,
     DatasetProfile,
@@ -478,9 +478,19 @@ def _merge_entity_candidates(
     return out
 
 
-def build_profile(ds: RegisteredDataset) -> DatasetProfile:
-    settings = get_settings()
-    profiling_started = time.monotonic()
+def _collect_profile_frame_inputs(
+    ds: RegisteredDataset,
+    settings: Settings,
+) -> tuple[
+    pl.LazyFrame,
+    list[str],
+    list[pl.DataType],
+    pl.DataFrame,
+    int,
+    int,
+    pl.DataFrame,
+    int,
+]:
     lf = _lazy_frame_for(ds)
     schema = lf.collect_schema()
     names = schema.names()
@@ -492,33 +502,40 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
     row_count = int(stats["_row_count"][0])
     col_count = len(names)
 
-    # Sample for inference (bounded by settings for predictable runtime).
     sample_n = min(
         settings.profile_structure_sample_max_rows,
         max(settings.profile_structure_sample_min_rows, row_count),
     )
     df_sample = lf.head(sample_n).collect()
     profile_sample_rows = len(df_sample)
+    return lf, names, dtypes, stats, row_count, col_count, df_sample, profile_sample_rows
 
+
+def _derive_column_profiles(
+    names: list[str],
+    dtypes: list[pl.DataType],
+    stats: pl.DataFrame,
+    row_count: int,
+    df_sample: pl.DataFrame,
+    sample_n: int,
+    profile_sample_rows: int,
+) -> tuple[
+    list[ColumnProfile],
+    int,
+    list[TemporalColumnInfo],
+    list[EntityIdCandidate],
+]:
     col_profiles: list[ColumnProfile] = []
-    total_cells = row_count * col_count if col_count else 0
     null_cells = 0
-
-    numeric_cols: list[str] = []
-    cat_cols: list[str] = []
-    dt_cols: list[str] = []
     temporal_cols: list[TemporalColumnInfo] = []
-    id_candidates: list[str] = []
     entity_candidates: list[EntityIdCandidate] = []
 
-    semantic_started = time.monotonic()
     for idx, (col, dtype) in enumerate(zip(names, dtypes, strict=False)):
         nulls_full = int(stats[f"__nulls_{idx}"][0]) if row_count else 0
         null_pct = (nulls_full / row_count * 100) if row_count else 0.0
         null_cells += nulls_full
 
         n_unique = int(df_sample[col].n_unique())
-        # cardinality on sample
         cardinality = n_unique
 
         sem = _infer_semantic(
@@ -537,7 +554,6 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
 
         if sem == SemanticType.numeric or dtype in (pl.Float32, pl.Float64, pl.Int64, pl.Int32):
             if dtype.is_numeric():
-                numeric_cols.append(col)
                 st = df_sample[col].drop_nulls()
                 if st.len() > 0:
                     min_v = str(st.min())
@@ -545,10 +561,8 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
                     hist = _numeric_histogram(df_sample[col])
                 top_vals = _top_values(df_sample[col].cast(pl.Utf8, strict=False), k=8)
         elif sem in (SemanticType.categorical, SemanticType.boolean_like):
-            cat_cols.append(col)
             top_vals = _top_values(df_sample[col], k=8)
         elif sem == SemanticType.datetime or dtype in (pl.Date, pl.Datetime):
-            dt_cols.append(col)
             st = df_sample[col].drop_nulls()
             if st.len() > 0:
                 min_v = str(st.min())
@@ -561,7 +575,6 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
                 )
             )
         elif sem == SemanticType.id_like:
-            id_candidates.append(col)
             confidence = StructureConfidence.high if null_pct <= 1 else StructureConfidence.medium
             entity_candidates.append(EntityIdCandidate(name=col, confidence=confidence))
             top_vals = _top_values(df_sample[col].cast(pl.Utf8, strict=False), k=5)
@@ -570,7 +583,11 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
 
         if _is_discrete_temporal_column(col, dtype, df_sample[col], row_count):
             if not any(x.name == col for x in temporal_cols):
-                t_conf = StructureConfidence.high if DISCRETE_TIME_NAME_PATTERN.search(col.lower()) else StructureConfidence.medium
+                t_conf = (
+                    StructureConfidence.high
+                    if DISCRETE_TIME_NAME_PATTERN.search(col.lower())
+                    else StructureConfidence.medium
+                )
                 temporal_cols.append(
                     TemporalColumnInfo(
                         name=col,
@@ -583,7 +600,7 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
             flags.append("high_missingness")
         if null_pct > 5 and sem == SemanticType.id_like:
             flags.append("id_with_nulls")
-        if row_count and n_unique == 1 and col_count:
+        if row_count and n_unique == 1:
             flags.append("constant_column")
 
         unique_pct = round((n_unique / profile_sample_rows) * 100, 4) if profile_sample_rows else None
@@ -607,9 +624,7 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
             raw = top_vals[0]["value"]
             top_value_str = "(null)" if raw is None else str(raw)
             top_count_val = int(top_vals[0].get("count", 0))
-            top_pct_val = (
-                round((top_count_val / profile_sample_rows) * 100, 4) if profile_sample_rows else None
-            )
+            top_pct_val = round((top_count_val / profile_sample_rows) * 100, 4) if profile_sample_rows else None
 
         col_profiles.append(
             ColumnProfile(
@@ -637,6 +652,58 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
                 histogram=hist,
             )
         )
+
+    return col_profiles, null_cells, temporal_cols, entity_candidates
+
+
+def _build_profile_narrative(
+    ds: RegisteredDataset,
+    row_count: int,
+    col_count: int,
+    primary_grain: list[str],
+    id_column_names: list[str],
+    primary_date: str | None,
+    measures: list[str],
+    issues: list[QualityIssue],
+) -> list[str]:
+    narrative_parts = [
+        f"Dataset **{ds.source_path.name}** has **{row_count:,}** rows and **{col_count}** columns.",
+    ]
+    if primary_grain:
+        if len(primary_grain) == 1:
+            narrative_parts.append(f"This appears to be **one row per `{primary_grain[0]}`**.")
+        else:
+            joined = " + ".join(f"`{x}`" for x in primary_grain)
+            narrative_parts.append(f"This appears to be one row per composite grain: **{joined}**.")
+    elif id_column_names:
+        narrative_parts.append(f"Likely identifier columns: {', '.join(f'`{x}`' for x in id_column_names[:5])}.")
+    if primary_date:
+        narrative_parts.append(f"Primary date-like column: `{primary_date}`.")
+    if measures:
+        narrative_parts.append(f"Main numeric fields: {', '.join(f'`{m}`' for m in measures[:5])}.")
+    top_issues = sorted(issues, key=lambda x: (-_severity_order(x.severity), -x.score_impact))[:5]
+    if top_issues:
+        narrative_parts.append("Main quality risks: " + "; ".join(i.title for i in top_issues) + ".")
+    return narrative_parts
+
+
+def build_profile(ds: RegisteredDataset, settings: Settings) -> DatasetProfile:
+    profiling_started = time.monotonic()
+    _lf, names, dtypes, stats, row_count, col_count, df_sample, profile_sample_rows = _collect_profile_frame_inputs(
+        ds, settings
+    )
+    sample_n = profile_sample_rows
+    total_cells = row_count * col_count if col_count else 0
+    semantic_started = time.monotonic()
+    col_profiles, null_cells, temporal_cols, entity_candidates = _derive_column_profiles(
+        names,
+        dtypes,
+        stats,
+        row_count,
+        df_sample,
+        sample_n,
+        profile_sample_rows,
+    )
 
     # Duplicate row pct (sample-based)
     dup_pct = None
@@ -703,24 +770,16 @@ def build_profile(ds: RegisteredDataset) -> DatasetProfile:
     penalty = sum(i.score_impact for i in issues)
     quality_score = max(0.0, min(100.0, 100.0 - penalty))
 
-    narrative_parts = [
-        f"Dataset **{ds.source_path.name}** has **{row_count:,}** rows and **{col_count}** columns.",
-    ]
-    if primary_grain:
-        if len(primary_grain) == 1:
-            narrative_parts.append(f"This appears to be **one row per `{primary_grain[0]}`**.")
-        else:
-            joined = " + ".join(f"`{x}`" for x in primary_grain)
-            narrative_parts.append(f"This appears to be one row per composite grain: **{joined}**.")
-    elif id_column_names:
-        narrative_parts.append(f"Likely identifier columns: {', '.join(f'`{x}`' for x in id_column_names[:5])}.")
-    if primary_date:
-        narrative_parts.append(f"Primary date-like column: `{primary_date}`.")
-    if measures:
-        narrative_parts.append(f"Main numeric fields: {', '.join(f'`{m}`' for m in measures[:5])}.")
-    top_issues = sorted(issues, key=lambda x: (-_severity_order(x.severity), -x.score_impact))[:5]
-    if top_issues:
-        narrative_parts.append("Main quality risks: " + "; ".join(i.title for i in top_issues) + ".")
+    narrative_parts = _build_profile_narrative(
+        ds,
+        row_count,
+        col_count,
+        primary_grain,
+        id_column_names,
+        primary_date,
+        measures,
+        issues,
+    )
 
     structure_warnings: list[str] = []
     if not primary_grain:

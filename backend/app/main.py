@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI):
     app.state.registry = registry
     app.state.jobs = jobs
     yield
+    jobs.shutdown()
     workspace.close()
 
 

@@ -161,7 +161,7 @@ def test_build_profile_from_parquet_list_column(tmp_path: Path) -> None:
         column_count=1,
         file_size_bytes=1,
     )
-    prof = build_profile(ds)
+    prof = build_profile(ds, Settings())
     assert prof.rows == 2
 
 
@@ -178,7 +178,7 @@ def test_build_profile_jsonl(tmp_path: Path) -> None:
         column_count=2,
         file_size_bytes=1,
     )
-    prof = build_profile(ds)
+    prof = build_profile(ds, Settings())
     assert prof.rows == 2
 
 
@@ -202,7 +202,7 @@ def test_build_profile_triggers_quality_branches(tmp_path: Path) -> None:
         column_count=6,
         file_size_bytes=path.stat().st_size,
     )
-    prof = build_profile(ds)
+    prof = build_profile(ds, Settings())
     assert prof.quality_issues
     assert prof.potential_id_columns or prof.likely_grain
 
@@ -220,7 +220,7 @@ def test_build_profile_high_null_column_flag(tmp_path: Path) -> None:
         column_count=2,
         file_size_bytes=path.stat().st_size,
     )
-    prof = build_profile(ds)
+    prof = build_profile(ds, Settings())
     col_a = next(c for c in prof.column_profiles if c.name == "a")
     assert "high_missingness" in col_a.quality_flags
 
@@ -253,7 +253,7 @@ def test_build_profile_collects_wide_null_counts_once(
 
     monkeypatch.setattr(pl.LazyFrame, "select", counting_select)
 
-    prof = build_profile(ds)
+    prof = build_profile(ds, Settings())
 
     assert prof.columns == len(columns)
     assert select_calls == 1
@@ -272,7 +272,7 @@ def test_build_profile_utf8_text_top_values(tmp_path: Path) -> None:
         column_count=1,
         file_size_bytes=path.stat().st_size,
     )
-    prof = build_profile(ds)
+    prof = build_profile(ds, Settings())
     col = next(c for c in prof.column_profiles if c.name == "note")
     assert col.semantic_type == SemanticType.text
     assert col.top_values
@@ -302,7 +302,7 @@ def test_build_profile_detects_discrete_temporal_and_composite_grain(tmp_path: P
         column_count=4,
         file_size_bytes=path.stat().st_size,
     )
-    prof = build_profile(ds)
+    prof = build_profile(ds, Settings())
     assert prof.structure_version == "v4"
     assert prof.primary_temporal_column is not None
     assert prof.primary_temporal_column.name == "year"
@@ -336,7 +336,7 @@ def test_build_profile_finds_panel_grain_with_player_id_late_in_schema(tmp_path:
         column_count=len(rows[0]),
         file_size_bytes=path.stat().st_size,
     )
-    prof = build_profile(ds)
+    prof = build_profile(ds, Settings())
     assert prof.structure_version == "v4"
     assert {*prof.primary_grain_key_columns} == {"playerId", "year"}
     assert any(e.name == "playerId" for e in prof.entity_id_columns)
@@ -527,7 +527,7 @@ def test_build_profile_role_specific_sparse_columns_are_downgraded(tmp_path: Pat
         column_count=6,
         file_size_bytes=path.stat().st_size,
     )
-    prof = build_profile(ds)
+    prof = build_profile(ds, Settings())
     gk_issue = next(i for i in prof.quality_issues if i.id.endswith("_miss_gk_diving"))
     assert gk_issue.severity == QualitySeverity.info
     assert "role-specific metric" in gk_issue.why_it_matters.lower()
@@ -726,7 +726,7 @@ def test_build_profile_duplicate_rows_exception_path(tmp_path: Path, monkeypatch
         raise RuntimeError("dup fail")
 
     monkeypatch.setattr(pl.DataFrame, "is_duplicated", bad_is_duplicated)
-    prof = build_profile(ds)
+    prof = build_profile(ds, Settings())
     assert prof.duplicate_row_pct is None
 
 
@@ -747,7 +747,7 @@ def test_build_profile_high_cardinality_categorical_issue(tmp_path: Path) -> Non
         column_count=1,
         file_size_bytes=path.stat().st_size,
     )
-    prof = build_profile(ds)
+    prof = build_profile(ds, Settings())
     assert any("High-cardinality categorical" in i.title for i in prof.quality_issues)
 
 
@@ -777,7 +777,7 @@ def test_build_profile_narrative_single_grain_and_medium_warning(
             )
         ],
     )
-    prof = build_profile(ds)
+    prof = build_profile(ds, Settings())
     assert "one row per `player_id`" in prof.narrative
     assert any("medium" in warning.lower() for warning in prof.structure_warnings)
 
@@ -798,7 +798,7 @@ def test_build_profile_narrative_likely_identifier_columns(
         file_size_bytes=path.stat().st_size,
     )
     monkeypatch.setattr("app.services.profiler._build_grain_key_candidates", lambda *a, **k: [])
-    prof = build_profile(ds)
+    prof = build_profile(ds, Settings())
     assert prof.potential_id_columns
     assert "Likely identifier columns" in prof.narrative
 
@@ -806,10 +806,7 @@ def test_build_profile_narrative_likely_identifier_columns(
 def test_build_profile_unique_count_when_full_table_exceeds_sample(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        "app.services.profiler.get_settings",
-        lambda: Settings(profile_structure_sample_max_rows=2_000, profile_structure_sample_min_rows=500),
-    )
+    settings = Settings(profile_structure_sample_max_rows=2_000, profile_structure_sample_min_rows=500)
     n = 5_000
     df = pl.DataFrame(
         {
@@ -830,7 +827,7 @@ def test_build_profile_unique_count_when_full_table_exceeds_sample(
         column_count=3,
         file_size_bytes=path.stat().st_size,
     )
-    prof = build_profile(ds)
+    prof = build_profile(ds, settings)
     assert prof.profiler_sample_rows == 2_000
     id_col = next(c for c in prof.column_profiles if c.name == "id")
     assert id_col.unique_count == 2_000
@@ -855,7 +852,7 @@ def test_build_profile_numeric_describe_stats(tmp_path: Path) -> None:
         column_count=1,
         file_size_bytes=path.stat().st_size,
     )
-    prof = build_profile(ds)
+    prof = build_profile(ds, Settings())
     col = next(c for c in prof.column_profiles if c.name == "x")
     assert col.mean_value is not None
     assert col.std_value is not None
@@ -877,7 +874,7 @@ def test_build_profile_categorical_top_value_pct(tmp_path: Path) -> None:
         column_count=1,
         file_size_bytes=path.stat().st_size,
     )
-    prof = build_profile(ds)
+    prof = build_profile(ds, Settings())
     col = next(c for c in prof.column_profiles if c.name == "c")
     assert col.top_value == "a"
     assert col.top_count == 5

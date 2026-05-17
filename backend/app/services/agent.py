@@ -392,274 +392,15 @@ def _persist_turn_optional(
     return tid, seq
 
 
-def run_agent_ask(
+def _run_ask_workflow(
     registry: DatasetRegistry,
     settings: Settings,
     req: AgentAskRequest,
-    ollama_call=ollama_chat,
-) -> AgentAskResponse:
-    model_name = settings.llm_model
-    t0 = time.monotonic()
-    attempts: list[dict[str, Any]] = []
-
-    if req.conversation_id:
-        with registry.workspace.lock_db() as con:
-            if not ask_store.get_conversation(con, req.conversation_id):
-                return AgentAskResponse(model=model_name, error="Conversation not found")
-
-    ctx, ctx_err = build_dataset_context(
-        registry,
-        registry.workspace,
-        req.dataset_ids,
-        settings.agent_context_max_columns,
-    )
-    if ctx_err:
-        return AgentAskResponse(model=model_name, error=ctx_err)
-
-    cap = min(settings.agent_max_rows, settings.query_max_rows)
-    limit = min(req.max_rows or cap, cap)
-
-    user_block = _build_user_block(registry, req, ctx)
-    messages: list[dict[str, str]] = [
-        {"role": "system", "content": _system_prompt()},
-        {"role": "user", "content": user_block},
-    ]
-
-    last_content_err: str | None = None
-
-    for attempt in range(max(1, settings.agent_sql_attempts)):
-        try:
-            content = ollama_call(settings, messages, OLLAMA_SQL_DRAFT_FORMAT)
-        except httpx.ConnectError as e:
-            logger.warning("Ollama connection failed: %s", e)
-            msg = (
-                f"Ollama is not reachable at {settings.llm_base_url}. "
-                f"Start Ollama and run `ollama pull {settings.llm_model}` "
-                "if the model is not installed."
-            )
-            _persist_turn_optional(
-                registry,
-                req,
-                t0,
-                sql=None,
-                explanation=None,
-                answer=None,
-                error=msg,
-                attempts=attempts,
-                query_result=None,
-                model_name=model_name,
-            )
-            return AgentAskResponse(
-                model=model_name,
-                error=msg,
-            )
-        except httpx.HTTPError as e:
-            logger.warning("Ollama HTTP error: %s", e)
-            msg = f"Ollama at {settings.llm_base_url} failed: {e}"
-            _persist_turn_optional(
-                registry,
-                req,
-                t0,
-                sql=None,
-                explanation=None,
-                answer=None,
-                error=msg,
-                attempts=attempts,
-                query_result=None,
-                model_name=model_name,
-            )
-            return AgentAskResponse(
-                model=model_name,
-                error=msg,
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.exception("Ollama request failed")
-            msg = f"Ollama request failed: {e}"
-            _persist_turn_optional(
-                registry,
-                req,
-                t0,
-                sql=None,
-                explanation=None,
-                answer=None,
-                error=msg,
-                attempts=attempts,
-                query_result=None,
-                model_name=model_name,
-            )
-            return AgentAskResponse(
-                model=model_name,
-                error=msg,
-            )
-
-        draft, parse_err = parse_sql_draft(content)
-        if parse_err or draft is None:
-            last_content_err = parse_err or "Unknown parse error"
-            attempts.append({"stage": "draft_sql", "error": last_content_err, "sql": None})
-            if attempt + 1 >= settings.agent_sql_attempts:
-                _persist_turn_optional(
-                    registry,
-                    req,
-                    t0,
-                    sql=None,
-                    explanation=None,
-                    answer=None,
-                    error=last_content_err,
-                    attempts=attempts,
-                    query_result=None,
-                    model_name=model_name,
-                )
-                return AgentAskResponse(model=model_name, error=last_content_err)
-            messages.append({"role": "assistant", "content": content})
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        f"Your previous reply was invalid: {last_content_err}. "
-                        'Reply with only JSON: {{"sql":"...","explanation":"..."}}.'
-                    ),
-                }
-            )
-            continue
-
-        qres = execute_query(
-            registry,
-            settings,
-            QueryRequest(sql=draft.sql, max_rows=limit),
-        )
-        if not qres.error:
-            if (
-                qres.row_count == 0
-                and attempt + 1 < settings.agent_sql_attempts
-                and _should_retry_empty_result(draft.sql)
-            ):
-                attempts.append(
-                    {
-                        "sql": draft.sql,
-                        "error": "Query returned 0 rows (retrying with adjusted SQL)",
-                        "stage": "execute",
-                    }
-                )
-                messages.append({"role": "assistant", "content": content})
-                messages.append({"role": "user", "content": _empty_result_retry_prompt()})
-                continue
-
-            if not settings.agent_summarize_with_llm:
-                ans = _default_answer(draft, qres)
-                _persist_turn_optional(
-                    registry,
-                    req,
-                    t0,
-                    sql=draft.sql,
-                    explanation=draft.explanation or None,
-                    answer=ans,
-                    error=None,
-                    attempts=attempts,
-                    query_result=qres,
-                    model_name=model_name,
-                )
-                return AgentAskResponse(
-                    answer=ans,
-                    sql=draft.sql,
-                    explanation=draft.explanation or None,
-                    query_result=qres,
-                    model=model_name,
-                )
-
-            summary_messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "Summarize the query result for the user in clear language. "
-                        "Be concise. Return JSON {\"answer\": \"...\"} only."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"Question: {req.question.strip()}\n"
-                        f"SQL used: {draft.sql}\n"
-                        f"Explanation from model: {draft.explanation}\n"
-                        "Result preview (JSON):\n"
-                        f"{_result_preview_for_summary(qres.model_dump(mode='json'), settings.agent_summarize_max_json_chars)}"
-                    ),
-                },
-            ]
-            try:
-                scontent = ollama_call(settings, summary_messages, OLLAMA_SUMMARY_FORMAT)
-                parsed_ans, serr = parse_summary_answer(scontent)
-                answer = parsed_ans or (
-                    f"{draft.explanation}\n\n(Summarization issue: {serr})".strip()
-                    if serr
-                    else (draft.explanation or "Query completed.")
-                )
-            except (httpx.HTTPError, OSError) as e:
-                answer = (
-                    f"{draft.explanation}\n\n(Summarization unavailable: {e})".strip()
-                )
-
-            _persist_turn_optional(
-                registry,
-                req,
-                t0,
-                sql=draft.sql,
-                explanation=draft.explanation or None,
-                answer=answer,
-                error=None,
-                attempts=attempts,
-                query_result=qres,
-                model_name=model_name,
-            )
-            return AgentAskResponse(
-                answer=answer,
-                sql=draft.sql,
-                explanation=draft.explanation or None,
-                query_result=qres,
-                model=model_name,
-            )
-
-        err_text = qres.error or "Unknown SQL error"
-        attempts.append({"sql": draft.sql, "error": err_text, "stage": "execute"})
-        if attempt + 1 >= settings.agent_sql_attempts:
-            _persist_turn_optional(
-                registry,
-                req,
-                t0,
-                sql=draft.sql,
-                explanation=draft.explanation or None,
-                answer=None,
-                error=err_text,
-                attempts=attempts,
-                query_result=qres,
-                model_name=model_name,
-            )
-            return AgentAskResponse(
-                model=model_name,
-                sql=draft.sql,
-                explanation=draft.explanation or None,
-                query_result=qres,
-                error=err_text,
-            )
-
-        messages.append({"role": "assistant", "content": content})
-        messages.append(
-            {
-                "role": "user",
-                "content": _sql_retry_prompt(err_text),
-            }
-        )
-
-    raise AssertionError("run_agent_ask: expected all paths to return")  # pragma: no cover
-
-
-def run_agent_ask_stream(
-    registry: DatasetRegistry,
-    settings: Settings,
-    req: AgentAskRequest,
+    *,
+    emit_summary_tokens: bool,
     ollama_call=ollama_chat,
     ollama_stream=ollama_chat_stream,
 ) -> Iterator[dict[str, Any]]:
-    """Yield SSE events including meta, stage, sql_attempt, sql, query_result, token, answer, turn, timing, done."""
     model_name = settings.llm_model
     t0 = time.monotonic()
     attempts: list[dict[str, Any]] = []
@@ -932,12 +673,16 @@ def run_agent_ask_stream(
                     ),
                 },
             ]
-            acc = ""
             try:
-                for chunk in ollama_stream(settings, summary_messages, OLLAMA_SUMMARY_FORMAT):
-                    acc += chunk
-                    yield {"type": "token", "data": {"text": chunk}}
-                parsed_ans, serr = parse_summary_answer(acc)
+                if emit_summary_tokens:
+                    acc = ""
+                    for chunk in ollama_stream(settings, summary_messages, OLLAMA_SUMMARY_FORMAT):
+                        acc += chunk
+                        yield {"type": "token", "data": {"text": chunk}}
+                    summary_content = acc
+                else:
+                    summary_content = ollama_call(settings, summary_messages, OLLAMA_SUMMARY_FORMAT)
+                parsed_ans, serr = parse_summary_answer(summary_content)
                 answer = parsed_ans or (
                     f"{draft.explanation}\n\n(Summarization issue: {serr})".strip()
                     if serr
@@ -1024,4 +769,57 @@ def run_agent_ask_stream(
             }
         )
 
-    raise AssertionError("run_agent_ask_stream: expected all paths to return")  # pragma: no cover
+    raise AssertionError("ask workflow: expected all paths to return")  # pragma: no cover
+
+
+def run_agent_ask(
+    registry: DatasetRegistry,
+    settings: Settings,
+    req: AgentAskRequest,
+    ollama_call=ollama_chat,
+) -> AgentAskResponse:
+    payload: dict[str, Any] = {"model": settings.llm_model}
+    for ev in _run_ask_workflow(
+        registry,
+        settings,
+        req,
+        emit_summary_tokens=False,
+        ollama_call=ollama_call,
+        ollama_stream=ollama_chat_stream,
+    ):
+        typ = ev["type"]
+        data = ev["data"]
+        if typ == "sql":
+            payload["sql"] = data.get("sql")
+            payload["explanation"] = data.get("explanation")
+        elif typ == "query_result":
+            payload["query_result"] = QueryResult.model_validate(data)
+        elif typ == "answer":
+            payload["answer"] = data.get("answer")
+        elif typ == "error":
+            payload["error"] = data.get("message")
+            if "sql" in data:
+                payload["sql"] = data.get("sql")
+            if "explanation" in data:
+                payload["explanation"] = data.get("explanation")
+            if "query_result" in data and data.get("query_result") is not None:
+                payload["query_result"] = QueryResult.model_validate(data["query_result"])
+    return AgentAskResponse(**payload)
+
+
+def run_agent_ask_stream(
+    registry: DatasetRegistry,
+    settings: Settings,
+    req: AgentAskRequest,
+    ollama_call=ollama_chat,
+    ollama_stream=ollama_chat_stream,
+) -> Iterator[dict[str, Any]]:
+    """Yield SSE events including meta, stage, sql_attempt, sql, query_result, token, answer, turn, timing, done."""
+    yield from _run_ask_workflow(
+        registry,
+        settings,
+        req,
+        emit_summary_tokens=True,
+        ollama_call=ollama_call,
+        ollama_stream=ollama_stream,
+    )
