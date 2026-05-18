@@ -50,24 +50,6 @@ export const api = {
 
   listDatasets: () => handle<DatasetSummary[]>(fetch(`${API}/datasets`)),
 
-  registerFile: (path: string) =>
-    handle<DatasetSummary>(
-      fetch(`${API}/datasets/register-file`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
-      }),
-    ),
-
-  registerFolder: (path: string, recursive: boolean) =>
-    handle<DatasetSummary[]>(
-      fetch(`${API}/datasets/register-folder`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, recursive }),
-      }),
-    ),
-
   uploadDatasets: (files: File[]) => {
     const body = new FormData()
     for (const f of files) body.append('files', f)

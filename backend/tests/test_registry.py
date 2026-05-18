@@ -16,7 +16,7 @@ from app.services.registry import (
     pick_unique_view_name,
     slugify_file_stem,
 )
-from app.services.workspace import Workspace, sanitize_sql_identifier
+from app.services.workspace import UnsupportedWorkspaceSchemaError, Workspace, sanitize_sql_identifier
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -108,6 +108,26 @@ def test_registry_persists_ids(tmp_path: Path) -> None:
     assert got is not None
     assert got.view_name == ds.view_name
     ws2.close()
+
+
+def test_registry_persists_dataset_view_with_dcc_prefix(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    csv = tmp_path / "dcc_report.csv"
+    csv.write_text("z\n1\n")
+    ws = Workspace(settings)
+    r1 = DatasetRegistry(ws, settings)
+    ds = r1.register_path(csv)
+    assert ds.view_name == "dcc_report"
+    ws.close()
+
+    ws2 = Workspace(settings)
+    try:
+        r2 = DatasetRegistry(ws2, settings)
+        got = r2.get(ds.dataset_id)
+        assert got is not None
+        assert got.view_name == "dcc_report"
+    finally:
+        ws2.close()
 
 
 def test_jsonl_registers_as_json(tmp_path: Path) -> None:
@@ -240,193 +260,29 @@ def test_workspace_schema_enforces_unique_dataset_view_names(tmp_path: Path) -> 
         ws.close()
 
 
-def test_workspace_schema_repairs_legacy_duplicate_view_names(tmp_path: Path) -> None:
-    db_path = tmp_path / "legacy.duckdb"
-    f1 = tmp_path / "a" / "data.csv"
-    f2 = tmp_path / "b" / "data.csv"
-    f1.parent.mkdir()
-    f2.parent.mkdir()
-    f1.write_text("a\n1\n")
-    f2.write_text("a\n2\n")
-    con = duckdb.connect(str(db_path))
-    con.execute(
-        """
-        CREATE TABLE dcc_datasets (
-          dataset_id VARCHAR PRIMARY KEY,
-          source_path VARCHAR NOT NULL,
-          source_label VARCHAR NOT NULL,
-          view_name VARCHAR NOT NULL,
-          format VARCHAR NOT NULL,
-          row_count BIGINT,
-          column_count INTEGER,
-          file_size_bytes BIGINT
-        )
-        """
-    )
-    con.execute(
-        "INSERT INTO dcc_datasets VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        ["ds_001", str(f1), f1.name, "data", "csv", None, None, f1.stat().st_size],
-    )
-    con.execute(
-        "INSERT INTO dcc_datasets VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        ["ds_002", str(f2), f2.name, "data", "csv", None, None, f2.stat().st_size],
-    )
-    con.close()
-
-    ws = Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+def test_registry_rejects_legacy_v_dataset_view_on_load(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
     try:
-        rows = ws.connection.execute(
-            "SELECT dataset_id, view_name FROM dcc_datasets ORDER BY dataset_id"
-        ).fetchall()
-        assert rows == [("ds_001", "data"), ("ds_002", "data_ds_002")]
-        assert ws.connection.execute("SELECT a FROM data_ds_002").fetchone()[0] == 2
+        csv = tmp_path / "player_ratings_2006_2026.csv"
+        csv.write_text("id\n1\n")
+        ws.register_file_view("v_ds_001", csv, "csv")
+        rows, cols = ws.get_row_column_counts("v_ds_001")
+        sz = csv.stat().st_size
+        ws.connection.execute(
+            """
+            INSERT INTO dcc_datasets (
+                dataset_id, source_path, source_label, view_name, format,
+                row_count, column_count, file_size_bytes
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ["ds_001", str(csv.resolve()), csv.name, "v_ds_001", "csv", rows, cols, sz],
+        )
+        with pytest.raises(UnsupportedWorkspaceSchemaError, match="legacy dataset view names"):
+            DatasetRegistry(ws, settings)
     finally:
         ws.close()
-
-
-def test_workspace_schema_repairs_duplicate_metadata_when_view_recreate_fails(tmp_path: Path) -> None:
-    db_path = tmp_path / "legacy_bad_view.duckdb"
-    missing_a = tmp_path / "missing_a.csv"
-    missing_b = tmp_path / "missing_b.csv"
-    con = duckdb.connect(str(db_path))
-    con.execute(
-        """
-        CREATE TABLE dcc_datasets (
-          dataset_id VARCHAR PRIMARY KEY,
-          source_path VARCHAR NOT NULL,
-          source_label VARCHAR NOT NULL,
-          view_name VARCHAR NOT NULL,
-          format VARCHAR NOT NULL,
-          row_count BIGINT,
-          column_count INTEGER,
-          file_size_bytes BIGINT,
-          registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    )
-    con.execute(
-        "INSERT INTO dcc_datasets VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
-        ["ds_001", str(missing_a), missing_a.name, "bad-name", "csv", None, None, None],
-    )
-    con.execute(
-        "INSERT INTO dcc_datasets VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
-        ["ds_002", str(missing_b), missing_b.name, "bad-name", "csv", None, None, None],
-    )
-    con.close()
-
-    ws = Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
-    try:
-        rows = ws.connection.execute(
-            "SELECT dataset_id, view_name FROM dcc_datasets ORDER BY dataset_id"
-        ).fetchall()
-        assert rows == [("ds_001", "bad-name"), ("ds_002", "bad-name_ds_002")]
-    finally:
-        ws.close()
-
-
-def test_migrate_legacy_v_dataset_view_on_load(tmp_path: Path) -> None:
-    settings = _settings(tmp_path)
-    ws = Workspace(settings)
-    csv = tmp_path / "player_ratings_2006_2026.csv"
-    csv.write_text("id\n1\n")
-    ws.register_file_view("v_ds_001", csv, "csv")
-    rows, cols = ws.get_row_column_counts("v_ds_001")
-    sz = csv.stat().st_size
-    ws.connection.execute(
-        """
-        INSERT INTO dcc_datasets (
-            dataset_id, source_path, source_label, view_name, format, row_count, column_count, file_size_bytes
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        ["ds_001", str(csv.resolve()), csv.name, "v_ds_001", "csv", rows, cols, sz],
-    )
-    reg = DatasetRegistry(ws, settings)
-    ds = reg.get("ds_001")
-    assert ds is not None
-    assert ds.view_name == "player_ratings_2006_2026"
-    db_row = ws.connection.execute(
-        "SELECT view_name FROM dcc_datasets WHERE dataset_id = 'ds_001'"
-    ).fetchone()
-    assert db_row is not None and db_row[0] == "player_ratings_2006_2026"
-    safe = sanitize_sql_identifier(ds.view_name)
-    assert ws.connection.execute(f"SELECT COUNT(*) FROM {safe}").fetchone()[0] == rows
-
-
-def test_migrate_legacy_skips_missing_source_file(tmp_path: Path) -> None:
-    settings = _settings(tmp_path)
-    ws = Workspace(settings)
-    csv = tmp_path / "gone.csv"
-    csv.write_text("a\n1\n")
-    ws.register_file_view("v_ds_001", csv, "csv")
-    rows, cols = ws.get_row_column_counts("v_ds_001")
-    sz = csv.stat().st_size
-    resolved = str(csv.resolve())
-    csv.unlink()
-    ws.connection.execute(
-        """
-        INSERT INTO dcc_datasets (
-            dataset_id, source_path, source_label, view_name, format, row_count, column_count, file_size_bytes
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        ["ds_001", resolved, "gone.csv", "v_ds_001", "csv", rows, cols, sz],
-    )
-    reg = DatasetRegistry(ws, settings)
-    ds = reg.get("ds_001")
-    assert ds is not None
-    assert ds.view_name == "v_ds_001"
-
-
-def test_migrate_legacy_noop_when_stem_matches_existing_view_name(tmp_path: Path) -> None:
-    settings = _settings(tmp_path)
-    ws = Workspace(settings)
-    csv = tmp_path / "v_ds_001.csv"
-    csv.write_text("a\n1\n")
-    ws.register_file_view("v_ds_001", csv, "csv")
-    rows, cols = ws.get_row_column_counts("v_ds_001")
-    sz = csv.stat().st_size
-    ws.connection.execute(
-        """
-        INSERT INTO dcc_datasets (
-            dataset_id, source_path, source_label, view_name, format, row_count, column_count, file_size_bytes
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        ["ds_001", str(csv.resolve()), csv.name, "v_ds_001", "csv", rows, cols, sz],
-    )
-    reg = DatasetRegistry(ws, settings)
-    assert reg.get("ds_001") is not None
-    assert reg.get("ds_001").view_name == "v_ds_001"
-
-
-def test_migrate_legacy_register_failure_keeps_old_view_name(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    settings = _settings(tmp_path)
-    ws = Workspace(settings)
-    csv = tmp_path / "z.csv"
-    csv.write_text("a\n1\n")
-    ws.register_file_view("v_ds_001", csv, "csv")
-    rows, cols = ws.get_row_column_counts("v_ds_001")
-    sz = csv.stat().st_size
-    ws.connection.execute(
-        """
-        INSERT INTO dcc_datasets (
-            dataset_id, source_path, source_label, view_name, format, row_count, column_count, file_size_bytes
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        ["ds_001", str(csv.resolve()), csv.name, "v_ds_001", "csv", rows, cols, sz],
-    )
-
-    def boom(*_args, **_kwargs) -> None:
-        raise OSError("register blocked")
-
-    monkeypatch.setattr(ws, "register_file_view", boom)
-    reg = DatasetRegistry(ws, settings)
-    assert reg.get("ds_001") is not None
-    assert reg.get("ds_001").view_name == "v_ds_001"
 
 
 def test_register_path_reserved_keyword_stem(tmp_path: Path) -> None:

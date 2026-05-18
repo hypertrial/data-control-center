@@ -1,4 +1,4 @@
-"""DuckDB workspace compatibility facade over engine + focused stores."""
+"""DuckDB workspace facade over engine + focused stores."""
 
 from __future__ import annotations
 
@@ -13,10 +13,15 @@ from app.services.workspace_engine import (
     _is_recoverable_open_error,
     sanitize_sql_identifier,
 )
-from app.services.workspace_schema import WorkspaceSchema
+from app.services.workspace_schema import UnsupportedWorkspaceSchemaError, WorkspaceSchema
 from app.services.workspace_stores import JobStore, ProfileStore, SavedQueryStore
 
-__all__ = ["Workspace", "sanitize_sql_identifier", "_is_recoverable_open_error"]
+__all__ = [
+    "Workspace",
+    "sanitize_sql_identifier",
+    "_is_recoverable_open_error",
+    "UnsupportedWorkspaceSchemaError",
+]
 
 
 class Workspace:

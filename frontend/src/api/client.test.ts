@@ -55,39 +55,6 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/datasets')
   })
 
-  it('registerFile POST', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonOk({
-        dataset_id: 'ds_001',
-        name: 'a.csv',
-        view_name: 'a',
-        source_path: '/x',
-        format: 'csv',
-        row_count: 1,
-        column_count: 1,
-        file_size_bytes: 1,
-      }),
-    )
-    vi.stubGlobal('fetch', fetchMock)
-    await api.registerFile('/path')
-    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/register-file', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: '/path' }),
-    })
-  })
-
-  it('registerFolder POST', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonOk([]))
-    vi.stubGlobal('fetch', fetchMock)
-    await api.registerFolder('/f', true)
-    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/register-folder', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: '/f', recursive: true }),
-    })
-  })
-
   it('uploadDatasets POST FormData', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonOk([]))
     vi.stubGlobal('fetch', fetchMock)

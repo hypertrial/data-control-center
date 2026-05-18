@@ -10,7 +10,7 @@ from threading import RLock
 from app.config import Settings
 from app.errors import AppError, CODES
 from app.models.api import DatasetSummary
-from app.services.workspace import Workspace
+from app.services.workspace import UnsupportedWorkspaceSchemaError, Workspace
 
 SUPPORTED_EXTENSIONS = {".csv", ".parquet", ".json", ".jsonl", ".ndjson", ".tsv"}
 MAX_VIEW_STEM_LEN = 120
@@ -109,7 +109,6 @@ class DatasetRegistry:
         self._next_id = self._load_max_id() + 1
         self._by_id: dict[str, RegisteredDataset] = {}
         self._load_from_db()
-        self._migrate_legacy_v_dataset_views()
 
     def _allowed_roots(self) -> list[Path]:
         roots: list[Path] = []
@@ -156,6 +155,12 @@ class DatasetRegistry:
                 "SELECT dataset_id, source_path, source_label, view_name, format, row_count, column_count, file_size_bytes FROM dcc_datasets"
             ).fetchall()
         for r in rows:
+            if r[3] == f"v_{r[0]}":
+                raise UnsupportedWorkspaceSchemaError(
+                    "Unsupported workspace database schema: legacy dataset view names are not "
+                    "supported. Delete or recreate the workspace DB, or point "
+                    "DCC_WORKSPACE_DB_PATH to a fresh file."
+                )
             self._by_id[r[0]] = RegisteredDataset(
                 dataset_id=r[0],
                 source_path=Path(r[1]),
@@ -166,53 +171,6 @@ class DatasetRegistry:
                 column_count=int(r[6]) if r[6] is not None else None,
                 file_size_bytes=int(r[7]) if r[7] is not None else None,
             )
-
-    def _migrate_legacy_v_dataset_views(self) -> None:
-        legacy_ids = sorted(did for did, ds in self._by_id.items() if ds.view_name == f"v_{did}")
-        if not legacy_ids:
-            return
-        legacy_set = frozenset(legacy_ids)
-        with self._lock:
-            taken = {ds.view_name for did, ds in self._by_id.items() if did not in legacy_set}
-            for did in legacy_ids:
-                ds = self._by_id[did]
-                p = ds.source_path.expanduser().resolve()
-                if not p.is_file():
-                    continue
-                slug = slugify_file_stem(p.stem, did)
-                base = guard_reserved_identifier(slug)
-                new_name = pick_unique_view_name(base, did, taken)
-                taken.add(new_name)
-                if new_name == ds.view_name:
-                    continue
-                old_view = ds.view_name
-                try:
-                    self._workspace.register_file_view(new_name, p, ds.format)
-                except (FileNotFoundError, OSError, ValueError):
-                    continue
-                self._workspace.drop_view_if_exists(old_view)
-                rows, cols = self._workspace.get_row_column_counts(new_name)
-                fsize = p.stat().st_size
-                with self._workspace.lock_db() as con:
-                    con.execute(
-                        """
-                        UPDATE dcc_datasets
-                        SET view_name = ?, row_count = ?, column_count = ?, file_size_bytes = ?, source_label = ?
-                        WHERE dataset_id = ?
-                        """,
-                        [new_name, rows, cols, fsize, p.name, did],
-                    )
-                self._by_id[did] = RegisteredDataset(
-                    dataset_id=did,
-                    source_path=p,
-                    source_label=p.name,
-                    view_name=new_name,
-                    format=ds.format,
-                    row_count=rows,
-                    column_count=cols,
-                    file_size_bytes=fsize,
-                )
-                self._workspace.delete_profile_cache(did)
 
     def _alloc_id(self) -> str:
         with self._lock:

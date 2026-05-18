@@ -21,7 +21,7 @@ Settings are defined in [`app/config.py`](app/config.py). Every environment vari
 
 ### Workspace database
 
-**`DCC_WORKSPACE_DB_PATH`** (default `./.dcc_workspace.duckdb`, relative to the backend process working directory) holds cached dataset profiles (including **`structure_version`**), profile history, **`dcc_jobs`** rows, saved SQL snippets, and Ask conversation tables. Implementation: compatibility façade [`app/services/workspace.py`](app/services/workspace.py), engine [`app/services/workspace_engine.py`](app/services/workspace_engine.py), schema [`app/services/workspace_schema.py`](app/services/workspace_schema.py), stores [`app/services/workspace_stores.py`](app/services/workspace_stores.py).
+**`DCC_WORKSPACE_DB_PATH`** (default `./.dcc_workspace.duckdb`, relative to the backend process working directory) holds cached dataset profiles (including **`structure_version`**), profile history, **`dcc_jobs`** rows, saved SQL snippets, and Ask conversation tables. Implementation: façade [`app/services/workspace.py`](app/services/workspace.py), engine [`app/services/workspace_engine.py`](app/services/workspace_engine.py), current-schema initialization/validation in [`app/services/workspace_schema.py`](app/services/workspace_schema.py), and stores in [`app/services/workspace_stores.py`](app/services/workspace_stores.py). Existing workspace DBs must match the current schema; old incompatible DBs fail fast and should be recreated.
 
 ### Structure / profiling tuning
 

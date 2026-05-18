@@ -10,13 +10,13 @@ import polars as pl
 import pytest
 
 from app.config import Settings
-from app.services.workspace import Workspace, _is_recoverable_open_error, sanitize_sql_identifier
-from app.services.workspace_engine import WorkspaceEngine
-from app.services.workspace_schema import (
-    _create_view_for_dataset,
-    _pick_repaired_view_name,
-    _sanitize_view_identifier,
+from app.services.workspace import (
+    UnsupportedWorkspaceSchemaError,
+    Workspace,
+    _is_recoverable_open_error,
+    sanitize_sql_identifier,
 )
+from app.services.workspace_engine import WorkspaceEngine
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -226,8 +226,13 @@ def test_workspace_path_property(tmp_path: Path) -> None:
         ws.close()
 
 
-def test_workspace_migrates_legacy_job_error_column(tmp_path: Path) -> None:
-    db_path = tmp_path / "legacy.duckdb"
+def _create_current_workspace_db(db_path: Path) -> None:
+    ws = Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+    ws.close()
+
+
+def test_workspace_rejects_partial_dcc_schema(tmp_path: Path) -> None:
+    db_path = tmp_path / "partial.duckdb"
     con = duckdb.connect(str(db_path))
     con.execute(
         """
@@ -237,25 +242,100 @@ def test_workspace_migrates_legacy_job_error_column(tmp_path: Path) -> None:
           dataset_id VARCHAR,
           status VARCHAR NOT NULL,
           progress DOUBLE DEFAULT 0,
-          error VARCHAR
+          error_code VARCHAR,
+          error_message VARCHAR,
+          result_json VARCHAR,
+          cancel_requested BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          finished_at TIMESTAMP
         )
         """
     )
+    con.close()
+
+    with pytest.raises(UnsupportedWorkspaceSchemaError, match="missing="):
+        Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+
+
+def test_workspace_rejects_missing_source_label_column(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy.duckdb"
+    _create_current_workspace_db(db_path)
+    con = duckdb.connect(str(db_path))
+    con.execute("DROP INDEX dcc_datasets_view_name_unique")
+    con.execute("ALTER TABLE dcc_datasets DROP COLUMN source_label")
+    con.close()
+
+    with pytest.raises(
+        UnsupportedWorkspaceSchemaError,
+        match="Unsupported workspace database schema",
+    ):
+        Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+
+
+def test_workspace_rejects_missing_registered_at_column(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy.duckdb"
+    _create_current_workspace_db(db_path)
+    con = duckdb.connect(str(db_path))
+    con.execute("DROP INDEX dcc_datasets_view_name_unique")
+    con.execute("ALTER TABLE dcc_datasets DROP COLUMN registered_at")
+    con.close()
+
+    with pytest.raises(
+        UnsupportedWorkspaceSchemaError,
+        match="Unsupported workspace database schema",
+    ):
+        Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+
+
+def test_workspace_rejects_legacy_job_error_column(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy.duckdb"
+    _create_current_workspace_db(db_path)
+    con = duckdb.connect(str(db_path))
+    con.execute("ALTER TABLE dcc_jobs ADD COLUMN error VARCHAR")
+    con.close()
+
+    with pytest.raises(
+        UnsupportedWorkspaceSchemaError,
+        match="Unsupported workspace database schema",
+    ):
+        Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+
+
+def test_workspace_rejects_duplicate_dataset_view_names(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy.duckdb"
+    _create_current_workspace_db(db_path)
+    con = duckdb.connect(str(db_path))
+    con.execute("DROP INDEX dcc_datasets_view_name_unique")
     con.execute(
-        "INSERT INTO dcc_jobs (job_id, kind, dataset_id, status, progress, error) VALUES (?, ?, ?, ?, ?, ?)",
-        ["j1", "profile_refresh", "ds_001", "failed", 1.0, "legacy boom"],
+        """
+        INSERT INTO dcc_datasets (dataset_id, source_path, source_label, view_name, format)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        ["ds_001", str(tmp_path / "a.csv"), "a.csv", "data", "csv"],
+    )
+    con.execute(
+        """
+        INSERT INTO dcc_datasets (dataset_id, source_path, source_label, view_name, format)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        ["ds_002", str(tmp_path / "b.csv"), "b.csv", "data", "csv"],
     )
     con.close()
 
-    ws = Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
-    try:
-        row = ws.connection.execute(
-            "SELECT error_message FROM dcc_jobs WHERE job_id = ?",
-            ["j1"],
-        ).fetchone()
-        assert row == ("legacy boom",)
-    finally:
-        ws.close()
+    with pytest.raises(UnsupportedWorkspaceSchemaError, match="duplicate dataset view_name"):
+        Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+
+
+def test_workspace_rejects_missing_required_index(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy.duckdb"
+    _create_current_workspace_db(db_path)
+    con = duckdb.connect(str(db_path))
+    con.execute("DROP INDEX dcc_ask_turns_conv_seq")
+    con.close()
+
+    with pytest.raises(UnsupportedWorkspaceSchemaError, match="index dcc_ask_turns_conv_seq"):
+        Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
 
 
 def test_job_get_handles_missing_and_invalid_result_json(tmp_path: Path) -> None:
@@ -391,37 +471,6 @@ def test_backup_corrupt_workspace_files_noop_when_missing(tmp_path: Path) -> Non
     ws._path = tmp_path / "missing.duckdb"  # type: ignore[attr-defined]
     ws._backup_corrupt_workspace_files()
     assert not ws._path.exists()  # type: ignore[attr-defined]
-
-
-def test_workspace_schema_view_helper_branches(tmp_path: Path) -> None:
-    db = duckdb.connect(str(tmp_path / "helpers.duckdb"))
-    try:
-        with pytest.raises(ValueError, match="Invalid SQL identifier"):
-            _sanitize_view_identifier("bad;name")
-
-        assert _pick_repaired_view_name("data", "ds_001", {"data", "data_ds_001"}) == "data_ds_001_2"
-
-        missing = tmp_path / "missing.csv"
-        _create_view_for_dataset(db, "missing_view", str(missing), "csv")
-
-        pq = tmp_path / "p.parquet"
-        pl.DataFrame({"a": [1]}).write_parquet(pq)
-        _create_view_for_dataset(db, "vp", str(pq), "parquet")
-        assert db.execute("SELECT a FROM vp").fetchone() == (1,)
-
-        tsv = tmp_path / "t.tsv"
-        tsv.write_text("a\tb\n1\t2\n")
-        _create_view_for_dataset(db, "vt", str(tsv), "csv")
-        assert db.execute("SELECT b FROM vt").fetchone() == (2,)
-
-        js = tmp_path / "j.json"
-        js.write_text('[{"a": 3}]')
-        _create_view_for_dataset(db, "vj", str(js), "json")
-        assert db.execute("SELECT a FROM vj").fetchone() == (3,)
-
-        _create_view_for_dataset(db, "ignored", str(js), "weird")
-    finally:
-        db.close()
 
 
 def test_query_count_reraises_unknown_timeout_setup_error(

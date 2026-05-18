@@ -201,6 +201,20 @@ def _cached_profile(
     cached = workspace.load_profile_cache(dataset_id)
     if cached and cached.get("structure_version") == CURRENT_PROFILE_STRUCTURE_VERSION:
         return DatasetProfile.model_validate(cached)
+    if cached:
+        raise to_http_error(
+            status_code=409,
+            code=CODES.STALE_PROFILE_CACHE,
+            message=(
+                "Cached profile was created by an unsupported profile schema version. "
+                "Refresh the profile or recreate the workspace DB."
+            ),
+            details={
+                "dataset_id": dataset_id,
+                "cached_structure_version": cached.get("structure_version"),
+                "current_structure_version": CURRENT_PROFILE_STRUCTURE_VERSION,
+            },
+        )
     prof = build_profile(ds, settings)
     workspace.save_profile_cache(dataset_id, prof.model_dump(mode="json"))
     return prof
