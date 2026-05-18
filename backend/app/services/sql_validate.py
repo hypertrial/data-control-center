@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import re
 
+import sqlglot
+from sqlglot import exp
+from sqlglot.errors import ParseError
+
 FORBIDDEN_KEYWORDS = re.compile(
     r"\b("
     r"ATTACH|DETACH|INSTALL|LOAD\s+EXTENSION|COPY\s+DATABASE|EXPORT\s+DATABASE|"
@@ -33,6 +37,32 @@ CTE_NAME_PATTERN = re.compile(
     r'(?:^|,)\s*(?:"([A-Za-z0-9_]+)"|([A-Za-z_][A-Za-z0-9_]*))\s+AS\s*\(',
     re.IGNORECASE,
 )
+
+FORBIDDEN_AST_NODE_NAMES = {
+    "Alter",
+    "Attach",
+    "Command",
+    "Copy",
+    "Create",
+    "Delete",
+    "Detach",
+    "Drop",
+    "Execute",
+    "Insert",
+    "LoadData",
+    "Merge",
+    "Pragma",
+    "Transaction",
+    "Update",
+}
+
+FORBIDDEN_TABLE_FUNCTIONS = {
+    "glob",
+    "httpfs",
+    "parquet_scan",
+    "csv_scan",
+    "json_scan",
+}
 
 
 def strip_sql_comments(sql: str) -> str:
@@ -182,6 +212,50 @@ def extract_cte_names(sql: str) -> set[str]:
     return names
 
 
+def _ast_function_name(node: exp.Expression) -> str | None:
+    if isinstance(node, exp.Anonymous):
+        return str(node.name).lower()
+    if isinstance(node, exp.Func):
+        return node.sql_name().lower()
+    return None
+
+
+def _extract_ast_relations(tree: exp.Expression) -> tuple[set[str], set[str]]:
+    refs: set[str] = set()
+    ctes: set[str] = set()
+    for cte in tree.find_all(exp.CTE):
+        alias = cte.alias
+        if alias:
+            ctes.add(alias)
+    for table in tree.find_all(exp.Table):
+        name = table.name
+        if name:
+            refs.add(name)
+    return refs, ctes
+
+
+def _validate_readonly_ast(sql: str) -> tuple[str | None, set[str], set[str]]:
+    try:
+        tree = sqlglot.parse_one(sql, read="duckdb")
+    except ParseError:
+        return ("Only read-only SELECT queries (optionally starting with WITH) are allowed.", set(), set())
+    if tree is None:
+        return ("Only read-only SELECT queries (optionally starting with WITH) are allowed.", set(), set())
+
+    if not isinstance(tree, exp.Select | exp.SetOperation):
+        return ("Only read-only SELECT queries (optionally starting with WITH) are allowed.", set(), set())
+
+    for node in tree.walk():
+        if node.__class__.__name__ in FORBIDDEN_AST_NODE_NAMES:
+            return ("SQL contains forbidden keywords for this workspace.", set(), set())
+        fn = _ast_function_name(node)
+        if fn and (fn.startswith("read_") or fn in FORBIDDEN_TABLE_FUNCTIONS):
+            return ("SQL contains forbidden file-reading or external source functions.", set(), set())
+
+    refs, ctes = _extract_ast_relations(tree)
+    return None, refs, ctes
+
+
 def validate_workspace_sql(sql: str, view_names: set[str] | None = None) -> tuple[str | None, str | None]:
     if not sql or not sql.strip():
         return ("SQL must not be empty.", None)
@@ -203,8 +277,9 @@ def validate_workspace_sql(sql: str, view_names: set[str] | None = None) -> tupl
     if not (upper_head.startswith("SELECT") or upper_head.startswith("WITH")):
         return ("Only read-only SELECT queries (optionally starting with WITH) are allowed.", None)
 
-    refs = extract_relations(blanked)
-    cte_names = extract_cte_names(blanked)
+    ast_err, refs, cte_names = _validate_readonly_ast(stmt)
+    if ast_err:
+        return (ast_err, None)
     if view_names and refs:
         unknown = {r for r in refs if r not in view_names and r not in cte_names}
         if unknown:

@@ -223,6 +223,8 @@ def test_build_profile_high_null_column_flag(tmp_path: Path) -> None:
     prof = build_profile(ds, Settings())
     col_a = next(c for c in prof.column_profiles if c.name == "a")
     assert "high_missingness" in col_a.quality_flags
+    assert col_a.metric_scope.value == "full"
+    assert prof.grain_key_scope.value == "full"
 
 
 def test_build_profile_collects_wide_null_counts_once(
@@ -829,8 +831,12 @@ def test_build_profile_unique_count_when_full_table_exceeds_sample(
     )
     prof = build_profile(ds, settings)
     assert prof.profiler_sample_rows == 2_000
+    assert prof.duplicate_row_pct_scope is not None
+    assert prof.duplicate_row_pct_scope.value == "sample"
+    assert prof.grain_key_scope.value == "sample"
     id_col = next(c for c in prof.column_profiles if c.name == "id")
     assert id_col.unique_count == 2_000
+    assert id_col.metric_scope.value == "sample"
     assert id_col.unique_pct is not None
     assert id_col.unique_pct > 99.0
     region = next(c for c in prof.column_profiles if c.name == "region")

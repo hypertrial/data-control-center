@@ -27,6 +27,7 @@ export type SemanticType =
   | 'text'
 
 export type QualitySeverity = 'critical' | 'warning' | 'info'
+export type MetricScope = 'full' | 'sample'
 export type StructureConfidence = 'low' | 'medium' | 'high'
 export type TemporalKind = 'continuous_datetime' | 'discrete_period'
 
@@ -53,6 +54,7 @@ export type ColumnProfile = {
   top_values: Array<{ value: unknown; count: number }>
   quality_flags: string[]
   histogram: Array<{ bin: string; count: number }> | null
+  metric_scope?: MetricScope
 }
 
 export type QualityIssue = {
@@ -77,6 +79,7 @@ export type DatasetProfile = {
   file_size_bytes: number | null
   missing_cell_pct: number | null
   duplicate_row_pct: number | null
+  duplicate_row_pct_scope?: MetricScope | null
   numeric_column_count: number
   categorical_column_count: number
   datetime_column_count: number
@@ -88,6 +91,7 @@ export type DatasetProfile = {
   primary_date_column: string | null
   main_numeric_measures: string[]
   structure_version: string
+  grain_key_scope?: MetricScope
   temporal_columns: Array<{ name: string; kind: TemporalKind; confidence: StructureConfidence }>
   entity_id_columns: Array<{ name: string; confidence: StructureConfidence }>
   grain_key_candidates: Array<{

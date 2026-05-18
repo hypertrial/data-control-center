@@ -10,6 +10,7 @@ export function mkProfile(overrides: Partial<DatasetProfile> = {}): DatasetProfi
     file_size_bytes: 500,
     missing_cell_pct: 1,
     duplicate_row_pct: 0,
+    duplicate_row_pct_scope: 'full',
     numeric_column_count: 1,
     categorical_column_count: 1,
     datetime_column_count: 0,
@@ -21,6 +22,7 @@ export function mkProfile(overrides: Partial<DatasetProfile> = {}): DatasetProfi
     primary_date_column: 'created',
     main_numeric_measures: ['x'],
     structure_version: 'v4',
+    grain_key_scope: 'full',
     temporal_columns: [{ name: 'created', kind: 'continuous_datetime', confidence: 'high' }],
     entity_id_columns: [{ name: 'id', confidence: 'high' }],
     grain_key_candidates: [{ columns: ['id'], uniqueness_ratio: 1, confidence: 'high', rank: 1 }],
@@ -58,6 +60,7 @@ export function mkColumn(overrides: Partial<ColumnProfile> = {}): ColumnProfile 
     top_values: [{ value: 1, count: 2 }],
     quality_flags: ['high_missingness'],
     histogram: null,
+    metric_scope: 'full',
     ...overrides,
   }
 }

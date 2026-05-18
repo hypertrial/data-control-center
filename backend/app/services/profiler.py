@@ -15,6 +15,7 @@ from app.models.api import (
     DatasetProfile,
     EntityIdCandidate,
     GrainKeyCandidate,
+    MetricScope,
     MeasureCandidate,
     QualityIssue,
     QualitySeverity,
@@ -519,6 +520,7 @@ def _derive_column_profiles(
     df_sample: pl.DataFrame,
     sample_n: int,
     profile_sample_rows: int,
+    metric_scope: MetricScope,
 ) -> tuple[
     list[ColumnProfile],
     int,
@@ -650,6 +652,7 @@ def _derive_column_profiles(
                 top_values=top_vals,
                 quality_flags=flags,
                 histogram=hist,
+                metric_scope=metric_scope,
             )
         )
 
@@ -693,6 +696,7 @@ def build_profile(ds: RegisteredDataset, settings: Settings) -> DatasetProfile:
         ds, settings
     )
     sample_n = profile_sample_rows
+    metric_scope = MetricScope.full if profile_sample_rows == row_count else MetricScope.sample
     total_cells = row_count * col_count if col_count else 0
     semantic_started = time.monotonic()
     col_profiles, null_cells, temporal_cols, entity_candidates = _derive_column_profiles(
@@ -703,6 +707,7 @@ def build_profile(ds: RegisteredDataset, settings: Settings) -> DatasetProfile:
         df_sample,
         sample_n,
         profile_sample_rows,
+        metric_scope,
     )
 
     # Duplicate row pct (sample-based)
@@ -816,6 +821,7 @@ def build_profile(ds: RegisteredDataset, settings: Settings) -> DatasetProfile:
         file_size_bytes=ds.file_size_bytes,
         missing_cell_pct=missing_cell_pct,
         duplicate_row_pct=dup_pct,
+        duplicate_row_pct_scope=metric_scope if dup_pct is not None else None,
         numeric_column_count=len({c.name for c in col_profiles if c.semantic_type == SemanticType.numeric}),
         categorical_column_count=len(
             {c.name for c in col_profiles if c.semantic_type == SemanticType.categorical}
@@ -837,6 +843,7 @@ def build_profile(ds: RegisteredDataset, settings: Settings) -> DatasetProfile:
         primary_date_column=primary_date,
         main_numeric_measures=measures,
         structure_version=CURRENT_PROFILE_STRUCTURE_VERSION,
+        grain_key_scope=metric_scope,
         temporal_columns=temporal_cols,
         entity_id_columns=entity_final[:15],
         grain_key_candidates=grain_candidates[:15],

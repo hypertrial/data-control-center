@@ -45,6 +45,36 @@ def test_execute_success_with_cte(registry_with_view: DatasetRegistry) -> None:
     assert len(out.rows) >= 1
 
 
+def test_execute_success_with_nested_select(registry_with_view: DatasetRegistry) -> None:
+    vw = next(iter(registry_with_view.list_all())).view_name
+    sql = f"SELECT * FROM (SELECT id FROM {vw}) nested WHERE id > 0"
+    out = execute_query(registry_with_view, Settings(), QueryRequest(sql=sql))
+    assert not out.error
+    assert out.row_count == 2
+
+
+def test_execute_rejects_nested_unknown_relation(registry_with_view: DatasetRegistry) -> None:
+    vw = next(iter(registry_with_view.list_all())).view_name
+    out = execute_query(
+        registry_with_view,
+        Settings(),
+        QueryRequest(sql=f"SELECT * FROM {vw} WHERE id IN (SELECT id FROM missing)"),
+    )
+    assert out.error
+    assert "non-registered relations" in out.error
+
+
+def test_execute_rejects_nested_file_read_function(registry_with_view: DatasetRegistry) -> None:
+    vw = next(iter(registry_with_view.list_all())).view_name
+    out = execute_query(
+        registry_with_view,
+        Settings(),
+        QueryRequest(sql=f"SELECT * FROM {vw} WHERE id IN (SELECT id FROM read_csv_auto('x.csv'))"),
+    )
+    assert out.error
+    assert "forbidden file-reading" in out.error
+
+
 def test_execute_insert_forbidden(registry_with_view: DatasetRegistry) -> None:
     vw = next(iter(registry_with_view.list_all())).view_name
     out = execute_query(

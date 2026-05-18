@@ -12,6 +12,11 @@ import pytest
 from app.config import Settings
 from app.services.workspace import Workspace, _is_recoverable_open_error, sanitize_sql_identifier
 from app.services.workspace_engine import WorkspaceEngine
+from app.services.workspace_schema import (
+    _create_view_for_dataset,
+    _pick_repaired_view_name,
+    _sanitize_view_identifier,
+)
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -386,6 +391,37 @@ def test_backup_corrupt_workspace_files_noop_when_missing(tmp_path: Path) -> Non
     ws._path = tmp_path / "missing.duckdb"  # type: ignore[attr-defined]
     ws._backup_corrupt_workspace_files()
     assert not ws._path.exists()  # type: ignore[attr-defined]
+
+
+def test_workspace_schema_view_helper_branches(tmp_path: Path) -> None:
+    db = duckdb.connect(str(tmp_path / "helpers.duckdb"))
+    try:
+        with pytest.raises(ValueError, match="Invalid SQL identifier"):
+            _sanitize_view_identifier("bad;name")
+
+        assert _pick_repaired_view_name("data", "ds_001", {"data", "data_ds_001"}) == "data_ds_001_2"
+
+        missing = tmp_path / "missing.csv"
+        _create_view_for_dataset(db, "missing_view", str(missing), "csv")
+
+        pq = tmp_path / "p.parquet"
+        pl.DataFrame({"a": [1]}).write_parquet(pq)
+        _create_view_for_dataset(db, "vp", str(pq), "parquet")
+        assert db.execute("SELECT a FROM vp").fetchone() == (1,)
+
+        tsv = tmp_path / "t.tsv"
+        tsv.write_text("a\tb\n1\t2\n")
+        _create_view_for_dataset(db, "vt", str(tsv), "csv")
+        assert db.execute("SELECT b FROM vt").fetchone() == (2,)
+
+        js = tmp_path / "j.json"
+        js.write_text('[{"a": 3}]')
+        _create_view_for_dataset(db, "vj", str(js), "json")
+        assert db.execute("SELECT a FROM vj").fetchone() == (3,)
+
+        _create_view_for_dataset(db, "ignored", str(js), "weird")
+    finally:
+        db.close()
 
 
 def test_query_count_reraises_unknown_timeout_setup_error(

@@ -392,6 +392,91 @@ def _persist_turn_optional(
     return tid, seq
 
 
+def _emit_done(total_ms: int) -> Iterator[dict[str, Any]]:
+    yield {"type": "timing", "data": {"total_ms": total_ms}}
+    yield {"type": "done", "data": {}}
+
+
+def _emit_turn_if_persisted(
+    turn_id: str | None,
+    seq: int | None,
+    conversation_id: str | None,
+) -> Iterator[dict[str, Any]]:
+    if turn_id and seq is not None and conversation_id:
+        yield {
+            "type": "turn",
+            "data": {
+                "turn_id": turn_id,
+                "conversation_id": conversation_id,
+                "seq": seq,
+            },
+        }
+
+
+def _finish_error(
+    registry: DatasetRegistry,
+    req: AgentAskRequest,
+    t0: float,
+    *,
+    message: str,
+    attempts: list[dict[str, Any]],
+    model_name: str,
+    elapsed_ms: int,
+    sql: str | None = None,
+    explanation: str | None = None,
+    query_result: QueryResult | None = None,
+    event_data: dict[str, Any] | None = None,
+) -> Iterator[dict[str, Any]]:
+    turn_id, seq = _persist_turn_optional(
+        registry,
+        req,
+        t0,
+        sql=sql,
+        explanation=explanation,
+        answer=None,
+        error=message,
+        attempts=attempts,
+        query_result=query_result,
+        model_name=model_name,
+    )
+    data = {"message": message}
+    if event_data:
+        data.update(event_data)
+    yield {"type": "error", "data": data}
+    yield from _emit_turn_if_persisted(turn_id, seq, req.conversation_id)
+    yield from _emit_done(elapsed_ms)
+
+
+def _finish_success(
+    registry: DatasetRegistry,
+    req: AgentAskRequest,
+    t0: float,
+    *,
+    sql: str,
+    explanation: str | None,
+    answer: str,
+    attempts: list[dict[str, Any]],
+    query_result: QueryResult,
+    model_name: str,
+    elapsed_ms: int,
+) -> Iterator[dict[str, Any]]:
+    yield {"type": "answer", "data": {"answer": answer}}
+    turn_id, seq = _persist_turn_optional(
+        registry,
+        req,
+        t0,
+        sql=sql,
+        explanation=explanation,
+        answer=answer,
+        error=None,
+        attempts=attempts,
+        query_result=query_result,
+        model_name=model_name,
+    )
+    yield from _emit_turn_if_persisted(turn_id, seq, req.conversation_id)
+    yield from _emit_done(elapsed_ms)
+
+
 def _run_ask_workflow(
     registry: DatasetRegistry,
     settings: Settings,
@@ -414,8 +499,7 @@ def _run_ask_workflow(
         with registry.workspace.lock_db() as con:
             if not ask_store.get_conversation(con, req.conversation_id):
                 yield {"type": "error", "data": {"message": "Conversation not found"}}
-                yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
-                yield {"type": "done", "data": {}}
+                yield from _emit_done(elapsed_ms())
                 return
 
     yield {"type": "stage", "data": {"name": "context", "elapsed_ms": elapsed_ms()}}
@@ -428,8 +512,7 @@ def _run_ask_workflow(
     )
     if ctx_err:
         yield {"type": "error", "data": {"message": ctx_err}}
-        yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
-        yield {"type": "done", "data": {}}
+        yield from _emit_done(elapsed_ms())
         return
 
     cap = min(settings.agent_max_rows, settings.query_max_rows)
@@ -457,86 +540,41 @@ def _run_ask_workflow(
                 f"Start Ollama and run `ollama pull {settings.llm_model}` "
                 "if the model is not installed."
             )
-            tid, seq = _persist_turn_optional(
+            yield from _finish_error(
                 registry,
                 req,
                 t0,
-                sql=None,
-                explanation=None,
-                answer=None,
-                error=msg,
+                message=msg,
                 attempts=attempts,
-                query_result=None,
                 model_name=model_name,
+                elapsed_ms=elapsed_ms(),
             )
-            yield {"type": "error", "data": {"message": msg}}
-            if tid and seq is not None and req.conversation_id:
-                yield {
-                    "type": "turn",
-                    "data": {
-                        "turn_id": tid,
-                        "conversation_id": req.conversation_id,
-                        "seq": seq,
-                    },
-                }
-            yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
-            yield {"type": "done", "data": {}}
             return
         except httpx.HTTPError as e:
             logger.warning("Ollama HTTP error: %s", e)
             msg = f"Ollama at {settings.llm_base_url} failed: {e}"
-            tid, seq = _persist_turn_optional(
+            yield from _finish_error(
                 registry,
                 req,
                 t0,
-                sql=None,
-                explanation=None,
-                answer=None,
-                error=msg,
+                message=msg,
                 attempts=attempts,
-                query_result=None,
                 model_name=model_name,
+                elapsed_ms=elapsed_ms(),
             )
-            yield {"type": "error", "data": {"message": msg}}
-            if tid and seq is not None and req.conversation_id:
-                yield {
-                    "type": "turn",
-                    "data": {
-                        "turn_id": tid,
-                        "conversation_id": req.conversation_id,
-                        "seq": seq,
-                    },
-                }
-            yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
-            yield {"type": "done", "data": {}}
             return
         except Exception as e:  # noqa: BLE001
             logger.exception("Ollama request failed")
             msg = f"Ollama request failed: {e}"
-            tid, seq = _persist_turn_optional(
+            yield from _finish_error(
                 registry,
                 req,
                 t0,
-                sql=None,
-                explanation=None,
-                answer=None,
-                error=msg,
+                message=msg,
                 attempts=attempts,
-                query_result=None,
                 model_name=model_name,
+                elapsed_ms=elapsed_ms(),
             )
-            yield {"type": "error", "data": {"message": msg}}
-            if tid and seq is not None and req.conversation_id:
-                yield {
-                    "type": "turn",
-                    "data": {
-                        "turn_id": tid,
-                        "conversation_id": req.conversation_id,
-                        "seq": seq,
-                    },
-                }
-            yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
-            yield {"type": "done", "data": {}}
             return
 
         draft, parse_err = parse_sql_draft(content)
@@ -544,30 +582,15 @@ def _run_ask_workflow(
             last_content_err = parse_err or "Unknown parse error"
             attempts.append({"stage": "draft_sql", "error": last_content_err, "sql": None})
             if attempt + 1 >= settings.agent_sql_attempts:
-                tid, seq = _persist_turn_optional(
+                yield from _finish_error(
                     registry,
                     req,
                     t0,
-                    sql=None,
-                    explanation=None,
-                    answer=None,
-                    error=last_content_err,
+                    message=last_content_err,
                     attempts=attempts,
-                    query_result=None,
                     model_name=model_name,
+                    elapsed_ms=elapsed_ms(),
                 )
-                yield {"type": "error", "data": {"message": last_content_err}}
-                if tid and seq is not None and req.conversation_id:
-                    yield {
-                        "type": "turn",
-                        "data": {
-                            "turn_id": tid,
-                            "conversation_id": req.conversation_id,
-                            "seq": seq,
-                        },
-                    }
-                yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
-                yield {"type": "done", "data": {}}
                 return
             messages.append({"role": "assistant", "content": content})
             messages.append(
@@ -624,30 +647,18 @@ def _run_ask_workflow(
 
             if not settings.agent_summarize_with_llm:
                 ans = _default_answer(draft, qres)
-                yield {"type": "answer", "data": {"answer": ans}}
-                tid, seq = _persist_turn_optional(
+                yield from _finish_success(
                     registry,
                     req,
                     t0,
                     sql=draft.sql,
                     explanation=draft.explanation or None,
                     answer=ans,
-                    error=None,
                     attempts=attempts,
                     query_result=qres,
                     model_name=model_name,
+                    elapsed_ms=elapsed_ms(),
                 )
-                if tid and seq is not None and req.conversation_id:
-                    yield {
-                        "type": "turn",
-                        "data": {
-                            "turn_id": tid,
-                            "conversation_id": req.conversation_id,
-                            "seq": seq,
-                        },
-                    }
-                yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
-                yield {"type": "done", "data": {}}
                 return
 
             yield {
@@ -690,30 +701,18 @@ def _run_ask_workflow(
                 )
             except (httpx.HTTPError, OSError) as e:
                 answer = f"{draft.explanation}\n\n(Summarization unavailable: {e})".strip()
-            yield {"type": "answer", "data": {"answer": answer}}
-            tid, seq = _persist_turn_optional(
+            yield from _finish_success(
                 registry,
                 req,
                 t0,
                 sql=draft.sql,
                 explanation=draft.explanation or None,
                 answer=answer,
-                error=None,
                 attempts=attempts,
                 query_result=qres,
                 model_name=model_name,
+                elapsed_ms=elapsed_ms(),
             )
-            if tid and seq is not None and req.conversation_id:
-                yield {
-                    "type": "turn",
-                    "data": {
-                        "turn_id": tid,
-                        "conversation_id": req.conversation_id,
-                        "seq": seq,
-                    },
-                }
-            yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
-            yield {"type": "done", "data": {}}
             return
 
         err_text = qres.error or "Unknown SQL error"
@@ -723,38 +722,24 @@ def _run_ask_workflow(
             "data": {"sql": draft.sql, "error": err_text, "attempt": attempt + 1},
         }
         if attempt + 1 >= settings.agent_sql_attempts:
-            tid, seq = _persist_turn_optional(
+            yield from _finish_error(
                 registry,
                 req,
                 t0,
+                message=err_text,
                 sql=draft.sql,
                 explanation=draft.explanation or None,
-                answer=None,
-                error=err_text,
                 attempts=attempts,
                 query_result=qres,
                 model_name=model_name,
-            )
-            yield {
-                "type": "error",
-                "data": {
+                elapsed_ms=elapsed_ms(),
+                event_data={
                     "message": err_text,
                     "sql": draft.sql,
                     "explanation": draft.explanation or None,
                     "query_result": qres.model_dump(mode="json"),
                 },
-            }
-            if tid and seq is not None and req.conversation_id:
-                yield {
-                    "type": "turn",
-                    "data": {
-                        "turn_id": tid,
-                        "conversation_id": req.conversation_id,
-                        "seq": seq,
-                    },
-                }
-            yield {"type": "timing", "data": {"total_ms": elapsed_ms()}}
-            yield {"type": "done", "data": {}}
+            )
             return
 
         yield {

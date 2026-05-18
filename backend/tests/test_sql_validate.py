@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import pytest
+import sqlglot
+from sqlglot import exp
 
 from app.services.sql_validate import (
+    _ast_function_name,
+    _validate_readonly_ast,
     blank_string_literals,
     extract_cte_names,
     extract_relations,
@@ -79,8 +83,19 @@ def test_extract_relations_supports_quoted_names() -> None:
     assert extract_relations('SELECT * FROM "my_table"') == {"my_table"}
 
 
+def test_extract_relations_supports_unquoted_schema_names() -> None:
+    assert extract_relations("SELECT * FROM main.real JOIN other.next_table") == {
+        "real",
+        "next_table",
+    }
+
+
 def test_extract_cte_names_handles_named_ctes() -> None:
     assert extract_cte_names('WITH "a" AS (SELECT 1), b AS (SELECT 2) SELECT * FROM b') == {"a", "b"}
+
+
+def test_extract_cte_names_ignores_non_with_sql() -> None:
+    assert extract_cte_names("SELECT 1") == set()
 
 
 @pytest.mark.parametrize(
@@ -129,3 +144,74 @@ def test_validate_workspace_sql_rejects_unknown_non_cte_relation() -> None:
     err, norm = validate_workspace_sql("WITH local AS (SELECT 1) SELECT * FROM missing", {"real"})
     assert norm is None
     assert err and "non-registered relations" in err
+
+
+def test_validate_workspace_sql_ast_allows_nested_registered_view() -> None:
+    err, norm = validate_workspace_sql(
+        "WITH local AS (SELECT * FROM real) SELECT * FROM (SELECT * FROM local) x",
+        {"real"},
+    )
+    assert err is None
+    assert norm is not None
+
+
+def test_validate_workspace_sql_ast_rejects_unknown_nested_relation() -> None:
+    err, norm = validate_workspace_sql(
+        "SELECT * FROM real WHERE id IN (SELECT id FROM missing)",
+        {"real"},
+    )
+    assert norm is None
+    assert err and "non-registered relations" in err
+
+
+def test_validate_workspace_sql_ast_rejects_nested_file_read_function() -> None:
+    err, norm = validate_workspace_sql(
+        "SELECT * FROM real WHERE id IN (SELECT id FROM read_csv_auto('x.csv'))",
+        {"real"},
+    )
+    assert norm is None
+    assert err and "forbidden file-reading" in err
+
+
+def test_validate_workspace_sql_ast_rejects_parse_error() -> None:
+    err, norm = validate_workspace_sql("SELECT * FROM", {"real"})
+    assert norm is None
+    assert err and "SELECT" in err
+
+
+def test_validate_readonly_ast_handles_none_tree(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.services.sql_validate.sqlglot.parse_one", lambda *a, **k: None)
+    err, refs, ctes = _validate_readonly_ast("SELECT 1")
+    assert err and not refs and not ctes
+
+
+def test_validate_readonly_ast_rejects_non_select_tree() -> None:
+    err, refs, ctes = _validate_readonly_ast("DELETE FROM real")
+    assert err and not refs and not ctes
+
+
+def test_validate_readonly_ast_rejects_forbidden_node(monkeypatch: pytest.MonkeyPatch) -> None:
+    tree = exp.select(exp.Command(this="SET", expression="x"))
+    monkeypatch.setattr("app.services.sql_validate.sqlglot.parse_one", lambda *a, **k: tree)
+    err, refs, ctes = _validate_readonly_ast("SELECT 1")
+    assert err and "forbidden" in err and not refs and not ctes
+
+
+def test_validate_readonly_ast_rejects_file_function_directly() -> None:
+    err, refs, ctes = _validate_readonly_ast("SELECT * FROM read_parquet('x.parquet')")
+    assert err and "file-reading" in err and not refs and not ctes
+
+
+def test_ast_function_name_reads_anonymous_function() -> None:
+    tree = sqlglot.parse_one("SELECT custom_func(x) FROM real", read="duckdb")
+    fn = next(tree.find_all(exp.Anonymous))
+    assert _ast_function_name(fn) == "custom_func"
+
+
+def test_validate_workspace_sql_forbidden_words_in_comments_and_strings() -> None:
+    err, norm = validate_workspace_sql(
+        "SELECT 'DROP TABLE nope' AS note FROM real -- INSERT INTO x\n",
+        {"real"},
+    )
+    assert err is None
+    assert norm == "SELECT 'DROP TABLE nope' AS note FROM real"

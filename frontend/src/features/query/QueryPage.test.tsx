@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryPage } from '@/features/query/QueryPage'
@@ -231,5 +231,32 @@ describe('QueryPage', () => {
     await user.click(screen.getByRole('button', { name: 'Run query' }))
     await waitFor(() => expect(h.runQuery).toHaveBeenCalled())
     expect(JSON.parse(localStorage.getItem('dcc-sql-history') ?? '[]')).toContain('SELECT history')
+  })
+
+  it('runs latest SQL and max rows from keyboard shortcut', async () => {
+    const user = userEvent.setup()
+    h.runQuery.mockResolvedValue({
+      columns: [],
+      rows: [],
+      row_count: 0,
+      truncated: false,
+      error: null,
+    })
+    wrap(<QueryPage />)
+
+    const editor = screen.getByLabelText('SQL editor')
+    await waitFor(() => expect(screen.getByDisplayValue('SELECT 1;')).toBeInTheDocument())
+    fireEvent.change(editor, { target: { value: 'SELECT latest' } })
+    await waitFor(() => expect(screen.getByDisplayValue('SELECT latest')).toBeInTheDocument())
+    const maxRows = screen.getByRole('spinbutton')
+    fireEvent.change(maxRows, { target: { value: '7' } })
+    await user.click(editor)
+    await user.keyboard('{Meta>}{Enter}{/Meta}')
+
+    await waitFor(() => expect(h.runQuery).toHaveBeenCalled())
+    expect(h.runQuery.mock.calls.at(-1)?.[0]).toEqual({
+      sql: 'SELECT latest',
+      max_rows: 7,
+    })
   })
 })

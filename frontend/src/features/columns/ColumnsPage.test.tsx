@@ -99,6 +99,29 @@ describe('ColumnsPage', () => {
     expect(screen.getByText(/EDA stats use all 10 rows/)).toBeInTheDocument()
   })
 
+  it('labels sampled uniqueness and top-value metrics', async () => {
+    h.getProfile.mockResolvedValue(
+      mkProfile({
+        rows: 5_000,
+        profiler_sample_rows: 2_000,
+        column_profiles: [
+          mkColumn({
+            name: 'sampled_col',
+            metric_scope: 'sample',
+            top_value: 'a',
+            top_count: 20,
+            top_pct: 1,
+          }),
+        ],
+      }),
+    )
+    useUiStore.setState({ activeDatasetId: 'ds_1' })
+    wrap(<ColumnsPage />)
+    await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument())
+    expect(screen.getAllByText('sample').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText(/first 2,000 rows/)).toBeInTheDocument()
+  })
+
   it('shows Role badges from dataset profile structure metadata', async () => {
     h.getProfile.mockResolvedValue(
       mkProfile({

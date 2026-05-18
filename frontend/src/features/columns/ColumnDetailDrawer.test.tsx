@@ -38,9 +38,21 @@ describe('ColumnDetailDrawer', () => {
       </MemoryRouter>,
     )
     await user.click(screen.getByRole('button', { name: 'Stats' }))
-    expect(screen.getByText(/Unique \(sample\)/)).toBeInTheDocument()
+    expect(screen.getByText(/Unique \(full table\)/)).toBeInTheDocument()
     expect(screen.getByText('3.5')).toBeInTheDocument()
     expect(screen.getByText('mode-x')).toBeInTheDocument()
+  })
+
+  it('labels sampled metrics when column scope is sample', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <ColumnDetailDrawer open onOpenChange={vi.fn()} column={mkColumn({ metric_scope: 'sample' })} viewName="metrics" />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByRole('button', { name: 'Stats' }))
+    expect(screen.getByText(/Unique \(sample\)/)).toBeInTheDocument()
+    expect(screen.getByText(/Distribution and uniqueness metrics below use the sample/)).toBeInTheDocument()
   })
 
   it('renders sheet and triggers chart', async () => {

@@ -91,6 +91,7 @@ export function ColumnDetailDrawer({
 
   const selectOne = viewName ? sqlSelectColumnFromView(viewName, column.name, 100) : ''
   const selectStar = viewName ? sqlSelectStarFromView(viewName, 50) : ''
+  const metricScope = column.metric_scope === 'sample' ? 'sample' : 'full table'
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={column.name}>
@@ -122,8 +123,7 @@ export function ColumnDetailDrawer({
 
         <TabsContent value="stats" className="mt-0">
           <p className="mb-2 text-[10px] text-[hsl(var(--muted))]">
-            Values reflect the profiler sample (see dataset profile). Percentages use sampled row counts unless the full
-            table is small enough to fit in one pass.
+            Null metrics use the full table. Distribution and uniqueness metrics below use the {metricScope}.
           </p>
           <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-[hsl(var(--muted))]">
             <div>Count (non-null, full table)</div>
@@ -132,11 +132,11 @@ export function ColumnDetailDrawer({
             <div className="break-all text-white tabular-nums">{formatCount(column.null_count)}</div>
             <div>Null %</div>
             <div className="text-white tabular-nums">{formatPercent(column.null_pct)}</div>
-            <div>Unique (sample)</div>
+            <div>Unique ({metricScope})</div>
             <div className="text-white tabular-nums">{formatCount(column.unique_count)}</div>
-            <div>Unique % (sample)</div>
+            <div>Unique % ({metricScope})</div>
             <div className="text-white tabular-nums">{formatPercent(column.unique_pct)}</div>
-            <div>Cardinality (sample)</div>
+            <div>Cardinality ({metricScope})</div>
             <div className="text-white tabular-nums">{formatCount(column.cardinality)}</div>
             <div>Min</div>
             <div className="max-w-prose break-all text-white" title={column.min_value ?? undefined}>
@@ -166,7 +166,7 @@ export function ColumnDetailDrawer({
             <div className="max-w-prose break-all text-white" title={column.std_value ?? undefined}>
               {formatEdaNumericString(column.std_value)}
             </div>
-            <div>Top value (sample)</div>
+            <div>Top value ({metricScope})</div>
             <div className="max-w-prose break-all text-white">{column.top_value ?? '—'}</div>
             <div>Top count / %</div>
             <div className="text-white tabular-nums">

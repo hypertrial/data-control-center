@@ -33,6 +33,8 @@ Row-grain and entity inference live in [`app/services/profiler.py`](app/services
 - **`PROFILE_STRUCTURE_MAX_PAIR_CHECKS`** / **`PROFILE_STRUCTURE_MAX_TRIPLE_CHECKS`** — caps on pair/triple uniqueness checks
 - **`PROFILE_STRUCTURE_HIGH_CONFIDENCE_THRESHOLD`** / **`PROFILE_STRUCTURE_MEDIUM_CONFIDENCE_THRESHOLD`** — uniqueness ratio thresholds on the sample
 
+Profile responses expose sampling scope metadata so clients can avoid treating sampled EDA metrics as full-table facts: `ColumnProfile.metric_scope`, `DatasetProfile.duplicate_row_pct_scope`, and `DatasetProfile.grain_key_scope`.
+
 ## Test and lint
 
 Matches [`.github/workflows/ci.yml`](../.github/workflows/ci.yml):
