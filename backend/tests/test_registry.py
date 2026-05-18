@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import duckdb
 import pytest
 
 from app.config import Settings
@@ -166,6 +168,160 @@ def test_register_path_duplicate_stem_in_different_dirs(tmp_path: Path) -> None:
     d2 = reg.register_path(f2)
     assert d1.view_name == "data"
     assert d2.view_name == f"data_{d2.dataset_id}"
+
+
+def test_register_path_duplicate_stem_concurrent_gets_distinct_views(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    reg = DatasetRegistry(ws, settings)
+    xa = tmp_path / "x"
+    ya = tmp_path / "y"
+    xa.mkdir()
+    ya.mkdir()
+    f1 = xa / "data.csv"
+    f2 = ya / "data.csv"
+    f1.write_text("a\n1\n")
+    f2.write_text("a\n2\n")
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            d1, d2 = list(pool.map(lambda p: reg.register_path(p), [f1, f2]))
+
+        assert d1.dataset_id != d2.dataset_id
+        assert d1.view_name != d2.view_name
+        rows = ws.connection.execute(
+            "SELECT dataset_id, view_name FROM dcc_datasets ORDER BY dataset_id"
+        ).fetchall()
+        assert len(rows) == 2
+        assert len({r[1] for r in rows}) == 2
+        assert ws.connection.execute(f"SELECT a FROM {d1.view_name}").fetchone()[0] == 1
+        assert ws.connection.execute(f"SELECT a FROM {d2.view_name}").fetchone()[0] == 2
+    finally:
+        ws.close()
+
+
+def test_register_path_drops_created_view_when_later_step_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    reg = DatasetRegistry(ws, settings)
+    csv = tmp_path / "data.csv"
+    csv.write_text("a\n1\n")
+
+    def fail_counts(_view_name: str) -> tuple[int, int]:
+        raise RuntimeError("count failed")
+
+    monkeypatch.setattr(ws, "get_row_column_counts", fail_counts)
+    try:
+        with pytest.raises(RuntimeError, match="count failed"):
+            reg.register_path(csv)
+        assert "data" not in {ds.view_name for ds in reg.list_all()}
+        with pytest.raises(duckdb.CatalogException):
+            ws.connection.execute("SELECT * FROM data").fetchall()
+    finally:
+        ws.close()
+
+
+def test_workspace_schema_enforces_unique_dataset_view_names(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    try:
+        idx = ws.connection.execute(
+            """
+            SELECT index_name, is_unique
+            FROM duckdb_indexes()
+            WHERE table_name = 'dcc_datasets'
+              AND index_name = 'dcc_datasets_view_name_unique'
+            """
+        ).fetchone()
+        assert idx == ("dcc_datasets_view_name_unique", True)
+    finally:
+        ws.close()
+
+
+def test_workspace_schema_repairs_legacy_duplicate_view_names(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy.duckdb"
+    f1 = tmp_path / "a" / "data.csv"
+    f2 = tmp_path / "b" / "data.csv"
+    f1.parent.mkdir()
+    f2.parent.mkdir()
+    f1.write_text("a\n1\n")
+    f2.write_text("a\n2\n")
+    con = duckdb.connect(str(db_path))
+    con.execute(
+        """
+        CREATE TABLE dcc_datasets (
+          dataset_id VARCHAR PRIMARY KEY,
+          source_path VARCHAR NOT NULL,
+          source_label VARCHAR NOT NULL,
+          view_name VARCHAR NOT NULL,
+          format VARCHAR NOT NULL,
+          row_count BIGINT,
+          column_count INTEGER,
+          file_size_bytes BIGINT
+        )
+        """
+    )
+    con.execute(
+        "INSERT INTO dcc_datasets VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ["ds_001", str(f1), f1.name, "data", "csv", None, None, f1.stat().st_size],
+    )
+    con.execute(
+        "INSERT INTO dcc_datasets VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ["ds_002", str(f2), f2.name, "data", "csv", None, None, f2.stat().st_size],
+    )
+    con.close()
+
+    ws = Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+    try:
+        rows = ws.connection.execute(
+            "SELECT dataset_id, view_name FROM dcc_datasets ORDER BY dataset_id"
+        ).fetchall()
+        assert rows == [("ds_001", "data"), ("ds_002", "data_ds_002")]
+        assert ws.connection.execute("SELECT a FROM data_ds_002").fetchone()[0] == 2
+    finally:
+        ws.close()
+
+
+def test_workspace_schema_repairs_duplicate_metadata_when_view_recreate_fails(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy_bad_view.duckdb"
+    missing_a = tmp_path / "missing_a.csv"
+    missing_b = tmp_path / "missing_b.csv"
+    con = duckdb.connect(str(db_path))
+    con.execute(
+        """
+        CREATE TABLE dcc_datasets (
+          dataset_id VARCHAR PRIMARY KEY,
+          source_path VARCHAR NOT NULL,
+          source_label VARCHAR NOT NULL,
+          view_name VARCHAR NOT NULL,
+          format VARCHAR NOT NULL,
+          row_count BIGINT,
+          column_count INTEGER,
+          file_size_bytes BIGINT,
+          registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    con.execute(
+        "INSERT INTO dcc_datasets VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+        ["ds_001", str(missing_a), missing_a.name, "bad-name", "csv", None, None, None],
+    )
+    con.execute(
+        "INSERT INTO dcc_datasets VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+        ["ds_002", str(missing_b), missing_b.name, "bad-name", "csv", None, None, None],
+    )
+    con.close()
+
+    ws = Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+    try:
+        rows = ws.connection.execute(
+            "SELECT dataset_id, view_name FROM dcc_datasets ORDER BY dataset_id"
+        ).fetchall()
+        assert rows == [("ds_001", "bad-name"), ("ds_002", "bad-name_ds_002")]
+    finally:
+        ws.close()
 
 
 def test_migrate_legacy_v_dataset_view_on_load(tmp_path: Path) -> None:

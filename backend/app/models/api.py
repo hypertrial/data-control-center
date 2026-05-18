@@ -60,6 +60,11 @@ class QualitySeverity(str, Enum):
     info = "info"
 
 
+class MetricScope(str, Enum):
+    full = "full"
+    sample = "sample"
+
+
 class StructureConfidence(str, Enum):
     low = "low"
     medium = "medium"
@@ -94,6 +99,7 @@ class ColumnProfile(BaseModel):
     top_values: list[dict[str, Any]] = Field(default_factory=list)
     quality_flags: list[str] = Field(default_factory=list)
     histogram: list[dict[str, Any]] | None = None
+    metric_scope: MetricScope = MetricScope.full
 
 
 class QualityIssue(BaseModel):
@@ -145,6 +151,7 @@ class DatasetProfile(BaseModel):
     file_size_bytes: int | None = None
     missing_cell_pct: float | None = None
     duplicate_row_pct: float | None = None
+    duplicate_row_pct_scope: MetricScope | None = None
     numeric_column_count: int = 0
     categorical_column_count: int = 0
     datetime_column_count: int = 0
@@ -156,6 +163,7 @@ class DatasetProfile(BaseModel):
     primary_date_column: str | None = None
     main_numeric_measures: list[str] = Field(default_factory=list)
     structure_version: str = "v4"
+    grain_key_scope: MetricScope = MetricScope.full
     temporal_columns: list[TemporalColumnInfo] = Field(default_factory=list)
     entity_id_columns: list[EntityIdCandidate] = Field(default_factory=list)
     grain_key_candidates: list[GrainKeyCandidate] = Field(default_factory=list)

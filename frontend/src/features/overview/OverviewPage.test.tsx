@@ -147,6 +147,18 @@ describe('OverviewPage', () => {
     await waitFor(() => expect(screen.getByText('boom')).toBeInTheDocument())
   })
 
+  it('labels duplicate rows as sample-based when profiler scope is sample', async () => {
+    h.getProfile.mockResolvedValue(
+      mkProfile({
+        duplicate_row_pct: 2,
+        duplicate_row_pct_scope: 'sample',
+      }),
+    )
+    useUiStore.setState({ activeDatasetId: 'ds_001' })
+    wrap(<OverviewPage />)
+    await waitFor(() => expect(screen.getByText(/duplicate rows in the profiler sample/i)).toBeInTheDocument())
+  })
+
   it('opens the diff dialog and renders empty chart fallbacks', async () => {
     const user = userEvent.setup()
     h.getProfile.mockResolvedValue(
@@ -189,11 +201,15 @@ describe('OverviewPage', () => {
         primary_date_column: 'month',
         quality_issues: [
           {
+            id: 'nulls',
             severity: 'warning',
-            code: 'nulls',
+            category: 'missingness',
             title: 'Many nulls',
-            message: 'Many nulls in amount',
+            description: 'Many nulls in amount',
+            why_it_matters: 'Aggregates can be biased.',
             affected_columns: ['amount'],
+            examples: [],
+            suggested_sql: null,
             score_impact: 7.5,
           },
         ],

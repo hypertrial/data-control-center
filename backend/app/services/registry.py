@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Lock
+from threading import RLock
 
 from app.config import Settings
 from app.errors import AppError, CODES
@@ -105,7 +105,7 @@ class DatasetRegistry:
     def __init__(self, workspace: Workspace, settings: Settings) -> None:
         self._workspace = workspace
         self._settings = settings
-        self._lock = Lock()
+        self._lock = RLock()
         self._next_id = self._load_max_id() + 1
         self._by_id: dict[str, RegisteredDataset] = {}
         self._load_from_db()
@@ -238,42 +238,49 @@ class DatasetRegistry:
         else:
             fmt = "parquet" if ext == ".parquet" else "csv" if ext in (".csv", ".tsv") else "json"
 
-        dataset_id = self._alloc_id()
-        taken = {ds.view_name for ds in self._by_id.values()}
-        slug = slugify_file_stem(p.stem, dataset_id)
-        base = guard_reserved_identifier(slug)
-        view_name = pick_unique_view_name(base, dataset_id, taken)
-        fsize = p.stat().st_size if p.is_file() else None
-
-        self._workspace.register_file_view(view_name, p, fmt)
-        rows: int | None = None
-        cols: int | None = None
-        if compute_counts:
-            rows, cols = self._workspace.get_row_column_counts(view_name)
-
         with self._lock:
-            with self._workspace.lock_db() as con:
-                con.execute(
-                    """
-                    INSERT INTO dcc_datasets (dataset_id, source_path, source_label, view_name, format, row_count, column_count, file_size_bytes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    [dataset_id, str(p), p.name, view_name, fmt, rows, cols, fsize],
-                )
+            dataset_id = self._alloc_id()
+            taken = {ds.view_name for ds in self._by_id.values()}
+            slug = slugify_file_stem(p.stem, dataset_id)
+            base = guard_reserved_identifier(slug)
+            view_name = pick_unique_view_name(base, dataset_id, taken)
+            fsize = p.stat().st_size if p.is_file() else None
+            view_created = False
 
-        ds = RegisteredDataset(
-            dataset_id=dataset_id,
-            source_path=p,
-            source_label=p.name,
-            view_name=view_name,
-            format=fmt,
-            row_count=rows,
-            column_count=cols,
-            file_size_bytes=fsize,
-        )
-        self._by_id[dataset_id] = ds
-        self._workspace.delete_profile_cache(dataset_id)
-        return ds
+            try:
+                self._workspace.register_file_view(view_name, p, fmt)
+                view_created = True
+                rows: int | None = None
+                cols: int | None = None
+                if compute_counts:
+                    rows, cols = self._workspace.get_row_column_counts(view_name)
+
+                with self._workspace.lock_db() as con:
+                    con.execute(
+                        """
+                        INSERT INTO dcc_datasets (dataset_id, source_path, source_label, view_name, format, row_count, column_count, file_size_bytes)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [dataset_id, str(p), p.name, view_name, fmt, rows, cols, fsize],
+                    )
+
+                ds = RegisteredDataset(
+                    dataset_id=dataset_id,
+                    source_path=p,
+                    source_label=p.name,
+                    view_name=view_name,
+                    format=fmt,
+                    row_count=rows,
+                    column_count=cols,
+                    file_size_bytes=fsize,
+                )
+                self._by_id[dataset_id] = ds
+                self._workspace.delete_profile_cache(dataset_id)
+                return ds
+            except Exception:
+                if view_created:
+                    self._workspace.drop_view_if_exists(view_name)
+                raise
 
     def set_counts(self, dataset_id: str, row_count: int | None, column_count: int | None) -> None:
         ds = self._by_id.get(dataset_id)

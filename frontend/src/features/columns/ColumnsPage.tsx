@@ -175,6 +175,10 @@ function NullBar({ pct }: { pct: number }) {
   )
 }
 
+function metricScopeLabel(scope: ColumnProfile['metric_scope']): string {
+  return scope === 'sample' ? 'sample' : 'full table'
+}
+
 const EMPTY_HIDDEN: string[] = []
 
 export function ColumnsPage() {
@@ -284,11 +288,15 @@ export function ColumnsPage() {
         sortingFn: sortOptionalNumber,
         cell: (ctx) => {
           const r = ctx.row.original
+          const scope = metricScopeLabel(r.metric_scope)
           return (
-            <div className="min-w-[110px] text-xs">
+            <div className="min-w-[110px] text-xs" title={`Uniqueness is based on the ${scope}.`}>
               <span className="tabular-nums text-fg">{formatCount(r.unique_count)}</span>
               <span className="text-[hsl(var(--muted))]"> · </span>
               <span className="tabular-nums text-fg">{formatPercent(r.unique_pct)}</span>
+              {r.metric_scope === 'sample' ? (
+                <span className="ml-1 text-[10px] text-[hsl(var(--muted))]">sample</span>
+              ) : null}
             </div>
           )
         },
@@ -386,12 +394,14 @@ export function ColumnsPage() {
           if (r.top_value == null && r.top_count == null) {
             return <span className="text-[hsl(var(--muted))]">—</span>
           }
-          const title = `${r.top_value ?? ''} (${r.top_count}, ${r.top_pct ?? ''}%)`
+          const scope = metricScopeLabel(r.metric_scope)
+          const title = `${r.top_value ?? ''} (${r.top_count}, ${r.top_pct ?? ''}%; ${scope})`
           return (
             <div className="max-w-[min(14rem,30vw)] min-w-0" title={title}>
               <span className="block truncate font-mono text-xs text-fg">{r.top_value ?? '—'}</span>
               <span className="block truncate tabular-nums text-[10px] text-[hsl(var(--muted))]">
                 {formatCount(r.top_count)} · {formatPercent(r.top_pct)}
+                {r.metric_scope === 'sample' ? ' · sample' : ''}
               </span>
             </div>
           )

@@ -653,7 +653,11 @@ export function OverviewPage() {
           </FigureCard>
           <FigureCard
             title="Completeness"
-            description="Share of missing cells and sampled duplicate rows."
+            description={
+              p.duplicate_row_pct_scope === 'sample'
+                ? 'Share of missing cells and duplicate rows in the profiler sample.'
+                : 'Share of missing cells and duplicate rows.'
+            }
           >
             <CompletenessBars missingPct={p.missing_cell_pct} duplicatePct={p.duplicate_row_pct} />
           </FigureCard>

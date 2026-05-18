@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { RefObject } from 'react'
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { vscodeDark } from '@uiw/codemirror-theme-vscode'
 import { sql } from '@codemirror/lang-sql'
@@ -24,9 +25,6 @@ import { SqlResultsGrid } from '@/features/query/SqlResultsGrid'
 const HISTORY_KEY = 'dcc-sql-history'
 const HISTORY_CAP = 10
 
-/** Module scope so React hook immutability rules do not apply; updated in effect to latest exec. */
-const execRunHolder: { run: () => void } = { run: () => {} }
-
 function loadHistory(): string[] {
   try {
     const raw = localStorage.getItem(HISTORY_KEY)
@@ -40,6 +38,61 @@ function loadHistory(): string[] {
 
 function saveHistory(entries: string[]) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, HISTORY_CAP)))
+}
+
+function SqlEditor({
+  value,
+  onChange,
+  onRun,
+  editorRef,
+}: {
+  value: string
+  onChange: (value: string) => void
+  onRun: () => void
+  editorRef: RefObject<ReactCodeMirrorRef | null>
+}) {
+  const runFromShortcut = useCallback((event: Pick<KeyboardEvent, 'defaultPrevented' | 'key' | 'metaKey' | 'ctrlKey' | 'preventDefault'>) => {
+    if (event.defaultPrevented) return false
+    if (event.key !== 'Enter') return false
+    if (!event.metaKey && !event.ctrlKey) return false
+    event.preventDefault()
+    onRun()
+    return true
+  }, [onRun])
+
+  const extensions = useMemo(
+    () => [
+      vscodeDark,
+      sql(),
+      // Highest precedence + DOM handler so Cmd+Enter works on Mac even when default uiw/CodeMirror keymaps win.
+      Prec.highest(
+        EditorView.domEventHandlers({
+          keydown: (event) => runFromShortcut(event),
+        }),
+      ),
+    ],
+    [runFromShortcut],
+  )
+
+  return (
+    <div
+      className="overflow-hidden rounded-xl border border-border-default"
+      onKeyDownCapture={(event) => {
+        runFromShortcut(event.nativeEvent)
+      }}
+    >
+      <CodeMirror
+        value={value}
+        height="200px"
+        theme="none"
+        extensions={extensions}
+        onChange={onChange}
+        ref={editorRef}
+        className="text-sm [&_.cm-editor]:rounded-lg"
+        basicSetup={{ lineNumbers: true, foldGutter: false }}
+      />
+    </div>
+  )
 }
 
 export function QueryPage() {
@@ -105,10 +158,6 @@ export function QueryPage() {
     pushHistory(sqlText)
   }, [runMutation, sqlText, maxRows, pushHistory])
 
-  useEffect(() => {
-    execRunHolder.run = execRun
-  }, [execRun])
-
   const processedInject = useRef(0)
   const prevTemplateKey = useRef<string>('')
 
@@ -144,27 +193,6 @@ export function QueryPage() {
     queueMicrotask(applyPendingOrTemplate)
   }, [sqlInjectTick, activeId, activeViewName])
 
-  const extensions = useMemo(
-    () => [
-      vscodeDark,
-      sql(),
-      // Highest precedence + DOM handler so Cmd+Enter works on Mac even when default uiw/CodeMirror keymaps win.
-      Prec.highest(
-        EditorView.domEventHandlers({
-          keydown: (event) => {
-            if (event.defaultPrevented) return false
-            if (event.key !== 'Enter') return false
-            if (!event.metaKey && !event.ctrlKey) return false
-            event.preventDefault()
-            execRunHolder.run()
-            return true
-          },
-        }),
-      ),
-    ],
-    [],
-  )
-
   const viewHint =
     activeViewName != null && activeViewName !== ''
       ? quoteIdent(activeViewName)
@@ -184,18 +212,7 @@ export function QueryPage() {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_minmax(200px,28%)]">
         <div className="space-y-3">
-          <div className="overflow-hidden rounded-xl border border-border-default">
-            <CodeMirror
-              value={sqlText}
-              height="200px"
-              theme="none"
-              extensions={extensions}
-              onChange={(v) => setSqlText(v)}
-              ref={cmRef}
-              className="text-sm [&_.cm-editor]:rounded-lg"
-              basicSetup={{ lineNumbers: true, foldGutter: false }}
-            />
-          </div>
+          <SqlEditor value={sqlText} onChange={setSqlText} onRun={execRun} editorRef={cmRef} />
 
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[120px] flex-1">
