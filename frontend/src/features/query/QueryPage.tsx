@@ -176,9 +176,9 @@ export function QueryPage() {
   const templates = useMemo(() => {
     const view = activeViewName ? quoteIdent(activeViewName) : '<dataset_table>'
     return [
-      { label: 'SELECT * (limit 50)', sql: `SELECT * FROM ${view} LIMIT 50;` },
-      { label: 'DESCRIBE view', sql: `DESCRIBE ${view};` },
-      { label: 'COUNT rows', sql: `SELECT COUNT(*) FROM ${view};` },
+      { label: 'select * (limit 50)', sql: formatAnalyticsSql(`SELECT * FROM ${view} LIMIT 50;`) },
+      { label: 'describe view', sql: formatAnalyticsSql(`DESCRIBE ${view};`) },
+      { label: 'count rows', sql: formatAnalyticsSql(`SELECT COUNT(*) FROM ${view};`) },
     ]
   }, [activeViewName])
 

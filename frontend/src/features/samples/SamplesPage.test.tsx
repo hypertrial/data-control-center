@@ -69,6 +69,7 @@ describe('SamplesPage', () => {
     useUiStore.setState({ activeDatasetId: 'ds_1' })
     wrap(<SamplesPage />)
     await waitFor(() => expect(screen.getByText(/\{"x":1\}/)).toBeInTheDocument())
+    expect(screen.getByRole('columnheader', { name: '#' }).closest('thead')).toHaveClass('sticky', 'top-0')
 
     await user.click(screen.getByRole('button', { name: 'Next' }))
     await waitFor(() => expect(screen.getByText(/101-150/)).toBeInTheDocument())

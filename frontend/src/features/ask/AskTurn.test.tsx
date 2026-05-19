@@ -66,7 +66,7 @@ describe('AskTurn', () => {
     expect(onOpenInSql).toHaveBeenCalledWith('SELECT * FROM sales')
 
     await user.click(screen.getAllByRole('button', { name: 'Copy' })[0]!)
-    expect(write).toHaveBeenCalledWith('SELECT * FROM sales LIMIT 25')
+    expect(write).toHaveBeenCalledWith(['select *', 'from sales', 'limit 25;'].join('\n'))
     expect(toastMock.success).toHaveBeenCalledWith('SQL copied')
 
     await user.click(screen.getByRole('button', { name: 'Retry' }))

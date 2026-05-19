@@ -9,9 +9,15 @@ import {
 } from '@/lib/sql'
 
 describe('sql helpers', () => {
-  it('formatAnalyticsSql applies lowercase analytics style', () => {
+  it('formatAnalyticsSql applies lowercase clause-per-line analytics style', () => {
     expect(formatAnalyticsSql('SELECT * FROM foo LIMIT 10;')).toBe(
-      ['select', '    *', 'from', '    foo', 'limit', '    10;'].join('\n'),
+      ['select *', 'from foo', 'limit 10;'].join('\n'),
+    )
+  })
+
+  it('keeps multiline select lists while collapsing simple clauses', () => {
+    expect(formatAnalyticsSql('SELECT a, b FROM foo WHERE x = 1 ORDER BY a LIMIT 10;')).toBe(
+      ['select', '    a,', '    b', 'from foo', 'where x = 1', 'order by a', 'limit 10;'].join('\n'),
     )
   })
 
@@ -35,17 +41,17 @@ describe('sql helpers', () => {
 
   it('sqlSelectStarFromView quotes non-identifier views', () => {
     expect(sqlSelectStarFromView('player_ratings', 10)).toContain('player_ratings')
-    expect(sqlSelectStarFromView('player_ratings', 10)).toContain('limit\n    10')
+    expect(sqlSelectStarFromView('player_ratings', 10)).toContain('limit 10')
     expect(sqlSelectStarFromView('bad-name', 10)).toContain('"bad-name"')
   })
 
   it('sqlSelectColumnFromView quotes column', () => {
     expect(sqlSelectColumnFromView('ds_001', 'bad name')).toContain('"bad name"')
-    expect(sqlSelectColumnFromView('ds_001', 'bad name')).toContain('from\n    ds_001')
+    expect(sqlSelectColumnFromView('ds_001', 'bad name')).toContain('from ds_001')
   })
 
   it('sqlWherePkSample', () => {
     expect(sqlWherePkSample('t', 'id', 'x')).toContain("= 'x'")
-    expect(sqlWherePkSample('t', 'id', 'x')).toContain('from\n    t')
+    expect(sqlWherePkSample('t', 'id', 'x')).toContain('from t')
   })
 })

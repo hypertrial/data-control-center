@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { formatAnalyticsSql } from '@/lib/sql'
 import { useUiStore } from '@/store/uiStore'
 
 /** Navigate to SQL tab and pre-fill the editor (consumed by QueryPage). */
@@ -9,7 +10,11 @@ export function useOpenInSql() {
 
   return useCallback(
     (sql: string) => {
-      setPending(sql)
+      try {
+        setPending(formatAnalyticsSql(sql))
+      } catch {
+        setPending(sql)
+      }
       void navigate('/sql')
     },
     [navigate, setPending],

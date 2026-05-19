@@ -217,11 +217,10 @@ describe('QueryPage', () => {
     wrap(<QueryPage />)
 
     const editor = screen.getByLabelText('SQL editor')
-    await user.clear(editor)
-    await user.type(editor, 'select * from foo')
+    fireEvent.change(editor, { target: { value: 'select * from foo' } })
 
     await user.click(screen.getByRole('button', { name: 'Format' }))
-    expect(screen.getByDisplayValue(/from\s+foo/i)).toBeInTheDocument()
+    expect(screen.getByLabelText('SQL editor')).toHaveValue(['select *', 'from foo;'].join('\n'))
     expect(toastMock.success).toHaveBeenCalledWith('SQL formatted')
 
     await user.click(screen.getByRole('button', { name: 'Copy SQL' }))
@@ -285,17 +284,17 @@ describe('QueryPage', () => {
     useUiStore.setState({ activeDatasetId: 'ds_001', sqlInjectTick: 1, pendingQuery: 'SELECT pending' })
     wrap(<QueryPage />)
 
-    await waitFor(() => expect(screen.getByDisplayValue('SELECT pending')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByDisplayValue('select pending;')).toBeInTheDocument())
 
     useUiStore.getState().setPendingQuery(null)
     useUiStore.setState({ activeDatasetId: null })
-    await waitFor(() => expect(screen.getByDisplayValue('SELECT pending')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByDisplayValue('select pending;')).toBeInTheDocument())
 
     await user.clear(screen.getByLabelText('SQL editor'))
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     await waitFor(() =>
       expect((screen.getByLabelText('SQL editor') as HTMLTextAreaElement).value).toBe(
-        ['select', '    *', 'from', '    foo', 'limit', '    50;'].join('\n'),
+        ['select *', 'from foo', 'limit 50;'].join('\n'),
       ),
     )
 

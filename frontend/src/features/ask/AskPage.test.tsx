@@ -218,7 +218,7 @@ describe('AskPage', () => {
     expect(arg.use_history).toBe(true)
     expect(arg.model).toBe('qwen3:4b')
     await user.click(screen.getByRole('button', { name: 'Open in SQL' }))
-    expect(useUiStore.getState().pendingQuery).toBe('SELECT COUNT(*) AS n FROM t')
+    expect(useUiStore.getState().pendingQuery).toBe(['select COUNT(*) as n', 'from t;'].join('\n'))
   })
 
   it('shows one persisted answer after stream turn is saved', async () => {
@@ -311,7 +311,7 @@ describe('AskPage', () => {
     wrap(<AskPage />)
     await user.type(screen.getByPlaceholderText(/plain language/i), 'q')
     await user.click(screen.getByRole('button', { name: /Ask \(stream\)/i }))
-    await waitFor(() => expect(document.body.textContent).toContain('SELECT 1'))
+    await waitFor(() => expect(document.body.textContent).toContain('select 1;'))
     expect(screen.queryByText(/Model note/i)).not.toBeInTheDocument()
   })
 

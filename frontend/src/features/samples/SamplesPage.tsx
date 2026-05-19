@@ -135,16 +135,16 @@ export function SamplesPage() {
       <div className="relative overflow-x-auto rounded-xl border border-border-default">
         <table className="w-full min-w-max text-left text-sm">
           <caption className="sr-only">Sample rows</caption>
-          <THead>
+          <THead className="sticky top-0 z-10 bg-[hsl(var(--bg-1))]/95 shadow-[0_1px_0_rgba(255,255,255,0.08)] backdrop-blur">
             <TR>
               <TH
                 scope="col"
-                className="sticky left-0 z-20 min-w-[3rem] bg-[hsl(var(--bg-1))] shadow-[2px_0_8px_rgba(0,0,0,0.4)]"
+                className="sticky left-0 z-20 min-w-[3rem] bg-[hsl(var(--bg-1))]/95 shadow-[2px_0_8px_rgba(0,0,0,0.4)]"
               >
                 #
               </TH>
               {cols.map((c) => (
-                <TH key={c} scope="col" className="whitespace-nowrap bg-[hsl(var(--surface-1))]/95 backdrop-blur">
+                <TH key={c} scope="col" className="whitespace-nowrap bg-[hsl(var(--bg-1))]/95 backdrop-blur">
                   <div className="flex flex-col gap-1">
                     <span>{c}</span>
                     {typeByCol[c] && (

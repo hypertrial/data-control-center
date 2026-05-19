@@ -13,6 +13,7 @@ import { stripTrailingLimit } from '@/features/ask/askTableUtils'
 import { AskStageTimeline } from '@/features/ask/AskStageTimeline'
 import type { AskSqlAttempt, AskStageEntry } from '@/hooks/useAskStream'
 import { shouldShowStreamingModelNote } from '@/features/ask/askTurnDisplay'
+import { formatAnalyticsSql } from '@/lib/sql'
 import { toast } from 'sonner'
 
 function formatElapsedMs(ms: number | null | undefined): string {
@@ -28,6 +29,14 @@ function SqlBlock({
   sql: string
   onOpenInSql: (sql: string) => void
 }) {
+  const displaySql = useMemo(() => {
+    try {
+      return formatAnalyticsSql(sql)
+    } catch {
+      return sql
+    }
+  }, [sql])
+
   const extensions = useMemo(
     () => [
       vscodeDark,
@@ -62,7 +71,7 @@ function SqlBlock({
             variant="ghost"
             size="sm"
             onClick={() => {
-              void navigator.clipboard.writeText(sql)
+              void navigator.clipboard.writeText(displaySql)
               toast.success('SQL copied')
             }}
           >
@@ -72,7 +81,7 @@ function SqlBlock({
       </div>
       <div className="overflow-hidden rounded-lg border border-border-default">
         <CodeMirror
-          value={sql}
+          value={displaySql}
           height="120px"
           theme="none"
           extensions={extensions}

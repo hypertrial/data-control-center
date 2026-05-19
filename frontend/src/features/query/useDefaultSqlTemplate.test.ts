@@ -16,7 +16,7 @@ describe('useDefaultSqlTemplate', () => {
     useUiStore.setState({ pendingQuery: 'SELECT pending', sqlInjectTick: 1 })
 
     renderHook(() => useDefaultSqlTemplate(sql, setSql, 'ds_001', 'foo', 1))
-    await waitFor(() => expect(setSql).toHaveBeenCalledWith('SELECT pending'))
+    await waitFor(() => expect(setSql).toHaveBeenCalledWith('select pending;'))
   })
 
   it('applies dataset template when sql is empty', async () => {

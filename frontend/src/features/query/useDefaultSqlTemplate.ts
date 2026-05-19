@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useUiStore } from '@/store/uiStore'
-import { sqlSelectStarFromView } from '@/lib/sql'
+import { formatAnalyticsSql, sqlSelectStarFromView } from '@/lib/sql'
 
 const FALLBACK_SQL = 'select 1;'
 
@@ -34,7 +34,11 @@ export function useDefaultSqlTemplate(
         processedInject.current = sqlInjectTick
         const pending = useUiStore.getState().takePendingQuery()
         if (pending) {
-          setSqlText(pending)
+          try {
+            setSqlText(formatAnalyticsSql(pending))
+          } catch {
+            setSqlText(pending)
+          }
           previousTemplate.current = template
           return
         }

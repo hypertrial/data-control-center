@@ -4,7 +4,7 @@ import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 
 describe('Table', () => {
   it('renders table structure', () => {
-    render(
+    const { container } = render(
       <Table>
         <THead>
           <TR>
@@ -20,5 +20,6 @@ describe('Table', () => {
     )
     expect(screen.getByText('h')).toBeInTheDocument()
     expect(screen.getByText('d')).toBeInTheDocument()
+    expect(container.firstElementChild).toHaveClass('overflow-x-auto')
   })
 })
