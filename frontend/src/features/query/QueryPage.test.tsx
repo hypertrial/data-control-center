@@ -221,10 +221,14 @@ describe('QueryPage', () => {
 
     useUiStore.getState().setPendingQuery(null)
     useUiStore.setState({ activeDatasetId: null })
-    await waitFor(() => expect(screen.getByDisplayValue('SELECT 1;')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByDisplayValue('select 1;')).toBeInTheDocument())
 
     useUiStore.setState({ activeDatasetId: 'ds_001' })
-    await waitFor(() => expect(screen.getByDisplayValue('SELECT * FROM foo LIMIT 50;')).toBeInTheDocument())
+    await waitFor(() =>
+      expect((screen.getByLabelText('SQL editor') as HTMLTextAreaElement).value).toBe(
+        ['select', '    *', 'from', '    foo', 'limit', '    50;'].join('\n'),
+      ),
+    )
 
     await user.clear(screen.getByLabelText('SQL editor'))
     await user.type(screen.getByLabelText('SQL editor'), 'SELECT history')
@@ -245,7 +249,7 @@ describe('QueryPage', () => {
     wrap(<QueryPage />)
 
     const editor = screen.getByLabelText('SQL editor')
-    await waitFor(() => expect(screen.getByDisplayValue('SELECT 1;')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByDisplayValue('select 1;')).toBeInTheDocument())
     fireEvent.change(editor, { target: { value: 'SELECT latest' } })
     await waitFor(() => expect(screen.getByDisplayValue('SELECT latest')).toBeInTheDocument())
     const maxRows = screen.getByRole('spinbutton')

@@ -38,7 +38,8 @@ frontend/node_modules/.bin/vite:
 # `socket hang up` errors in the Vite proxy log.
 dev: frontend/node_modules/.bin/vite
 	bash -c '\
-		(cd backend && uv run uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000) & pid1=$$!; \
+		token=$$(cd backend && uv run python -c "import secrets; print(secrets.token_urlsafe(32))"); \
+		(cd backend && DCC_DEV_UI_ORIGIN=http://localhost:5173 DCC_LOCAL_API_TOKEN=$$token uv run uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000) & pid1=$$!; \
 		(cd frontend && npm run dev) & pid2=$$!; \
 		trap "kill $$pid1 $$pid2 2>/dev/null" INT TERM; \
 		wait'

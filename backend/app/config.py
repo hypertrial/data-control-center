@@ -61,6 +61,8 @@ class Settings(BaseSettings):
 
     # Optional built frontend (Vite `dist`). When set to an existing directory, served at `/` after API routes.
     ui_dist_path: Path | None = None
+    # Optional local dev UI origin. When set, backend `/` redirects to the Vite app instead of 404ing.
+    dev_ui_origin: str | None = None
 
     # Local LLM (Ollama default)
     llm_base_url: str = "http://127.0.0.1:11434"

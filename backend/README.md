@@ -118,8 +118,11 @@ Inference: [`app/services/profiler/`](app/services/profiler/).
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | **`DCC_UI_DIST_PATH`** | (unset) | Directory with Vite `index.html` for SPA at `/` |
+| **`DCC_DEV_UI_ORIGIN`** | (unset) | Local HTTP Vite origin used by `make dev` so backend `/` redirects to the dev UI |
 
-Run from repo root: **`make serve`**.
+Run from repo root: **`make serve`** for the built UI, or **`make dev`** for the
+two-server development workflow. **`DCC_DEV_UI_ORIGIN`** accepts only local HTTP origins
+(`localhost`, `127.0.0.1`, or `::1`).
 
 ### Local LLM (Ask)
 

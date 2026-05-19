@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { format } from 'sql-formatter'
 import { History, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
@@ -12,7 +11,7 @@ import { PageContainer } from '@/components/ui/section'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
-import { quoteIdent, sqlSelectStarFromView } from '@/lib/sql'
+import { formatAnalyticsSql, quoteIdent, sqlSelectStarFromView } from '@/lib/sql'
 import { useUiStore } from '@/store/uiStore'
 import { SchemaDatasetBlock } from '@/features/query/SchemaDatasetBlock'
 import { SqlEditor } from '@/features/query/SqlEditor'
@@ -24,7 +23,7 @@ export function QueryPage() {
   const activeId = useUiStore((s) => s.activeDatasetId)
   const sqlInjectTick = useUiStore((s) => s.sqlInjectTick)
 
-  const [sqlText, setSqlText] = useState(() => 'SELECT 1;')
+  const [sqlText, setSqlText] = useState(() => 'select 1;')
   const [maxRows, setMaxRows] = useState(1000)
   const [history, setHistory] = useState<string[]>(() => loadSqlHistory())
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -103,14 +102,14 @@ export function QueryPage() {
       if (templateKey.startsWith('pending:')) {
         if (prevTemplateKey.current !== templateKey) {
           prevTemplateKey.current = templateKey
-          setSqlText('SELECT 1;')
+          setSqlText('select 1;')
         }
         return
       }
 
       if (prevTemplateKey.current !== templateKey) {
         prevTemplateKey.current = templateKey
-        if (!activeId) setSqlText('SELECT 1;')
+        if (!activeId) setSqlText('select 1;')
         else if (activeViewName) setSqlText(sqlSelectStarFromView(activeViewName, 50))
       }
     }
@@ -157,7 +156,7 @@ export function QueryPage() {
               variant="outline"
               onClick={() => {
                 try {
-                  setSqlText(format(sqlText, { language: 'duckdb' }))
+                  setSqlText(formatAnalyticsSql(sqlText))
                   toast.success('SQL formatted')
                 } catch (e) {
                   toast.error((e as Error).message)

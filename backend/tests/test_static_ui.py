@@ -9,6 +9,36 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 
 
+def test_dev_ui_origin_redirects_root_without_static_dist(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("DCC_WORKSPACE_DB_PATH", str(tmp_path / "w.duckdb"))
+    monkeypatch.setenv("DCC_REQUIRE_LOCAL_API_TOKEN", "false")
+    monkeypatch.delenv("DCC_UI_DIST_PATH", raising=False)
+    monkeypatch.setenv("DCC_DEV_UI_ORIGIN", "http://localhost:5173")
+
+    with TestClient(create_app(), follow_redirects=False) as client:
+        r_index = client.get("/")
+        assert r_index.status_code == 307
+        assert r_index.headers["location"] == "http://localhost:5173/"
+
+        r_health = client.get("/api/health")
+        assert r_health.status_code == 200
+
+
+def test_dev_ui_origin_rejects_non_local_origin(tmp_path, monkeypatch, caplog) -> None:
+    monkeypatch.setenv("DCC_WORKSPACE_DB_PATH", str(tmp_path / "w.duckdb"))
+    monkeypatch.setenv("DCC_REQUIRE_LOCAL_API_TOKEN", "false")
+    monkeypatch.delenv("DCC_UI_DIST_PATH", raising=False)
+    monkeypatch.setenv("DCC_DEV_UI_ORIGIN", "https://example.com")
+
+    with caplog.at_level(logging.WARNING):
+        app = create_app()
+
+    assert any("DCC_DEV_UI_ORIGIN must be a local http origin" in r.message for r in caplog.records)
+
+    with TestClient(app, follow_redirects=False) as client:
+        assert client.get("/").status_code == 404
+
+
 def test_ui_dist_serves_spa_and_api_coexist(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("DCC_WORKSPACE_DB_PATH", str(tmp_path / "w.duckdb"))
     monkeypatch.setenv("DCC_REQUIRE_LOCAL_API_TOKEN", "false")

@@ -1,4 +1,15 @@
 /** DuckDB-oriented SQL quoting helpers for generated snippets (UI → `/api/query`). */
+import { format } from 'sql-formatter'
+
+const ANALYTICS_SQL_FORMAT_OPTIONS = {
+  language: 'duckdb',
+  keywordCase: 'lower',
+  tabWidth: 4,
+} as const
+
+export function formatAnalyticsSql(sql: string): string {
+  return format(sql, ANALYTICS_SQL_FORMAT_OPTIONS)
+}
 
 export function quoteIdent(name: string): string {
   if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) return name
@@ -15,16 +26,16 @@ export function quoteLiteral(value: unknown): string {
 
 export function sqlSelectStarFromView(viewName: string, limit = 50): string {
   const v = quoteIdent(viewName)
-  return `SELECT * FROM ${v} LIMIT ${limit};`
+  return formatAnalyticsSql(`SELECT * FROM ${v} LIMIT ${limit};`)
 }
 
 export function sqlSelectColumnFromView(viewName: string, column: string, limit = 100): string {
   const v = quoteIdent(viewName)
   const col = quoteIdent(column)
-  return `SELECT ${col} FROM ${v} LIMIT ${limit};`
+  return formatAnalyticsSql(`SELECT ${col} FROM ${v} LIMIT ${limit};`)
 }
 
 export function sqlWherePkSample(viewName: string, column: string, value: unknown, limit = 50): string {
   const v = quoteIdent(viewName)
-  return `SELECT * FROM ${v} WHERE ${quoteIdent(column)} = ${quoteLiteral(value)} LIMIT ${limit};`
+  return formatAnalyticsSql(`SELECT * FROM ${v} WHERE ${quoteIdent(column)} = ${quoteLiteral(value)} LIMIT ${limit};`)
 }

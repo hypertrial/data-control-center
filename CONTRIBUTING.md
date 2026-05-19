@@ -25,7 +25,8 @@ make dev
 ```
 
 `make dev` starts the FastAPI backend on `127.0.0.1:8000` and the Vite frontend on
-`127.0.0.1:5173`.
+`127.0.0.1:5173`. It pins a per-run local API token so Uvicorn reloads do not invalidate
+the frontend session while you edit backend code.
 
 For manual per-tier commands (separate terminals), see
 [`backend/README.md`](backend/README.md#run-locally) and

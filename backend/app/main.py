@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 from app.api.agent import router as agent_router
 from app.api.ask import router as ask_router
@@ -70,6 +71,16 @@ def create_app() -> FastAPI:
     app.include_router(ask_router)
     app.include_router(saved_queries_router)
     app.include_router(jobs_router)
+
+    if settings.ui_dist_path is None and settings.dev_ui_origin:
+        parsed_dev_ui = urlsplit(settings.dev_ui_origin)
+        if parsed_dev_ui.scheme != "http" or parsed_dev_ui.hostname not in {"localhost", "127.0.0.1", "::1"}:
+            logger.warning("DCC_DEV_UI_ORIGIN must be a local http origin: %s", settings.dev_ui_origin)
+        else:
+
+            @app.get("/", include_in_schema=False)
+            async def dev_ui_redirect() -> RedirectResponse:
+                return RedirectResponse(settings.dev_ui_origin.rstrip("/") + "/")
 
     if settings.ui_dist_path is not None:
         ui_root = settings.ui_dist_path.expanduser()
