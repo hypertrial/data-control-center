@@ -14,6 +14,7 @@ from app.services.workspace_engine import (
     sanitize_sql_identifier,
 )
 from app.services.workspace_schema import UnsupportedWorkspaceSchemaError, WorkspaceSchema
+from app.services.ask_store import AskStore
 from app.services.workspace_stores import JobStore, ProfileStore, SavedQueryStore
 
 __all__ = [
@@ -34,6 +35,7 @@ class Workspace:
         self._profiles = ProfileStore(self._engine)
         self._saved_queries = SavedQueryStore(self._engine)
         self._jobs = JobStore(self._engine)
+        self._ask = AskStore(self._engine)
 
     @property
     def path(self) -> Path:
@@ -42,6 +44,10 @@ class Workspace:
     @property
     def connection(self) -> duckdb.DuckDBPyConnection:
         return self._engine.connection
+
+    @property
+    def ask(self) -> AskStore:
+        return self._ask
 
     def lock_db(self):
         return self._engine.lock_db()
@@ -123,6 +129,9 @@ class Workspace:
 
     def job_finish(self, job_id: str, status: str, error: str | None = None) -> None:
         self._jobs.job_finish(job_id, status, error)
+
+    def job_find_active_for_dataset(self, dataset_id: str, kind: str) -> str | None:
+        return self._jobs.job_find_active_for_dataset(dataset_id, kind)
 
     def job_get(self, job_id: str) -> dict[str, Any] | None:
         return self._jobs.job_get(job_id)
