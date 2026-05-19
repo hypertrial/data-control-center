@@ -1,0 +1,5 @@
+{"event_id":"E001","customer_id":"C001","event_type":"signup","occurred_at":"2026-01-08T09:15:00Z"}
+{"event_id":"E002","customer_id":"C002","event_type":"signup","occurred_at":"2026-01-14T11:05:00Z"}
+{"event_id":"E003","customer_id":"C001","event_type":"upload","occurred_at":"2026-01-15T16:30:00Z"}
+{"event_id":"E004","customer_id":"C003","event_type":"signup","occurred_at":"2026-02-03T13:45:00Z"}
+{"event_id":"E005","customer_id":"C004","event_type":"query","occurred_at":"2026-02-24T10:20:00Z"}

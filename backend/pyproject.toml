@@ -4,6 +4,23 @@ version = "0.1.0"
 description = "FastAPI backend for Data Control Center (DuckDB + Polars)"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "Hypertrial" },
+]
+keywords = ["data", "duckdb", "fastapi", "local-first", "profiling"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database :: Front-Ends",
+    "Topic :: Software Development :: User Interfaces",
+]
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
@@ -18,10 +35,17 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "pip-audit>=2.7.0",
     "pytest>=8.3.0",
     "pytest-cov>=6.0.0",
     "ruff>=0.8.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/hypertrial/data-control-center"
+Repository = "https://github.com/hypertrial/data-control-center"
+Issues = "https://github.com/hypertrial/data-control-center/issues"
+Security = "https://github.com/hypertrial/data-control-center/security/advisories/new"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

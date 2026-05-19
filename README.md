@@ -11,6 +11,9 @@ Local-first control center for opening, profiling, exploring, and querying many 
 
 - **Backend** (run, tests, workspace DB, profiling env knobs): [`backend/README.md`](backend/README.md)
 - **Frontend** (Vite proxy, layout, TanStack keys, coverage): [`frontend/README.md`](frontend/README.md)
+- **Five-minute tour** (safe example upload workflow): [`docs/5-minute-tour.md`](docs/5-minute-tour.md)
+- **Contributing** (developer workflow and validation): [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- **Security policy** (local-only threat model and reporting): [`SECURITY.md`](SECURITY.md)
 
 ## Prerequisites
 
@@ -35,7 +38,11 @@ Bare `make` prints the same as `make help`. Needs **bash** for `make dev` (defau
 
 If **`frontend/node_modules`** is missing, **`make dev`** and **`make frontend`** run **`npm install`** in **`frontend/`** once (tracked via the Vite binary) so you do not hit **`vite: command not found`**. **`make install`** is still recommended for a first-time setup because it also syncs the backend with **`uv`**.
 
-Other targets: `make help`, `make backend`, `make frontend`.
+Other targets: `make help`, `make backend`, `make frontend`, `make clean-local`.
+
+`make clean-local` deletes local app state and generated artifacts, including
+workspace DuckDB files, upload copies, coverage output, build output, and Python
+caches. Run it only when you intentionally want to discard local state.
 
 **From repo root**, [`package.json`](package.json) delegates to **`frontend/`**: **`npm run dev`**, **`npm run lint`**, **`npm test`**, **`npm run build`**. You still need the API when running the UI (`make backend` in another terminal, or **`make dev`** for both).
 
@@ -61,6 +68,8 @@ Open `http://localhost:5173`. The dev server proxies `/api` to the backend.
 
 ## Usage notes
 
+- To evaluate the app without private data, use the tiny synthetic fixtures in
+  [`examples/`](examples/) and follow the [`five-minute tour`](docs/5-minute-tour.md).
 - In the **web UI**, add datasets by **uploading files** (drag-and-drop or folder selection). The API stores copies under **`.dcc_uploads/`** (relative to the backend cwd unless overridden), validates them, then registers them; tune size limits with **`DCC_UPLOAD_MAX_BYTES_PER_FILE`** (default 256 MiB), **`DCC_UPLOAD_MAX_BATCH_BYTES`**, and **`DCC_UPLOAD_MAX_FILES_PER_BATCH`**.
 - Direct API registration from **absolute file paths** or folders is disabled by default. Enable **`DCC_ENABLE_PATH_REGISTRATION=true`** only for advanced local workflows, and keep **`DCC_REGISTRATION_ALLOWED_ROOTS`** narrow.
 - DuckDB creates one internal **view per dataset** whose SQL name is derived from the **file stem** (e.g. `player_ratings_2006_2026.parquet` → `player_ratings_2006_2026`). If two files share the same stem, the later registration gets a suffix such as `ratings_ds_002`. Reserved SQL-like names get a `_dcc` suffix. **`GET /api/datasets`** includes **`view_name`** on each summary so the UI can quote it correctly. Ad-hoc SQL must reference at least one registered view when datasets exist.
@@ -91,6 +100,18 @@ Data Control Center is hardened for **local workstation use only**. By default t
 - lets the browser frontend bootstrap that token from **`GET /api/local-session`** only from local requests.
 
 For CLI/API scripts, either call **`GET /api/local-session`** locally or start the backend with **`DCC_LOCAL_API_TOKEN=<token>`** and send **`X-DCC-Local-Token: <token>`**. Do not expose the backend on a LAN or public interface unless you also accept the unsafe local-only override risk.
+
+This is not a hosted application security model:
+
+- Do not use it for production, multi-user, shared-network, or public deployments.
+- The local API token is not user authentication, authorization, tenancy, or a
+  remote access control layer.
+- Uploaded and registered datasets can contain sensitive local files.
+- `.dcc_workspace.duckdb` and `.dcc_uploads/` are private local data. Back up,
+  retain, or delete them according to your own local data policies.
+
+Report security vulnerabilities through GitHub private vulnerability reporting;
+do not open public issues for suspected vulnerabilities.
 
 ## Security and registration paths
 
@@ -139,6 +160,10 @@ On push and pull requests to **`main`** / **`master`**, [`.github/workflows/ci.y
 
 - **Backend:** `uv sync --extra dev`, `uv run ruff check app tests`, `uv run pytest`
 - **Frontend:** `npm ci`, `npm run lint`, `npm test`, `npm run test:coverage`
+
+Additional scheduled security automation runs CodeQL, npm audit, pip-audit, and
+gitleaks history scanning. Renovate is configured for npm, GitHub Actions, and
+Python dependency updates.
 
 ### Coverage
 

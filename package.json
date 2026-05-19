@@ -2,6 +2,24 @@
   "name": "data-control-center",
   "private": true,
   "description": "Root scripts delegate to frontend/; use `make dev` to run API + UI.",
+  "license": "MIT",
+  "author": "Hypertrial",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hypertrial/data-control-center.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hypertrial/data-control-center/issues"
+  },
+  "homepage": "https://github.com/hypertrial/data-control-center#readme",
+  "keywords": [
+    "data",
+    "duckdb",
+    "local-first",
+    "profiling",
+    "react",
+    "fastapi"
+  ],
   "scripts": {
     "dev": "npm run dev --prefix frontend",
     "build": "npm run build --prefix frontend",

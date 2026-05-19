@@ -207,6 +207,35 @@ def test_upload_validation_direct_paths(tmp_path: Path) -> None:
         validate_upload_file(small_parquet, settings)
 
 
+def test_example_fixtures_validate_and_register(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    examples = [
+        repo_root / "examples" / "customers.csv",
+        repo_root / "examples" / "events.jsonl",
+        repo_root / "examples" / "orders.parquet",
+    ]
+    assert all(path.exists() for path in examples)
+
+    settings = Settings(
+        workspace_db_path=tmp_path / "w.duckdb",
+        allow_arbitrary_registration_paths=True,
+        enable_path_registration=True,
+    )
+    ws = Workspace(settings)
+    try:
+        reg = DatasetRegistry(ws, settings)
+        view_names: set[str] = set()
+        for path in examples:
+            validate_upload_file(path, settings)
+            ds = reg.register_path(path)
+            view_names.add(ds.view_name)
+            assert ds.row_count is not None
+            assert ds.row_count > 0
+        assert view_names == {"customers", "events", "orders"}
+    finally:
+        ws.close()
+
+
 def test_upload_validation_text_edge_cases(tmp_path: Path) -> None:
     settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
     for name, body in [

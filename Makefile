@@ -7,7 +7,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install dev backend frontend
+.PHONY: help install dev backend frontend clean-local
 
 help:
 	@echo "Data Control Center (run from repo root)"
@@ -16,6 +16,8 @@ help:
 	@echo "  make dev       Run API + UI together (Ctrl+C stops both)"
 	@echo "  make backend   Run FastAPI only (port 8000)"
 	@echo "  make frontend  Run Vite only (port 5173, proxies /api)"
+	@echo "  make clean-local"
+	@echo "                  Delete local app state and generated artifacts"
 
 install:
 	cd backend && uv sync --extra dev
@@ -42,3 +44,12 @@ backend:
 
 frontend: frontend/node_modules/.bin/vite
 	cd frontend && npm run dev
+
+clean-local:
+	@echo "Deleting local app state and generated artifacts..."
+	rm -rf .coverage .dcc_uploads .pytest_cache
+	rm -f .dcc_workspace.duckdb .dcc_workspace.duckdb.wal .dcc_workspace.duckdb.tmp .dcc_workspace.duckdb.corrupt* .dcc_workspace.duckdb.wal.corrupt*
+	rm -rf backend/.coverage backend/.pytest_cache backend/.ruff_cache backend/htmlcov
+	rm -f backend/.dcc_workspace.duckdb backend/.dcc_workspace.duckdb.wal backend/.dcc_workspace.duckdb.tmp backend/.dcc_workspace.duckdb.corrupt* backend/.dcc_workspace.duckdb.wal.corrupt*
+	rm -rf frontend/coverage frontend/dist
+	find . -type d -name __pycache__ -prune -exec rm -rf {} +

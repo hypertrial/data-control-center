@@ -1,0 +1,21 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["npm", "github-actions", "pep621", "uv"],
+  "labels": ["dependencies"],
+  "schedule": ["before 5am on monday"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 5am on monday"]
+  },
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "minor and patch dependency updates"
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "groupName": "major dependency updates"
+    }
+  ]
+}

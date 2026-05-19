@@ -2,6 +2,18 @@
   "name": "frontend",
   "private": true,
   "version": "0.0.0",
+  "description": "React frontend for Data Control Center.",
+  "license": "MIT",
+  "author": "Hypertrial",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hypertrial/data-control-center.git",
+    "directory": "frontend"
+  },
+  "bugs": {
+    "url": "https://github.com/hypertrial/data-control-center/issues"
+  },
+  "homepage": "https://github.com/hypertrial/data-control-center#readme",
   "type": "module",
   "scripts": {
     "dev": "vite",
