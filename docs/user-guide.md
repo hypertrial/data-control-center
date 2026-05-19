@@ -96,22 +96,37 @@ Optional local LLM assistant via [Ollama](https://ollama.com).
    For a different default, set **`DCC_LLM_MODEL`** when starting the backend (see
    [`backend/README.md`](../backend/README.md#local-llm-ask)). Pulling models remains a
    manual Ollama step; the app only lists models already installed locally.
-3. Keep the Ollama daemon running, then **`make dev`**. Open **Ask**, open **Options**
+3. Keep the Ollama daemon running, then **`make dev`**. Open **Ask**, use **Ask settings**
    for model, row limit, and dataset scope, type a question, and send.
 
 The backend drafts a read-only **`SELECT`/`WITH`**, runs it through the same validation
 as the SQL tab, and returns a concise answer. Open generated SQL in the **SQL** tab from
 the turn UI.
 
-**Composer:** A compact sticky bar with **Ask (stream)** on the right. Summary chips show
-the current model, max preview rows, and dataset scope; click a chip or **Options** to change
-settings. Suggested prompt chips stay above the composer (collapse to a strip when the thread
-has turns).
+**First visit:** With no turns in the active chat, the main pane shows a centered **Ask your
+data** hero with profile-aware prompt cards. After the first question (or when you open a chat
+with history), the layout switches to the thread view.
 
-**Submit / stop:** **⌘+Enter** or **Ctrl+Enter** to submit; **Esc** stops an in-flight stream.
+**Composer:** A sticky bar at the bottom with **Ask** on the right. **Ask settings** opens
+model, max preview rows, and dataset scope in one popover. A **history** button recalls recent
+questions from the active chat. Suggested prompts appear in a compact strip just above the
+composer when the thread has turns.
 
-**Conversations:** Prior turns are stored in the workspace and can be resumed from the
-Ask sidebar (hover the **(i)** icon on **Conversations** for details).
+**Context bar:** Above the thread, chips show the active model, row limit, and dataset scope
+(click to jump into the matching settings section). On narrow screens, **Chats** opens the
+conversation sheet.
+
+**Per-turn actions:** Copy answer, copy markdown, regenerate, anchor (scroll link), and delete
+turn. Failed streams that do not persist are kept locally so you can retry after switching chats.
+
+**Follow-ups:** After a completed turn, suggested follow-up chips appear above the composer.
+
+**Submit / stop:** **⌘+Enter** or **Ctrl+Enter** to submit; **⌘+.** or **Esc** stops an
+in-flight stream; **⌘+,** opens settings.
+
+**Conversations:** Search by title in the left rail. New chats auto-title from the first
+question. Rows show status (OK / Error), relative time, and dataset chips when scoped.
+Prior turns are stored in the workspace (hover **(i)** on **Conversations** for details).
 
 **HTTP API:** **`GET /api/llm/models`** lists locally installed Ollama models.
 **`POST /api/agent/ask/stream`** accepts an optional **`model`** field (defaults to

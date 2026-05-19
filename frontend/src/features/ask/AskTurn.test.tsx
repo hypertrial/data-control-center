@@ -53,9 +53,7 @@ describe('AskTurn', () => {
 
     expect(screen.getByText('Why did revenue drop?')).toBeInTheDocument()
     expect(screen.getByText('Because')).toBeInTheDocument()
-    expect(screen.getByText('qwen')).toBeInTheDocument()
-    expect(screen.getByText('1 attempt')).toBeInTheDocument()
-    expect(screen.getByText('123ms')).toBeInTheDocument()
+    expect(screen.getByText(/qwen · 1 attempt · 123ms/)).toBeInTheDocument()
     expect(screen.getByText('West')).toBeInTheDocument()
     expect(screen.queryByText('Model: qwen')).not.toBeInTheDocument()
 

@@ -17,6 +17,8 @@ function maxScrollTop(el: HTMLDivElement): number {
   return Math.max(0, el.scrollHeight - el.clientHeight)
 }
 
+const SCROLL_PAUSE_MS = 800
+
 export function AskThread({
   conversationId,
   turns,
@@ -25,6 +27,7 @@ export function AskThread({
   busy,
   onOpenInSql,
   onRetry,
+  onDeleteTurn,
 }: {
   conversationId: string | null
   turns: AskTurnType[]
@@ -33,9 +36,11 @@ export function AskThread({
   busy: boolean
   onOpenInSql: (sql: string) => void
   onRetry: (q: string, model?: string | null) => void
+  onDeleteTurn?: (turnId: string) => void | Promise<void>
 }) {
   const threadRef = useRef<HTMLDivElement | null>(null)
   const stickToBottomRef = useRef(true)
+  const scrollPausedUntilRef = useRef(0)
   const prevHeightRef = useRef(0)
   const prevConversationIdRef = useRef<string | null | undefined>(undefined)
   const prevStreamingQuestionRef = useRef<string | null>(null)
@@ -44,8 +49,13 @@ export function AskThread({
   const onScroll = useCallback(() => {
     const el = threadRef.current
     if (!el) return
+    scrollPausedUntilRef.current = Date.now() + SCROLL_PAUSE_MS
     stickToBottomRef.current = isNearBottom(el)
     if (stickToBottomRef.current) setShowJumpToLatest(false)
+  }, [])
+
+  const canAutoPin = useCallback(() => {
+    return stickToBottomRef.current && Date.now() >= scrollPausedUntilRef.current
   }, [])
 
   const scrollThreadToBottom = useCallback((behavior: ScrollBehavior) => {
@@ -100,13 +110,13 @@ export function AskThread({
     const el = threadRef.current
     if (!el) return
 
-    if (stickToBottomRef.current) {
+    if (canAutoPin()) {
       el.scrollTop = maxScrollTop(el)
     } else if (el.scrollHeight > prevHeightRef.current) {
       setShowJumpToLatest(true)
     }
     prevHeightRef.current = el.scrollHeight
-  }, [turns, streaming, busy])
+  }, [turns, streaming, busy, canAutoPin])
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -117,7 +127,13 @@ export function AskThread({
         className={`flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pr-1 ${THREAD_BOTTOM_PADDING}`}
       >
         {turns.map((t) => (
-          <AskTurnCard key={t.turn_id} turn={t} onOpenInSql={onOpenInSql} onRetry={onRetry} />
+          <AskTurnCard
+            key={t.turn_id}
+            turn={t}
+            onOpenInSql={onOpenInSql}
+            onRetry={onRetry}
+            onDelete={onDeleteTurn}
+          />
         ))}
         {showStreaming && streaming && streamingQuestion ? (
           <StreamingAskCard

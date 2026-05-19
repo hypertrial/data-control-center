@@ -34,8 +34,9 @@ describe('AskResultTable', () => {
     expect(write).toHaveBeenCalledWith('id,name\n1,"a,b"\n2,x')
     await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('CSV copied to clipboard'))
 
-    await user.click(screen.getByText('a,b', { selector: 'td .truncate' }))
-    const dlg = screen.getByRole('dialog')
+    const grid = screen.getByTestId('sql-results-grid')
+    await user.dblClick(within(grid).getByText('a,b'))
+    const dlg = await screen.findByRole('dialog')
     expect(within(dlg).getByText('a,b')).toBeInTheDocument()
 
     write.mockRestore()

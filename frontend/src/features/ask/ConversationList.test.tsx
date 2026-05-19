@@ -95,7 +95,7 @@ describe('ConversationList', () => {
     wrap(<ConversationList />)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Rename conversation' })).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'Rename conversation' }))
-    const input = screen.getByRole('textbox')
+    const input = screen.getByDisplayValue('First chat')
     await user.clear(input)
     await user.type(input, 'Renamed')
     await user.click(screen.getByRole('button', { name: /^Save$/i }))

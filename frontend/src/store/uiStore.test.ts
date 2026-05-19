@@ -44,4 +44,32 @@ describe('uiStore', () => {
     useUiStore.getState().setSqlSchemaCollapsed(false)
     expect(useUiStore.getState().sqlSchemaCollapsed).toBe(false)
   })
+
+  it('stores per-conversation Ask prefs and local error turns', () => {
+    useUiStore.getState().setAskConversationPrefs('c1', { maxRows: 50, scope: ['ds_a'] })
+    expect(useUiStore.getState().askConversationPrefs.c1).toEqual({
+      maxRows: 50,
+      scope: ['ds_a'],
+    })
+
+    useUiStore.getState().pushAskErrorTurn('c1', {
+      id: 'err-1',
+      question: 'Why?',
+      error: 'failed',
+      createdAt: 1,
+    })
+    expect(useUiStore.getState().recentErrorsByConversation.c1).toHaveLength(1)
+
+    useUiStore.getState().clearAskErrorsMatchingQuestion('c1', 'Why?')
+    expect(useUiStore.getState().recentErrorsByConversation.c1).toHaveLength(0)
+
+    useUiStore.getState().pushAskErrorTurn('c1', {
+      id: 'err-2',
+      question: 'Why?',
+      error: 'failed again',
+      createdAt: 2,
+    })
+    useUiStore.getState().removeAskErrorTurn('c1', 'err-2')
+    expect(useUiStore.getState().recentErrorsByConversation.c1).toHaveLength(0)
+  })
 })

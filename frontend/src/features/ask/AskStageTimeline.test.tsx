@@ -21,8 +21,8 @@ describe('AskStageTimeline', () => {
       <AskStageTimeline stages={stages} sqlAttempts={sqlAttempts} totalMs={42} busy={false} />,
     )
     expect(screen.getByText('Context')).toBeInTheDocument()
-    expect(screen.getByText('42 ms')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /Attempts \(2\)/ }))
+    expect(screen.getByText('42ms')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /SQL attempts \(2\)/ }))
     expect(screen.getByText(/Syntax error near x/)).toBeInTheDocument()
   })
 })

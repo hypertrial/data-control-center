@@ -11,6 +11,8 @@ const ROWS: Array<{ keys: string; action: string }> = [
   { keys: 'g y', action: 'Go to SQL' },
   { keys: 'r', action: 'Invalidate queries / soft refresh' },
   { keys: '⌘ Enter', action: 'Ask: submit · SQL: run query / selection' },
+  { keys: '⌘ .', action: 'Ask: stop streaming' },
+  { keys: '⌘ ,', action: 'Ask: open settings popover' },
   { keys: '⌘ Shift F', action: 'SQL: format query' },
   { keys: '⌘ S', action: 'SQL: open save dialog' },
 ]

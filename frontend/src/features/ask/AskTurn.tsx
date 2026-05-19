@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Copy, Link2, RefreshCw, Trash2 } from 'lucide-react'
 import CodeMirror from '@uiw/react-codemirror'
 import { vscodeDark } from '@uiw/codemirror-theme-vscode'
 import { sql as sqlLang } from '@codemirror/lang-sql'
@@ -118,15 +119,64 @@ function TurnMetaSummary({
   elapsedMs?: number | null
 }) {
   const attemptLabel = attemptCount === 1 ? '1 attempt' : `${attemptCount} attempts`
+  const parts = [
+    model ?? null,
+    attemptCount > 0 ? attemptLabel : null,
+    elapsedMs != null ? formatElapsedMs(elapsedMs) : null,
+  ].filter(Boolean)
+  return <div className="text-[10px] text-fg-muted">{parts.join(' · ')}</div>
+}
+
+function TurnActionToolbar({
+  answer,
+  onCopyAnswer,
+  onCopyMarkdown,
+  onRegenerate,
+  onDelete,
+  onAnchor,
+}: {
+  answer: string
+  onCopyAnswer: () => void
+  onCopyMarkdown: () => void
+  onRegenerate?: () => void
+  onDelete?: () => void
+  onAnchor: () => void
+}) {
   return (
-    <div className="flex flex-wrap items-center gap-2 text-[10px] text-fg-muted">
-      {model ? (
-        <span className="rounded-full border border-border-default bg-black/20 px-2 py-0.5 font-mono text-[10px] text-fg">
-          {model}
-        </span>
+    <div className="flex flex-wrap gap-1">
+      {answer ? (
+        <>
+          <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={onCopyAnswer}>
+            <Copy className="h-3 w-3" />
+            Copy answer
+          </Button>
+          <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={onCopyMarkdown}>
+            Copy markdown
+          </Button>
+        </>
       ) : null}
-      {attemptCount > 0 ? <span>{attemptLabel}</span> : null}
-      {elapsedMs != null ? <span>{formatElapsedMs(elapsedMs)}</span> : null}
+      {onRegenerate ? (
+        <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={onRegenerate}>
+          <RefreshCw className="h-3 w-3" />
+          Regenerate
+        </Button>
+      ) : null}
+      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={onAnchor}>
+        <Link2 className="h-3 w-3" />
+        Anchor
+      </Button>
+      {onDelete ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1 px-2 text-xs text-fg-muted hover:text-[hsl(var(--status-error))]"
+          onClick={onDelete}
+        >
+          <Trash2 className="h-3 w-3" />
+          Delete
+        </Button>
+      ) : null}
     </div>
   )
 }
@@ -135,10 +185,12 @@ export function AskTurnCard({
   turn,
   onOpenInSql,
   onRetry,
+  onDelete,
 }: {
   turn: AskTurnType
   onOpenInSql: (sql: string) => void
   onRetry?: (question: string, model?: string | null) => void
+  onDelete?: (turnId: string) => void
 }) {
   const attempts = adaptAttemptsToTimeline(turn.attempts ?? [])
   const stages: AskStageEntry[] =
@@ -154,14 +206,36 @@ export function AskTurnCard({
   const displayAnswer = turn.answer ?? ''
   const showDebugTimeline = !!turn.error && attempts.length > 0
 
+  const anchorTurn = () => {
+    window.location.hash = `turn=${turn.turn_id}`
+    document.getElementById(`turn-${turn.turn_id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   return (
-    <div className="space-y-3 rounded-xl border border-border-default bg-white/[0.04] p-4">
+    <div
+      id={`turn-${turn.turn_id}`}
+      className="scroll-mt-4 space-y-3 rounded-xl border border-border-default bg-white/[0.04] p-4"
+    >
       <div className="space-y-1.5">
         <div className="rounded-lg bg-black/25 px-3 py-2 text-sm text-white/95">{turn.question}</div>
         <TurnMetaSummary
           model={turn.model}
           attemptCount={attempts.length}
           elapsedMs={turn.elapsed_ms}
+        />
+        <TurnActionToolbar
+          answer={displayAnswer}
+          onCopyAnswer={() => {
+            void navigator.clipboard.writeText(displayAnswer)
+            toast.success('Answer copied')
+          }}
+          onCopyMarkdown={() => {
+            void navigator.clipboard.writeText(displayAnswer)
+            toast.success('Markdown copied')
+          }}
+          onRegenerate={onRetry ? () => onRetry(turn.question, turn.model) : undefined}
+          onDelete={onDelete ? () => onDelete(turn.turn_id) : undefined}
+          onAnchor={anchorTurn}
         />
       </div>
       {showDebugTimeline ? (

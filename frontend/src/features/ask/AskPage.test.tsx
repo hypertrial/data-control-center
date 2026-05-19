@@ -26,10 +26,10 @@ const minimalProfile: DatasetProfile = {
   main_numeric_measures: [],
   structure_version: 'v4',
   temporal_columns: [],
-  entity_id_columns: [],
+  entity_id_columns: [{ name: 'id', confidence: 'high' }],
   grain_key_candidates: [],
-  primary_grain_key_columns: [],
-  primary_temporal_column: null,
+  primary_grain_key_columns: ['id'],
+  primary_temporal_column: { name: 'created_at', kind: 'continuous_datetime', confidence: 'high' },
   measure_candidates: [],
   structure_warnings: [],
   column_profiles: [],
@@ -40,6 +40,8 @@ const h = vi.hoisted(() => ({
   askAgentStream: vi.fn(),
   listAskConversations: vi.fn(),
   createAskConversation: vi.fn(),
+  patchAskConversation: vi.fn(),
+  deleteAskTurn: vi.fn(),
   listAskTurns: vi.fn(),
   listDatasets: vi.fn(),
   listLlmModels: vi.fn(),
@@ -56,6 +58,8 @@ vi.mock('@/api/client', async (importOriginal) => {
       ...mod.api,
       listAskConversations: h.listAskConversations,
       createAskConversation: h.createAskConversation,
+      patchAskConversation: h.patchAskConversation,
+      deleteAskTurn: h.deleteAskTurn,
       listAskTurns: h.listAskTurns,
       listDatasets: h.listDatasets,
       listLlmModels: h.listLlmModels,
@@ -90,6 +94,23 @@ describe('AskPage', () => {
   beforeEach(() => {
     h.askAgentStream.mockReset()
     h.listAskConversations.mockResolvedValue([])
+    h.patchAskConversation.mockResolvedValue({
+      conversation_id: 'c_test',
+      title: 'Renamed',
+      dataset_ids: null,
+      created_at: '2020-01-01T00:00:00',
+      updated_at: '2020-01-01T00:00:00',
+    })
+    h.deleteAskTurn.mockResolvedValue(undefined)
+    h.listAskConversations.mockResolvedValue([
+      {
+        conversation_id: 'c_test',
+        title: 'New conversation',
+        dataset_ids: null,
+        created_at: '2020-01-01T00:00:00',
+        updated_at: '2020-01-01T00:00:00',
+      },
+    ])
     h.createAskConversation.mockResolvedValue({
       conversation_id: 'c_test',
       title: 'New conversation',
@@ -137,7 +158,13 @@ describe('AskPage', () => {
 
   it('disables ask when question empty', () => {
     wrap(<AskPage />)
-    expect(screen.getByRole('button', { name: /Ask \(stream\)/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^Ask$/ })).toBeDisabled()
+  })
+
+  it('shows hero on first visit without turns', async () => {
+    wrap(<AskPage />)
+    await waitFor(() => expect(screen.getByTestId('ask-hero')).toBeInTheDocument())
+    expect(screen.getByText('Ask your data')).toBeInTheDocument()
   })
 
   it('lists dataset name in scope options when datasets exist', async () => {
@@ -156,7 +183,7 @@ describe('AskPage', () => {
     ])
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     wrap(<AskPage />)
-    await user.click(await screen.findByRole('button', { name: 'Options' }))
+    await user.click(await screen.findByRole('button', { name: 'Ask settings' }))
     await waitFor(() => expect(screen.getByText('a.csv')).toBeInTheDocument())
   })
 
@@ -204,7 +231,7 @@ describe('AskPage', () => {
     ])
     wrap(<AskPage />)
     await user.type(screen.getByPlaceholderText(/plain language/i), 'How many rows?')
-    await user.click(screen.getByRole('button', { name: /Ask \(stream\)/i }))
+    await user.click(screen.getByRole('button', { name: /^Ask$/i }))
     await waitFor(() => expect(screen.getByText(/There are/)).toBeInTheDocument())
     expect(h.askAgentStream).toHaveBeenCalled()
     const arg = h.askAgentStream.mock.calls[0]![0] as {
@@ -258,7 +285,7 @@ describe('AskPage', () => {
     ])
     wrap(<AskPage />)
     await user.type(screen.getByPlaceholderText(/plain language/i), 'How many rows?')
-    await user.click(screen.getByRole('button', { name: /Ask \(stream\)/i }))
+    await user.click(screen.getByRole('button', { name: /^Ask$/i }))
     await waitFor(() => expect(screen.getAllByText(/There are/).length).toBe(1))
     expect(screen.queryByText(/Model note/i)).not.toBeInTheDocument()
   })
@@ -296,7 +323,7 @@ describe('AskPage', () => {
     mockStream([{ type: 'error', data: { message: 'Could not reach Ollama' } }, { type: 'done', data: {} }])
     wrap(<AskPage />)
     await user.type(screen.getByPlaceholderText(/plain language/i), 'x')
-    await user.click(screen.getByRole('button', { name: /Ask \(stream\)/i }))
+    await user.click(screen.getByRole('button', { name: /^Ask$/i }))
     await waitFor(() => expect(screen.getByText('Could not reach Ollama')).toBeInTheDocument())
   })
 
@@ -310,9 +337,34 @@ describe('AskPage', () => {
     ])
     wrap(<AskPage />)
     await user.type(screen.getByPlaceholderText(/plain language/i), 'q')
-    await user.click(screen.getByRole('button', { name: /Ask \(stream\)/i }))
+    await user.click(screen.getByRole('button', { name: /^Ask$/i }))
     await waitFor(() => expect(document.body.textContent).toContain('select 1;'))
     expect(screen.queryByText(/Model note/i)).not.toBeInTheDocument()
+  })
+
+  it('shows follow-ups after a completed turn with profile', async () => {
+    useUiStore.setState({ activeConversationId: 'c1', activeDatasetId: 'ds_001' })
+    h.listAskTurns.mockResolvedValue([
+      {
+        turn_id: 't1',
+        conversation_id: 'c1',
+        seq: 1,
+        question: 'Count rows',
+        answer: 'There are 10 rows.',
+        sql: 'SELECT COUNT(*) FROM t',
+        attempts: [],
+        query_result: {
+          columns: [{ name: 'n', type: 'INTEGER' }],
+          rows: [{ n: 10 }],
+          row_count: 1,
+          truncated: false,
+          error: null,
+        },
+        created_at: 'now',
+      },
+    ])
+    wrap(<AskPage />)
+    await waitFor(() => expect(screen.getByTestId('ask-follow-ups')).toBeInTheDocument())
   })
 
   it('shows query_result error banner', async () => {
@@ -335,7 +387,7 @@ describe('AskPage', () => {
     ])
     wrap(<AskPage />)
     await user.type(screen.getByPlaceholderText(/plain language/i), 'q')
-    await user.click(screen.getByRole('button', { name: /Ask \(stream\)/i }))
+    await user.click(screen.getByRole('button', { name: /^Ask$/i }))
     await waitFor(() => expect(screen.getByText(/Binder error/)).toBeInTheDocument())
   })
 })

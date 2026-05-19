@@ -3,6 +3,19 @@ import { create } from 'zustand'
 export type ColumnQualityFilter = 'all' | 'has_flags' | 'critical_only'
 export type ColumnsDensity = 'compact' | 'comfortable'
 
+export type AskConversationPrefs = {
+  maxRows: number
+  scope: 'all' | string[]
+}
+
+export type AskLocalErrorTurn = {
+  id: string
+  question: string
+  error: string
+  model?: string | null
+  createdAt: number
+}
+
 type UiState = {
   activeDatasetId: string | null
   setActiveDatasetId: (id: string | null) => void
@@ -41,6 +54,12 @@ type UiState = {
   setSqlEditorHeight: (h: number) => void
   sqlSchemaCollapsed: boolean
   setSqlSchemaCollapsed: (v: boolean) => void
+  askConversationPrefs: Record<string, AskConversationPrefs>
+  setAskConversationPrefs: (conversationId: string, patch: Partial<AskConversationPrefs>) => void
+  recentErrorsByConversation: Record<string, AskLocalErrorTurn[]>
+  pushAskErrorTurn: (conversationId: string, turn: AskLocalErrorTurn) => void
+  removeAskErrorTurn: (conversationId: string, errorId: string) => void
+  clearAskErrorsMatchingQuestion: (conversationId: string, question: string) => void
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
@@ -98,4 +117,48 @@ export const useUiStore = create<UiState>((set, get) => ({
   setSqlEditorHeight: (h) => set({ sqlEditorHeight: h }),
   sqlSchemaCollapsed: true,
   setSqlSchemaCollapsed: (v) => set({ sqlSchemaCollapsed: v }),
+  askConversationPrefs: {},
+  setAskConversationPrefs: (conversationId, patch) =>
+    set((s) => ({
+      askConversationPrefs: {
+        ...s.askConversationPrefs,
+        [conversationId]: {
+          ...{ maxRows: 200, scope: 'all' as const },
+          ...s.askConversationPrefs[conversationId],
+          ...patch,
+        },
+      },
+    })),
+  recentErrorsByConversation: {},
+  pushAskErrorTurn: (conversationId, turn) =>
+    set((s) => {
+      const prev = s.recentErrorsByConversation[conversationId] ?? []
+      const filtered = prev.filter((t) => t.question !== turn.question)
+      return {
+        recentErrorsByConversation: {
+          ...s.recentErrorsByConversation,
+          [conversationId]: [...filtered, turn],
+        },
+      }
+    }),
+  removeAskErrorTurn: (conversationId, errorId) =>
+    set((s) => {
+      const prev = s.recentErrorsByConversation[conversationId] ?? []
+      return {
+        recentErrorsByConversation: {
+          ...s.recentErrorsByConversation,
+          [conversationId]: prev.filter((t) => t.id !== errorId),
+        },
+      }
+    }),
+  clearAskErrorsMatchingQuestion: (conversationId, question) =>
+    set((s) => {
+      const prev = s.recentErrorsByConversation[conversationId] ?? []
+      return {
+        recentErrorsByConversation: {
+          ...s.recentErrorsByConversation,
+          [conversationId]: prev.filter((t) => t.question !== question),
+        },
+      }
+    }),
 }))
