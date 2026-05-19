@@ -380,3 +380,38 @@ def test_unregister_removes_dataset_view_and_profile_state(tmp_path: Path) -> No
     ).fetchone() is None
     with pytest.raises(Exception):
         ws.connection.execute(f"SELECT COUNT(*) FROM {sanitize_sql_identifier(ds.view_name)}")
+
+
+def test_set_counts_races_unregister_without_error(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    reg = DatasetRegistry(ws, settings)
+    p = tmp_path / "race.csv"
+    p.write_text("a\n1\n2\n")
+    ds = reg.register_path(p, compute_counts=False)
+    dataset_id = ds.dataset_id
+    errors: list[BaseException] = []
+
+    def count_job() -> None:
+        try:
+            for _ in range(50):
+                found = reg.get(dataset_id)
+                if found is None:
+                    return
+                reg.set_counts(dataset_id, 2, 1)
+        except BaseException as exc:
+            errors.append(exc)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut = pool.submit(count_job)
+        for _ in range(30):
+            reg.unregister(dataset_id)
+            p2 = tmp_path / f"race_{_}.csv"
+            p2.write_text("b\n3\n")
+            try:
+                reg.register_path(p2, compute_counts=False)
+            except Exception:
+                pass
+        fut.result(timeout=5.0)
+
+    assert not errors
