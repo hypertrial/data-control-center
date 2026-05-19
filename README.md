@@ -30,7 +30,7 @@ Workspace state lives in **`DCC_WORKSPACE_DB_PATH`** (default **`.dcc_workspace.
 
 **Breaking:** after pulling a release that changes workspace layout or profile shape, run **`make clean-local`** (destructive to app-owned state) or delete the workspace DuckDB file by hand. That **does not** remove your original data files—only app metadata, profiles, Ask history, and uploaded **copies** under **`.dcc_uploads/`** when you use `clean-local`.
 
-If startup fails with an **unsupported workspace schema** error (for example a leftover **`schema_version`** table from a pre-migration build), use **`make clean-local`** and re-register datasets. Profile cache entries that are not **`v4`** are invalidated automatically on the next profile read.
+If startup fails with an **unsupported workspace schema** error (mismatched **`dcc_*`** tables or columns), use **`make clean-local`** and re-register datasets. A leftover **`schema_version`** migration table is removed automatically when the current **`dcc_*`** schema is valid. Profile cache entries that are not **`v4`** are invalidated automatically on the next profile read.
 
 ## API reference (OpenAPI)
 

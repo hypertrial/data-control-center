@@ -9,7 +9,7 @@ versioning once formal releases begin.
 
 ### Breaking
 
-- Workspace DB: removed versioned migrations and **`DCC_WORKSPACE_BACKUP_BEFORE_MIGRATE`**; existing **`.dcc_workspace.duckdb`** files from older builds require **`make clean-local`** (or manual delete). Leftover **`schema_version`** tables are rejected at startup.
+- Workspace DB: removed versioned migrations and **`DCC_WORKSPACE_BACKUP_BEFORE_MIGRATE`**; existing **`.dcc_workspace.duckdb`** files with incompatible **`dcc_*`** layouts require **`make clean-local`** (or manual delete).
 - Profile API: removed legacy fields **`potential_id_columns`**, **`potential_key_columns`**, **`primary_date_column`**; only **`structure_version: "v4"`** cache entries are served (stale cache is auto-deleted).
 - Agent Ask: removed synchronous **`POST /api/agent/ask`**; clients must use **`POST /api/agent/ask/stream`** (frontend: **`askAgentStream`** only).
 - Frontend: removed **`api.getProfile`**, exported **`api.waitForJob`**, and **`api.askAgent`**.
@@ -32,6 +32,7 @@ versioning once formal releases begin.
 - Sample rows API returns structured DuckDB error codes.
 - Backend tests reorganized under `tests/api/`, `tests/profiler/`, and `tests/workspace/`.
 - Frontend coverage baseline raised to **92%** (lines/statements); `types.ts` excluded from v8 coverage (still validated via `types.test.ts`).
+- Workspace startup drops a legacy **`schema_version`** table when the current **`dcc_*`** schema validates (avoids requiring **`make clean-local`** after the migration removal).
 
 ### Removed
 
