@@ -28,7 +28,7 @@ def _settings(tmp_path: Path, *, local_api_token: str | None = "test-local-token
 def _wait_for_workspace_job(ws: Workspace, job_id: str, *, timeout: float = 2.0) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        row = ws.job_get(job_id)
+        row = ws.jobs.job_get(job_id)
         if row and row["status"] in {"completed", "failed", "canceled"}:
             return row
         time.sleep(0.01)
@@ -115,7 +115,7 @@ def test_job_service_cancel_after_success_and_error(tmp_path: Path) -> None:
 
 def test_jobs_api_list_get_and_cancel(client) -> None:
     ws = client.app.state.workspace
-    ws.job_insert("j1", "profile_refresh", "ds_001", "queued")
+    ws.jobs.job_insert("j1", "profile_refresh", "ds_001", "queued")
 
     listing = client.get("/api/jobs")
     assert listing.status_code == 200

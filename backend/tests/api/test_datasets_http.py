@@ -6,7 +6,7 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
-from app.services.workspace import Workspace
+from app.services.workspace_stores import JobStore, ProfileStore, SavedQueryStore
 
 
 def _wait_for_job(client, job_id: str, *, timeout: float = 2.0) -> dict:
@@ -88,7 +88,7 @@ def test_list_datasets_includes_quality_score_from_profile_cache(client, tmp_pat
     assert row.get("quality_score") == int(expected_qs)
 
 
-def test_profile_rejects_stale_cached_structure_version(client, tmp_path):
+def test_profile_invalidates_stale_cached_structure_version(client, tmp_path):
     csv = tmp_path / "grain.csv"
     csv.write_text("player_id,year\n1,2024\n2,2024\n")
     reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
@@ -96,13 +96,13 @@ def test_profile_rejects_stale_cached_structure_version(client, tmp_path):
     did = reg.json()["dataset_id"]
     body = _wait_for_profile(client, did)
     assert body["structure_version"] == "v4"
-    stale = {**body, "structure_version": "v2", "entity_id_columns": [], "potential_id_columns": []}
-    client.app.state.workspace.save_profile_cache(did, stale)
+    stale = {**body, "structure_version": "v2"}
+    client.app.state.workspace.profiles.save_profile_cache(did, stale)
     pr2 = client.get(f"/api/datasets/{did}/profile")
-    assert pr2.status_code == 409
+    assert pr2.status_code == 404
     err = pr2.json()["error"]
-    assert err["code"] == "STALE_PROFILE_CACHE"
-    assert err["details"]["cached_structure_version"] == "v2"
+    assert err["code"] == "PROFILE_NOT_READY"
+    assert err["details"]["job_id"]
 
 
 def test_list_datasets_invalid_cached_quality_score_ignored(client, tmp_path, monkeypatch):
@@ -112,16 +112,16 @@ def test_list_datasets_invalid_cached_quality_score_ignored(client, tmp_path, mo
     did = reg.json()["dataset_id"]
     _wait_for_profile(client, did)
 
-    from app.services.workspace import Workspace
+    from app.services.workspace_stores import ProfileStore
 
-    real = Workspace.load_profile_cache
+    real = ProfileStore.load_profile_cache
 
     def bad_load(self, dataset_id):
         if dataset_id == did:
             return {"quality_score": "not-a-number"}
         return real(self, dataset_id)
 
-    monkeypatch.setattr(Workspace, "load_profile_cache", bad_load)
+    monkeypatch.setattr(ProfileStore, "load_profile_cache", bad_load)
 
     lst = client.get("/api/datasets").json()
     row = next(d for d in lst if d["dataset_id"] == did)
@@ -472,7 +472,7 @@ def test_profile_not_ready_includes_job_id(client, tmp_path) -> None:
     csv = tmp_path / "pending.csv"
     csv.write_text("a\n1\n")
     did = client.post("/api/datasets/register-file", json={"path": str(csv)}).json()["dataset_id"]
-    client.app.state.workspace.delete_profile_cache(did)
+    client.app.state.workspace.profiles.delete_profile_cache(did)
     pr = client.get(f"/api/datasets/{did}/profile")
     assert pr.status_code == 404
     err = pr.json()["error"]
@@ -525,7 +525,7 @@ def test_profile_refresh_fn_canceled_at_start(tmp_path, monkeypatch) -> None:
     p = tmp_path / "x.csv"
     p.write_text("a\n1\n")
     ds = reg.register_path(p)
-    monkeypatch.setattr(ws, "job_cancel_requested", lambda _job_id: True)
+    monkeypatch.setattr(ws.jobs, "job_cancel_requested", lambda _job_id: True)
     fn = _profile_refresh_fn(ds.dataset_id, reg, ws, settings)
     assert fn("job_x")["status"] == "canceled"
 
@@ -552,7 +552,7 @@ def test_profile_refresh_fn_missing_dataset(tmp_path) -> None:
     job_id = jobs.submit(kind="profile_refresh", dataset_id=ds.dataset_id, fn=fn)
     deadline = time.time() + 2.0
     while time.time() < deadline:
-        row = ws.job_get(job_id)
+        row = ws.jobs.job_get(job_id)
         if row and row["status"] in {"completed", "failed", "canceled"}:
             assert row["result"]["status"] == "missing"
             return
@@ -677,7 +677,7 @@ def test_profile_diff_blobs_missing(client, tmp_path, monkeypatch) -> None:
     refresh = client.post(f"/api/datasets/{did}/profile/refresh")
     _wait_for_job(client, refresh.json()["job_id"])
     monkeypatch.setattr(
-        Workspace,
+        ProfileStore,
         "load_profile_history_blob",
         lambda self, hid: None,
     )
@@ -685,7 +685,7 @@ def test_profile_diff_blobs_missing(client, tmp_path, monkeypatch) -> None:
 
 
 def test_create_saved_query_get_fails(client, monkeypatch) -> None:
-    monkeypatch.setattr(Workspace, "get_saved_query", lambda self, sid: None)
+    monkeypatch.setattr(SavedQueryStore, "get_saved_query", lambda self, sid: None)
     r = client.post("/api/saved-queries", json={"name": "n", "sql": "SELECT 1"})
     assert r.status_code == 500
 
@@ -693,7 +693,7 @@ def test_create_saved_query_get_fails(client, monkeypatch) -> None:
 def test_patch_saved_query_missing_after_update(client, monkeypatch) -> None:
     c = client.post("/api/saved-queries", json={"name": "n", "sql": "SELECT 1"})
     sid = c.json()["saved_id"]
-    monkeypatch.setattr(Workspace, "get_saved_query", lambda self, x: None)
+    monkeypatch.setattr(SavedQueryStore, "get_saved_query", lambda self, x: None)
     assert client.patch(f"/api/saved-queries/{sid}", json={"name": "x"}).status_code == 404
 
 
@@ -738,7 +738,7 @@ def test_profile_diff_explicit_ids_missing_blobs(client, tmp_path, monkeypatch) 
     _wait_for_job(client, refresh.json()["job_id"])
     h = client.get(f"/api/datasets/{did}/profile/history").json()
     ha, hb = h[1]["history_id"], h[0]["history_id"]
-    monkeypatch.setattr(Workspace, "load_profile_history_blob", lambda self, _hid: None)
+    monkeypatch.setattr(ProfileStore, "load_profile_history_blob", lambda self, _hid: None)
     assert (
         client.get(f"/api/datasets/{did}/profile/diff?a={ha}&b={hb}").status_code == 404
     )
@@ -748,7 +748,7 @@ def test_refresh_profile_canceled_before_build(client, tmp_path, monkeypatch) ->
     csv = tmp_path / "cancel.csv"
     csv.write_text("a\n1\n")
     did = client.post("/api/datasets/register-file", json={"path": str(csv)}).json()["dataset_id"]
-    monkeypatch.setattr(Workspace, "job_cancel_requested", lambda self, job_id: True)
+    monkeypatch.setattr(JobStore, "job_cancel_requested", lambda self, job_id: True)
     pr = client.post(f"/api/datasets/{did}/profile/refresh")
     job = _wait_for_job(client, pr.json()["job_id"])
     assert job["status"] == "canceled"
@@ -771,7 +771,7 @@ def test_refresh_profile_canceled_after_build(client, tmp_path, monkeypatch) -> 
         "app.api.datasets_jobs.build_profile",
         lambda ds: DatasetProfile.model_validate(cached_profile),
     )
-    monkeypatch.setattr(Workspace, "job_cancel_requested", fake_cancel)
+    monkeypatch.setattr(JobStore, "job_cancel_requested", fake_cancel)
     pr = client.post(f"/api/datasets/{did}/profile/refresh")
     job = _wait_for_job(client, pr.json()["job_id"])
     assert job["status"] == "canceled"

@@ -18,7 +18,7 @@ export function FigureCard({
       <CardHeader className="space-y-1 pb-2">
         <CardTitle className="text-sm font-semibold leading-tight">{title}</CardTitle>
         {description ? (
-          <p className="text-xs leading-snug text-[hsl(var(--muted))]">{description}</p>
+          <p className="text-xs leading-snug text-[hsl(var(--fg-muted))]">{description}</p>
         ) : null}
       </CardHeader>
       <CardContent className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-0">{children}</CardContent>

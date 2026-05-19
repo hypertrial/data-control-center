@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-
 import duckdb
 
 from app.config import Settings
@@ -46,6 +44,18 @@ class Workspace:
         return self._engine.connection
 
     @property
+    def profiles(self) -> ProfileStore:
+        return self._profiles
+
+    @property
+    def jobs(self) -> JobStore:
+        return self._jobs
+
+    @property
+    def saved_queries(self) -> SavedQueryStore:
+        return self._saved_queries
+
+    @property
     def ask(self) -> AskStore:
         return self._ask
 
@@ -69,81 +79,6 @@ class Workspace:
 
     def query_count(self, view_name: str, timeout_seconds: float) -> int | None:
         return self._engine.query_count(view_name, timeout_seconds)
-
-    def save_profile_cache(self, dataset_id: str, profile: dict[str, Any]) -> None:
-        self._profiles.save_profile_cache(dataset_id, profile)
-
-    def list_profile_history(self, dataset_id: str, limit: int = 10) -> list[dict[str, Any]]:
-        return self._profiles.list_profile_history(dataset_id, limit)
-
-    def load_profile_history_blob(self, history_id: str) -> dict[str, Any] | None:
-        return self._profiles.load_profile_history_blob(history_id)
-
-    def list_saved_queries(self) -> list[dict[str, Any]]:
-        return self._saved_queries.list_saved_queries()
-
-    def insert_saved_query(self, name: str, sql: str) -> str:
-        return self._saved_queries.insert_saved_query(name, sql)
-
-    def update_saved_query(self, saved_id: str, name: str | None = None, sql: str | None = None) -> bool:
-        return self._saved_queries.update_saved_query(saved_id, name, sql)
-
-    def delete_saved_query(self, saved_id: str) -> bool:
-        return self._saved_queries.delete_saved_query(saved_id)
-
-    def get_saved_query(self, saved_id: str) -> dict[str, Any] | None:
-        return self._saved_queries.get_saved_query(saved_id)
-
-    def get_profile_history_meta(self, history_id: str) -> dict[str, Any] | None:
-        return self._profiles.get_profile_history_meta(history_id)
-
-    def load_profile_cache(self, dataset_id: str) -> dict[str, Any] | None:
-        return self._profiles.load_profile_cache(dataset_id)
-
-    def delete_profile_cache(self, dataset_id: str) -> None:
-        self._profiles.delete_profile_cache(dataset_id)
-
-    def job_insert(self, job_id: str, kind: str, dataset_id: str | None, status: str) -> None:
-        self._jobs.job_insert(job_id, kind, dataset_id, status)
-
-    def job_update(
-        self,
-        job_id: str,
-        *,
-        status: str | None = None,
-        progress: float | None = None,
-        error_code: str | None = None,
-        error_message: str | None = None,
-        result_json: dict[str, Any] | None = None,
-        finished: bool = False,
-    ) -> None:
-        self._jobs.job_update(
-            job_id,
-            status=status,
-            progress=progress,
-            error_code=error_code,
-            error_message=error_message,
-            result_json=result_json,
-            finished=finished,
-        )
-
-    def job_finish(self, job_id: str, status: str, error: str | None = None) -> None:
-        self._jobs.job_finish(job_id, status, error)
-
-    def job_find_active_for_dataset(self, dataset_id: str, kind: str) -> str | None:
-        return self._jobs.job_find_active_for_dataset(dataset_id, kind)
-
-    def job_get(self, job_id: str) -> dict[str, Any] | None:
-        return self._jobs.job_get(job_id)
-
-    def jobs_list(self, limit: int = 100, status: str | None = None) -> list[dict[str, Any]]:
-        return self._jobs.jobs_list(limit, status)
-
-    def job_request_cancel(self, job_id: str) -> bool:
-        return self._jobs.job_request_cancel(job_id)
-
-    def job_cancel_requested(self, job_id: str) -> bool:
-        return self._jobs.job_cancel_requested(job_id)
 
     def sleep_poll(self, seconds: float) -> None:
         self._engine.sleep_poll(seconds)

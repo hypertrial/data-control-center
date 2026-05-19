@@ -20,14 +20,11 @@ const minimalProfile: DatasetProfile = {
   numeric_column_count: 0,
   categorical_column_count: 0,
   datetime_column_count: 0,
-  potential_id_columns: [],
-  potential_key_columns: [],
   quality_score: null,
   narrative: '',
   likely_grain: null,
-  primary_date_column: null,
   main_numeric_measures: [],
-    structure_version: 'v4',
+  structure_version: 'v4',
   temporal_columns: [],
   entity_id_columns: [],
   grain_key_candidates: [],
@@ -45,7 +42,7 @@ const h = vi.hoisted(() => ({
   createAskConversation: vi.fn(),
   listAskTurns: vi.fn(),
   listDatasets: vi.fn(),
-  getProfile: vi.fn(),
+  fetchDatasetProfile: vi.fn(),
   health: vi.fn(),
 }))
 
@@ -60,7 +57,7 @@ vi.mock('@/api/client', async (importOriginal) => {
       createAskConversation: h.createAskConversation,
       listAskTurns: h.listAskTurns,
       listDatasets: h.listDatasets,
-      getProfile: h.getProfile, fetchDatasetProfile: h.getProfile,
+      fetchDatasetProfile: h.fetchDatasetProfile,
       health: h.health,
     },
   }
@@ -100,7 +97,7 @@ describe('AskPage', () => {
     })
     h.listAskTurns.mockResolvedValue([])
     h.listDatasets.mockResolvedValue([])
-    h.getProfile.mockResolvedValue(minimalProfile)
+    h.fetchDatasetProfile.mockResolvedValue(minimalProfile)
     h.health.mockResolvedValue({
       status: 'ok',
       llm: { reachable: true, model: 'qwen3:4b', detail: null },

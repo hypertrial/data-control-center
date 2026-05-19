@@ -91,12 +91,12 @@ export function IssuesImpactChart({
   )
 
   if (!issues.length) {
-    return <p className="text-sm text-[hsl(var(--muted))]">No quality issues detected.</p>
+    return <p className="text-sm text-[hsl(var(--fg-muted))]">No quality issues detected.</p>
   }
 
   return (
     <div>
-      <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+      <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--fg-muted))]">
         Click a bar to open the first affected column
       </p>
       <div

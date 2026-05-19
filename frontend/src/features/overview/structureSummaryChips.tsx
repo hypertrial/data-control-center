@@ -12,7 +12,7 @@ export function chipCols(
   const overflow = max != null ? cols.slice(max) : []
   return (
     <div className="flex min-w-0 flex-wrap items-start gap-2">
-      <span className="mt-1 min-w-[6.5rem] shrink-0 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+      <span className="mt-1 min-w-[6.5rem] shrink-0 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--fg-muted))]">
         {label}
       </span>
       <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
@@ -29,7 +29,7 @@ export function chipCols(
         ))}
         {overflow.length > 0 ? (
           <span
-            className="self-center rounded-md border border-border-default bg-white/[0.03] px-2 py-0.5 text-xs text-[hsl(var(--muted))]"
+            className="self-center rounded-md border border-border-default bg-white/[0.03] px-2 py-0.5 text-xs text-[hsl(var(--fg-muted))]"
             title={overflow.join(', ')}
           >
             +{overflow.length} more

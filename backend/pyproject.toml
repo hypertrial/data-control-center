@@ -58,9 +58,7 @@ addopts = [
 [tool.coverage.run]
 source = ["app"]
 branch = false
-omit = [
-    "app/services/workspace_migrations/migration_002_example.py",
-]
+omit = []
 
 [tool.coverage.report]
 exclude_lines = [

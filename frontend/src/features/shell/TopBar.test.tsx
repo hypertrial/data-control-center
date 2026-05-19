@@ -10,7 +10,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 
 const h = vi.hoisted(() => ({
   listDatasets: vi.fn(),
-  getProfile: vi.fn(),
+  fetchDatasetProfile: vi.fn(),
   getJob: vi.fn(),
   refreshProfile: vi.fn(),
   cancelJob: vi.fn(),
@@ -23,7 +23,7 @@ vi.mock('@/api/client', async (importOriginal) => {
     api: {
       ...mod.api,
       listDatasets: h.listDatasets,
-      getProfile: h.getProfile, fetchDatasetProfile: h.getProfile,
+      fetchDatasetProfile: h.fetchDatasetProfile,
       getJob: h.getJob,
       refreshProfile: h.refreshProfile,
       cancelJob: h.cancelJob,
@@ -60,7 +60,7 @@ describe('TopBar', () => {
         quality_score: 72,
       },
     ])
-    h.getProfile.mockResolvedValue(
+    h.fetchDatasetProfile.mockResolvedValue(
       mkProfile({
         dataset_id: 'ds_x',
         name: 'short.parquet',
@@ -88,7 +88,7 @@ describe('TopBar', () => {
         quality_score: 59,
       },
     ])
-    h.getProfile.mockResolvedValue(
+    h.fetchDatasetProfile.mockResolvedValue(
       mkProfile({
         dataset_id: 'ds_x',
         name: long,

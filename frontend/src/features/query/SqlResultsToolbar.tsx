@@ -23,7 +23,7 @@ export function SqlResultsToolbar({
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border-default pb-2">
-      <div className="text-xs text-[hsl(var(--muted))]">
+      <div className="text-xs text-[hsl(var(--fg-muted))]">
         {busy ? (
           <span>Running…</span>
         ) : (
@@ -65,7 +65,7 @@ export function SqlResultsToolbar({
       >
         Export CSV
       </Button>
-      <span className="text-[10px] text-[hsl(var(--muted))]">Click header to sort - Drag cells to select - Cmd/Ctrl+C copy TSV</span>
+      <span className="text-[10px] text-[hsl(var(--fg-muted))]">Click header to sort - Drag cells to select - Cmd/Ctrl+C copy TSV</span>
     </div>
   )
 }

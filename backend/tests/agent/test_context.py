@@ -47,7 +47,7 @@ def test_build_dataset_context_uses_profile_cache(registry_csv: DatasetRegistry)
         ],
         "narrative": "Test narrative\nline2",
     }
-    registry_csv.workspace.save_profile_cache(ds.dataset_id, prof)
+    registry_csv.workspace.profiles.save_profile_cache(ds.dataset_id, prof)
     ctx, err = build_dataset_context(registry_csv, registry_csv.workspace, None)
     assert err is None
     assert ctx
@@ -72,7 +72,7 @@ def test_build_dataset_context_profile_column_overflow(registry_csv: DatasetRegi
     prof = {
         "column_profiles": [{"name": f"c{i}", "physical_type": "INT32"} for i in range(85)],
     }
-    registry_csv.workspace.save_profile_cache(ds.dataset_id, prof)
+    registry_csv.workspace.profiles.save_profile_cache(ds.dataset_id, prof)
     ctx, err = build_dataset_context(registry_csv, registry_csv.workspace, None)
     assert err is None
     assert ctx and "more columns" in ctx
@@ -86,7 +86,7 @@ def test_build_dataset_context_no_columns_resolved(
         "app.services.agent.context._pragma_column_summaries",
         lambda *a, **k: [],
     )
-    registry_csv.workspace.delete_profile_cache(registry_csv.list_all()[0].dataset_id)
+    registry_csv.workspace.profiles.delete_profile_cache(registry_csv.list_all()[0].dataset_id)
     ctx, err = build_dataset_context(registry_csv, registry_csv.workspace, None)
     assert err is None
     assert ctx and "(no columns resolved)" in ctx

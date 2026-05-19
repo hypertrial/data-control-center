@@ -15,7 +15,7 @@ export function CompletenessBars({
     <div className="flex min-h-[14rem] flex-col justify-center gap-6 px-1 py-2">
       <div>
         <div className="mb-1 flex items-baseline justify-between gap-2">
-          <span className="text-xs font-medium text-[hsl(var(--muted))]">Missing cells</span>
+          <span className="text-xs font-medium text-[hsl(var(--fg-muted))]">Missing cells</span>
           <span className="tabular-nums text-sm font-semibold text-white">
             {missing != null ? formatPercent(missing) : '—'}
           </span>
@@ -34,7 +34,7 @@ export function CompletenessBars({
       </div>
       <div>
         <div className="mb-1 flex items-baseline justify-between gap-2">
-          <span className="text-xs font-medium text-[hsl(var(--muted))]">Duplicate rows (sample)</span>
+          <span className="text-xs font-medium text-[hsl(var(--fg-muted))]">Duplicate rows (sample)</span>
           <span className="tabular-nums text-sm font-semibold text-white">
             {duplicate != null ? formatPercent(duplicate) : '—'}
           </span>

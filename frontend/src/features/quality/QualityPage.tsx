@@ -35,14 +35,14 @@ function ExamplesList({ examples }: { examples: unknown[] }) {
   if (!examples.length) return null
   return (
     <div className="space-y-2 text-xs">
-      <div className="font-medium text-[hsl(var(--muted))]">Examples</div>
+      <div className="font-medium text-[hsl(var(--fg-muted))]">Examples</div>
       {examples.map((ex, i) => {
         if (ex && typeof ex === 'object' && !Array.isArray(ex)) {
           return (
             <dl key={i} className="grid gap-1 rounded-md bg-black/30 p-2 font-mono text-[11px]">
               {Object.entries(ex as Record<string, unknown>).map(([k, v]) => (
                 <div key={k} className="grid grid-cols-[auto_1fr] gap-x-3">
-                  <dt className="text-[hsl(var(--muted))]">{k}</dt>
+                  <dt className="text-[hsl(var(--fg-muted))]">{k}</dt>
                   <dd className="truncate text-white/90">{v === null ? 'null' : String(v)}</dd>
                 </div>
               ))}
@@ -94,15 +94,15 @@ function IssueCard({
         <Badge variant={sevVariant(issue.severity)}>{issue.severity}</Badge>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
-        <p className="text-[hsl(var(--foreground))]/90">{issue.description}</p>
+        <p className="text-[hsl(var(--fg))]/90">{issue.description}</p>
         <details className="rounded-md border border-border-default bg-white/[0.02] p-3 text-xs">
-          <summary className="cursor-pointer font-medium text-[hsl(var(--muted))]">
+          <summary className="cursor-pointer font-medium text-[hsl(var(--fg-muted))]">
             Details & suggested actions
           </summary>
           <div className="mt-3 space-y-3">
             <div>
               <div className="font-medium text-fg-muted">Why it matters</div>
-              <p className="mt-1 text-[hsl(var(--foreground))]/90">{issue.why_it_matters}</p>
+              <p className="mt-1 text-[hsl(var(--fg))]/90">{issue.why_it_matters}</p>
             </div>
             {issue.affected_columns.length > 0 && (
               <div className="flex flex-wrap gap-1">
@@ -201,7 +201,7 @@ export function QualityPage() {
   if (!activeId) {
     return (
       <PageContainer>
-        <p className="text-sm text-[hsl(var(--muted))]">Select a dataset.</p>
+        <p className="text-sm text-[hsl(var(--fg-muted))]">Select a dataset.</p>
       </PageContainer>
     )
   }
@@ -228,7 +228,7 @@ export function QualityPage() {
       <Section title="Quality overview">
         <div className="flex flex-wrap items-baseline gap-3 text-sm">
           <span className="tabular-nums text-2xl font-semibold">{score != null ? score : '—'}</span>
-          <span className="text-[hsl(var(--muted))]">{score != null ? '/100 score' : ''}</span>
+          <span className="text-[hsl(var(--fg-muted))]">{score != null ? '/100 score' : ''}</span>
           <span className="text-white/20">·</span>
           <span>
             {counts.all} issue{counts.all === 1 ? '' : 's'} across {colSet.size} column
@@ -237,7 +237,7 @@ export function QualityPage() {
         </div>
         {topCols.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-[hsl(var(--muted))]">Most affected</span>
+            <span className="text-xs text-[hsl(var(--fg-muted))]">Most affected</span>
             <div className="flex flex-wrap gap-1">
               {topCols.map((c) => (
                 <button
@@ -256,7 +256,7 @@ export function QualityPage() {
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--fg-muted))]">
             Severity
           </div>
           <div className="flex flex-wrap gap-1">
@@ -274,7 +274,7 @@ export function QualityPage() {
                 onClick={() => setSev(k)}
                 className={cn(
                   'rounded-full px-3 py-1 text-xs transition',
-                  sev === k ? 'bg-white/12 text-white' : 'text-[hsl(var(--muted))] hover:bg-white/5',
+                  sev === k ? 'bg-white/12 text-white' : 'text-[hsl(var(--fg-muted))] hover:bg-white/5',
                 )}
               >
                 {label}
@@ -283,7 +283,7 @@ export function QualityPage() {
           </div>
         </div>
         <div>
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--fg-muted))]">
             Sort
           </div>
           <div className="flex flex-wrap gap-1">
@@ -300,7 +300,7 @@ export function QualityPage() {
                 onClick={() => setSortMode(k)}
                 className={cn(
                   'rounded-full px-3 py-1 text-xs transition',
-                  sortMode === k ? 'bg-white/12 text-white' : 'text-[hsl(var(--muted))] hover:bg-white/5',
+                  sortMode === k ? 'bg-white/12 text-white' : 'text-[hsl(var(--fg-muted))] hover:bg-white/5',
                 )}
               >
                 {label}
@@ -315,7 +315,7 @@ export function QualityPage() {
           <section key={k} className="space-y-3">
             <h2 className="text-sm font-semibold capitalize">{k}</h2>
             {grouped[k].length === 0 ? (
-              <p className="text-xs text-[hsl(var(--muted))]">No {k} issues.</p>
+              <p className="text-xs text-[hsl(var(--fg-muted))]">No {k} issues.</p>
             ) : (
               <div className="grid gap-3 md:grid-cols-2">
                 {grouped[k].map((issue) => (
@@ -326,7 +326,7 @@ export function QualityPage() {
           </section>
         ))
       ) : sortedFiltered.length === 0 ? (
-        <p className="text-sm text-[hsl(var(--muted))]">No issues for this filter.</p>
+        <p className="text-sm text-[hsl(var(--fg-muted))]">No issues for this filter.</p>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {sortedFiltered.map((issue) => (

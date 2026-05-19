@@ -15,13 +15,13 @@ export function HeroMetric({
   return (
     <Card className="border-border-default">
       <CardHeader className="pb-2">
-        <CardTitle className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+        <CardTitle className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--fg-muted))]">
           {label}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-1">
         <div className="text-2xl font-semibold tabular-nums text-white">{value}</div>
-        {hint != null && <div className="text-xs text-[hsl(var(--muted))]">{hint}</div>}
+        {hint != null && <div className="text-xs text-[hsl(var(--fg-muted))]">{hint}</div>}
       </CardContent>
     </Card>
   )
@@ -48,14 +48,14 @@ export function QualityHero({
   return (
     <Card className="border-border-default">
       <CardHeader className="pb-2">
-        <CardTitle className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+        <CardTitle className="text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--fg-muted))]">
           Quality score
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
         <div className="flex items-baseline gap-2 tabular-nums">
           <span className="text-2xl font-semibold">{score}</span>
-          <span className="text-sm text-[hsl(var(--muted))]">/100</span>
+          <span className="text-sm text-[hsl(var(--fg-muted))]">/100</span>
           {trend != null && Number.isFinite(trend) && Math.abs(trend) >= 0.05 ? (
             <span
               className={cn(

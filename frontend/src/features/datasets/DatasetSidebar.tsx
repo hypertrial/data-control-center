@@ -128,7 +128,7 @@ export function DatasetSidebar() {
       ) : null}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex h-full flex-col border-r border-border-default bg-[hsl(var(--card))] transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-40 flex h-full flex-col border-r border-border-default bg-[hsl(var(--surface-1))] transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0',
           narrow ? 'w-14' : 'w-72 max-w-[85vw]',
           sidebarMobileOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full lg:translate-x-0',
         )}

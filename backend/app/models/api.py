@@ -164,12 +164,9 @@ class DatasetProfile(BaseModel):
     numeric_column_count: int = 0
     categorical_column_count: int = 0
     datetime_column_count: int = 0
-    potential_id_columns: list[str] = Field(default_factory=list)
-    potential_key_columns: list[str] = Field(default_factory=list)
     quality_score: float | None = None
     narrative: str = ""
     likely_grain: str | None = None
-    primary_date_column: str | None = None
     main_numeric_measures: list[str] = Field(default_factory=list)
     structure_version: str = "v4"
     grain_key_scope: MetricScope = MetricScope.full

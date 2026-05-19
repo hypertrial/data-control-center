@@ -101,10 +101,10 @@ def test_profile_cache_roundtrip(tmp_path: Path) -> None:
     ws = Workspace(settings)
     try:
         payload = {"rows": 1, "cols": ["a"]}
-        ws.save_profile_cache("ds_001", payload)
-        assert ws.load_profile_cache("ds_001") == payload
-        ws.delete_profile_cache("ds_001")
-        assert ws.load_profile_cache("ds_001") is None
+        ws.profiles.save_profile_cache("ds_001", payload)
+        assert ws.profiles.load_profile_cache("ds_001") == payload
+        ws.profiles.delete_profile_cache("ds_001")
+        assert ws.profiles.load_profile_cache("ds_001") is None
     finally:
         ws.close()
 
@@ -125,11 +125,11 @@ def test_job_find_active_for_dataset(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     ws = Workspace(settings)
     try:
-        assert ws.job_find_active_for_dataset("ds_001", "profile_refresh") is None
-        ws.job_insert("j1", "profile_refresh", "ds_001", "queued")
-        assert ws.job_find_active_for_dataset("ds_001", "profile_refresh") == "j1"
-        ws.job_finish("j1", "completed")
-        assert ws.job_find_active_for_dataset("ds_001", "profile_refresh") is None
+        assert ws.jobs.job_find_active_for_dataset("ds_001", "profile_refresh") is None
+        ws.jobs.job_insert("j1", "profile_refresh", "ds_001", "queued")
+        assert ws.jobs.job_find_active_for_dataset("ds_001", "profile_refresh") == "j1"
+        ws.jobs.job_finish("j1", "completed")
+        assert ws.jobs.job_find_active_for_dataset("ds_001", "profile_refresh") is None
     finally:
         ws.close()
 
@@ -138,8 +138,8 @@ def test_jobs_insert_and_finish(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     ws = Workspace(settings)
     try:
-        ws.job_insert("jid", "profile_refresh", "ds_001", "running")
-        ws.job_finish("jid", "failed", "oops")
+        ws.jobs.job_insert("jid", "profile_refresh", "ds_001", "running")
+        ws.jobs.job_finish("jid", "failed", "oops")
         row = ws.connection.execute(
             "SELECT status, error_message FROM dcc_jobs WHERE job_id = ?",
             ["jid"],
@@ -154,7 +154,7 @@ def test_profile_history_pruned_to_fifty(tmp_path: Path) -> None:
     ws = Workspace(settings)
     try:
         for i in range(55):
-            ws.save_profile_cache(
+            ws.profiles.save_profile_cache(
                 "ds_x",
                 {
                     "rows": i,
@@ -164,7 +164,7 @@ def test_profile_history_pruned_to_fifty(tmp_path: Path) -> None:
                     "column_profiles": [],
                 },
             )
-        hist = ws.list_profile_history("ds_x", 100)
+        hist = ws.profiles.list_profile_history("ds_x", 100)
         assert len(hist) == 50
         assert hist[0]["rows"] == 54
     finally:
@@ -175,15 +175,15 @@ def test_saved_query_crud(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     ws = Workspace(settings)
     try:
-        sid = ws.insert_saved_query("n1", "SELECT 1")
-        row = ws.get_saved_query(sid)
+        sid = ws.saved_queries.insert_saved_query("n1", "SELECT 1")
+        row = ws.saved_queries.get_saved_query(sid)
         assert row and row["name"] == "n1" and row["sql"] == "SELECT 1"
-        assert ws.update_saved_query(sid, name="n2", sql="SELECT 2")
-        row2 = ws.get_saved_query(sid)
+        assert ws.saved_queries.update_saved_query(sid, name="n2", sql="SELECT 2")
+        row2 = ws.saved_queries.get_saved_query(sid)
         assert row2 and row2["name"] == "n2" and row2["sql"] == "SELECT 2"
-        assert ws.delete_saved_query(sid)
-        assert ws.get_saved_query(sid) is None
-        assert not ws.delete_saved_query(sid)
+        assert ws.saved_queries.delete_saved_query(sid)
+        assert ws.saved_queries.get_saved_query(sid) is None
+        assert not ws.saved_queries.delete_saved_query(sid)
     finally:
         ws.close()
 
@@ -192,10 +192,10 @@ def test_get_profile_history_meta(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     ws = Workspace(settings)
     try:
-        ws.save_profile_cache("ds_y", {"rows": 1, "columns": 0, "column_profiles": []})
-        h = ws.list_profile_history("ds_y", 1)
+        ws.profiles.save_profile_cache("ds_y", {"rows": 1, "columns": 0, "column_profiles": []})
+        h = ws.profiles.list_profile_history("ds_y", 1)
         hid = h[0]["history_id"]
-        m = ws.get_profile_history_meta(hid)
+        m = ws.profiles.get_profile_history_meta(hid)
         assert m and m["dataset_id"] == "ds_y"
     finally:
         ws.close()
@@ -205,7 +205,7 @@ def test_load_profile_history_blob_missing(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     ws = Workspace(settings)
     try:
-        assert ws.load_profile_history_blob("missing_id") is None
+        assert ws.profiles.load_profile_history_blob("missing_id") is None
     finally:
         ws.close()
 
@@ -214,9 +214,9 @@ def test_update_saved_query_sql_only(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     ws = Workspace(settings)
     try:
-        sid = ws.insert_saved_query("n", "SELECT 1")
-        assert ws.update_saved_query(sid, sql="SELECT 2")
-        assert ws.get_saved_query(sid)["sql"] == "SELECT 2"
+        sid = ws.saved_queries.insert_saved_query("n", "SELECT 1")
+        assert ws.saved_queries.update_saved_query(sid, sql="SELECT 2")
+        assert ws.saved_queries.get_saved_query(sid)["sql"] == "SELECT 2"
     finally:
         ws.close()
 
@@ -225,7 +225,7 @@ def test_update_saved_query_missing_returns_false(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     ws = Workspace(settings)
     try:
-        assert not ws.update_saved_query("nope", sql="SELECT 1")
+        assert not ws.saved_queries.update_saved_query("nope", sql="SELECT 1")
     finally:
         ws.close()
 
@@ -354,10 +354,10 @@ def test_workspace_rejects_missing_required_index(tmp_path: Path) -> None:
 def test_job_get_handles_missing_and_invalid_result_json(tmp_path: Path) -> None:
     ws = Workspace(_settings(tmp_path))
     try:
-        assert ws.job_get("missing") is None
-        ws.job_insert("j1", "profile_refresh", None, "running")
+        assert ws.jobs.job_get("missing") is None
+        ws.jobs.job_insert("j1", "profile_refresh", None, "running")
         ws.connection.execute("UPDATE dcc_jobs SET result_json = 'not-json' WHERE job_id = ?", ["j1"])
-        job = ws.job_get("j1")
+        job = ws.jobs.job_get("j1")
         assert job is not None
         assert job["result"] is None
     finally:
@@ -367,16 +367,16 @@ def test_job_get_handles_missing_and_invalid_result_json(tmp_path: Path) -> None
 def test_jobs_list_and_cancel_paths(tmp_path: Path) -> None:
     ws = Workspace(_settings(tmp_path))
     try:
-        ws.job_insert("j1", "profile_refresh", "ds_001", "queued")
-        ws.job_insert("j2", "dataset_count", "ds_002", "running")
-        assert ws.job_request_cancel("j2")
-        assert ws.job_cancel_requested("j2")
-        assert not ws.job_request_cancel("missing")
+        ws.jobs.job_insert("j1", "profile_refresh", "ds_001", "queued")
+        ws.jobs.job_insert("j2", "dataset_count", "ds_002", "running")
+        assert ws.jobs.job_request_cancel("j2")
+        assert ws.jobs.job_cancel_requested("j2")
+        assert not ws.jobs.job_request_cancel("missing")
 
-        queued = ws.jobs_list(status="queued")
+        queued = ws.jobs.jobs_list(status="queued")
         assert [job["job_id"] for job in queued] == ["j1"]
 
-        all_jobs = ws.jobs_list(limit=10)
+        all_jobs = ws.jobs.jobs_list(limit=10)
         assert {job["job_id"] for job in all_jobs} == {"j1", "j2"}
     finally:
         ws.close()
@@ -699,19 +699,19 @@ def test_workspace_facade_delegates_to_engine_and_stores(
     ws.register_file_view("view_a", tmp_path / "a.csv", "csv")
     assert ws.get_row_column_counts("view_a") == (12, 3)
     assert ws.query_count("view_a", 1.5) == 77
-    ws.save_profile_cache("ds_1", {"quality_score": 88})
-    assert ws.list_profile_history("ds_1", 4) == [{"history_id": "h1"}]
-    assert ws.load_profile_history_blob("h1") == {"history_id": "h1"}
-    assert ws.list_saved_queries() == [{"saved_id": "s1"}]
-    assert ws.insert_saved_query("saved", "SELECT 1") == "saved-id"
-    assert ws.update_saved_query("saved-id", name="renamed", sql="SELECT 2") is True
-    assert ws.delete_saved_query("saved-id") is True
-    assert ws.get_saved_query("saved-id") == {"saved_id": "saved-id"}
-    assert ws.get_profile_history_meta("h1") == {"history_id": "h1"}
-    assert ws.load_profile_cache("ds_1") == {"dataset_id": "ds_1"}
-    ws.delete_profile_cache("ds_1")
-    ws.job_insert("job-1", "profile", "ds_1", "queued")
-    ws.job_update(
+    ws.profiles.save_profile_cache("ds_1", {"quality_score": 88})
+    assert ws.profiles.list_profile_history("ds_1", 4) == [{"history_id": "h1"}]
+    assert ws.profiles.load_profile_history_blob("h1") == {"history_id": "h1"}
+    assert ws.saved_queries.list_saved_queries() == [{"saved_id": "s1"}]
+    assert ws.saved_queries.insert_saved_query("saved", "SELECT 1") == "saved-id"
+    assert ws.saved_queries.update_saved_query("saved-id", name="renamed", sql="SELECT 2") is True
+    assert ws.saved_queries.delete_saved_query("saved-id") is True
+    assert ws.saved_queries.get_saved_query("saved-id") == {"saved_id": "saved-id"}
+    assert ws.profiles.get_profile_history_meta("h1") == {"history_id": "h1"}
+    assert ws.profiles.load_profile_cache("ds_1") == {"dataset_id": "ds_1"}
+    ws.profiles.delete_profile_cache("ds_1")
+    ws.jobs.job_insert("job-1", "profile", "ds_1", "queued")
+    ws.jobs.job_update(
         "job-1",
         status="running",
         progress=0.5,
@@ -720,11 +720,11 @@ def test_workspace_facade_delegates_to_engine_and_stores(
         result_json={"ok": True},
         finished=True,
     )
-    ws.job_finish("job-1", "completed", None)
-    assert ws.job_get("job-1") == {"job_id": "job-1"}
-    assert ws.jobs_list(8, "queued") == [{"job_id": "j1"}]
-    assert ws.job_request_cancel("job-1") is True
-    assert ws.job_cancel_requested("job-1") is True
+    ws.jobs.job_finish("job-1", "completed", None)
+    assert ws.jobs.job_get("job-1") == {"job_id": "job-1"}
+    assert ws.jobs.jobs_list(8, "queued") == [{"job_id": "j1"}]
+    assert ws.jobs.job_request_cancel("job-1") is True
+    assert ws.jobs.job_cancel_requested("job-1") is True
     ws.sleep_poll(0.25)
     ws.close()
 
@@ -748,3 +748,44 @@ def test_workspace_facade_delegates_to_engine_and_stores(
     assert calls["jobs_list"] == (8, "queued")
     assert calls["sleep_poll"] == 0.25
     assert calls["close"] is True
+
+
+def test_fresh_workspace_creates_dcc_tables(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    try:
+        with ws.lock_db() as con:
+            tables = {
+                str(row[0])
+                for row in con.execute(
+                    """
+                    SELECT table_name FROM information_schema.tables
+                    WHERE table_schema = 'main' AND table_type = 'BASE TABLE'
+                    """
+                ).fetchall()
+            }
+        assert "dcc_datasets" in tables
+        assert "schema_version" not in tables
+    finally:
+        ws.close()
+
+
+def test_workspace_rejects_schema_version_table(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    ws.close()
+    con = duckdb.connect(str(settings.workspace_db_path))
+    try:
+        con.execute(
+            """
+            CREATE TABLE schema_version (
+              version INTEGER NOT NULL,
+              applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              description VARCHAR
+            );
+            """
+        )
+    finally:
+        con.close()
+    with pytest.raises(UnsupportedWorkspaceSchemaError, match="schema_version migrations"):
+        Workspace(settings).close()

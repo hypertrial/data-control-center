@@ -19,11 +19,10 @@ vi.mock('@/api/client', () => ({
   api: {
     listDatasets: vi.fn(),
     uploadDatasets: vi.fn(),
-    getProfile: vi.fn(), fetchDatasetProfile: vi.fn(),
+    fetchDatasetProfile: vi.fn(),
     getQuality: vi.fn(),
     getSample: vi.fn(),
     runQuery: vi.fn(),
-    askAgent: vi.fn(),
     getProfileHistory: vi.fn(),
     getProfileDiff: vi.fn(),
     listSavedQueries: vi.fn(),
@@ -75,10 +74,6 @@ describe('App', () => {
       row_count: 0,
       error: null,
       truncated: false,
-    })
-    vi.mocked(api.askAgent).mockResolvedValue({
-      model: 'qwen3:4b',
-      answer: 'Mock answer',
     })
     vi.mocked(api.getProfileHistory).mockResolvedValue([])
     vi.mocked(api.listSavedQueries).mockResolvedValue([])

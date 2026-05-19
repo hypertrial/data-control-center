@@ -35,9 +35,9 @@ Uploads are the preferred ingestion path. They use filename/path normalization, 
 
 ### Workspace database
 
-**`DCC_WORKSPACE_DB_PATH`** (default `./.dcc_workspace.duckdb`, relative to the backend process working directory) holds cached dataset profiles (including **`structure_version`**), profile history, **`dcc_jobs`** rows, saved SQL snippets, and Ask conversation tables. Implementation: façade [`app/services/workspace.py`](app/services/workspace.py), engine [`app/services/workspace_engine.py`](app/services/workspace_engine.py), migrations in [`app/services/workspace_migrations/`](app/services/workspace_migrations/), current-schema validation in [`app/services/workspace_schema.py`](app/services/workspace_schema.py), and stores in [`app/services/workspace_stores.py`](app/services/workspace_stores.py). **`DCC_WORKSPACE_BACKUP_BEFORE_MIGRATE`** (default `true`) copies the workspace file before applying a pending migration.
+**`DCC_WORKSPACE_DB_PATH`** (default `./.dcc_workspace.duckdb`, relative to the backend process working directory) holds cached dataset profiles (including **`structure_version: "v4"`**), profile history, **`dcc_jobs`** rows, saved SQL snippets, and Ask conversation tables. Implementation: façade [`app/services/workspace.py`](app/services/workspace.py), engine [`app/services/workspace_engine.py`](app/services/workspace_engine.py), DDL and validation in [`app/services/workspace_schema.py`](app/services/workspace_schema.py), and stores in [`app/services/workspace_stores.py`](app/services/workspace_stores.py).
 
-On open, migrations run forward to the current version; DBs that already match the expected **`dcc_*`** tables but lack **`schema_version`** receive an implicit baseline stamp. Incompatible or newer-than-app schemas fail fast (see root README upgrading section).
+On open, an empty workspace file gets **`create_workspace_schema`**; an existing file must match the expected **`dcc_*`** tables (no **`schema_version`** table). Incompatible layouts fail fast—see root README **`make clean-local`** guidance.
 
 ### Built UI (single-server mode)
 

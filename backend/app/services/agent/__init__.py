@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from app.config import Settings
-from app.models.api import AgentAskRequest, AgentAskResponse, QueryResult
+from app.models.api import AgentAskRequest
 from app.services.agent.context import (
     _pragma_column_summaries,
     build_dataset_context,
@@ -32,7 +32,7 @@ from app.services.agent.prompts import (
     _sql_retry_prompt,
     _system_prompt,
 )
-from app.services.agent.workflow import _run_ask_workflow
+from app.services.agent.workflow_run import _run_ask_workflow
 from app.services.registry import DatasetRegistry
 
 __all__ = [
@@ -54,44 +54,8 @@ __all__ = [
     "ollama_chat_stream",
     "parse_sql_draft",
     "parse_summary_answer",
-    "run_agent_ask",
     "run_agent_ask_stream",
 ]
-
-
-def run_agent_ask(
-    registry: DatasetRegistry,
-    settings: Settings,
-    req: AgentAskRequest,
-    ollama_call=ollama_chat,
-) -> AgentAskResponse:
-    payload: dict[str, Any] = {"model": settings.llm_model}
-    for ev in _run_ask_workflow(
-        registry,
-        settings,
-        req,
-        emit_summary_tokens=False,
-        ollama_call=ollama_call,
-        ollama_stream=ollama_chat_stream,
-    ):
-        typ = ev["type"]
-        data = ev["data"]
-        if typ == "sql":
-            payload["sql"] = data.get("sql")
-            payload["explanation"] = data.get("explanation")
-        elif typ == "query_result":
-            payload["query_result"] = QueryResult.model_validate(data)
-        elif typ == "answer":
-            payload["answer"] = data.get("answer")
-        elif typ == "error":
-            payload["error"] = data.get("message")
-            if "sql" in data:
-                payload["sql"] = data.get("sql")
-            if "explanation" in data:
-                payload["explanation"] = data.get("explanation")
-            if "query_result" in data and data.get("query_result") is not None:
-                payload["query_result"] = QueryResult.model_validate(data["query_result"])
-    return AgentAskResponse(**payload)
 
 
 def run_agent_ask_stream(

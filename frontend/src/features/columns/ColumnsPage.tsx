@@ -34,7 +34,7 @@ export function ColumnsPage() {
   if (!activeId) {
     return (
       <PageContainer>
-        <p className="text-sm text-[hsl(var(--muted))]">Select a dataset.</p>
+        <p className="text-sm text-[hsl(var(--fg-muted))]">Select a dataset.</p>
       </PageContainer>
     )
   }
@@ -69,7 +69,7 @@ export function ColumnsPage() {
         toggleColVis={toggleColVis}
       />
 
-      <p className="mt-3 text-xs leading-relaxed text-[hsl(var(--muted))]">
+      <p className="mt-3 text-xs leading-relaxed text-[hsl(var(--fg-muted))]">
         Showing <span className="tabular-nums text-fg">{data.length}</span> of{' '}
         <span className="tabular-nums text-fg">{totalCols}</span> columns
         {summaryParts.length ? ` · ${summaryParts.join(' · ')}` : ''}.{' '}

@@ -28,7 +28,7 @@ export function OverviewPage() {
   if (!activeId) {
     return (
       <PageContainer>
-        <p className="text-sm text-[hsl(var(--muted))]">Select a dataset from the sidebar.</p>
+        <p className="text-sm text-[hsl(var(--fg-muted))]">Select a dataset from the sidebar.</p>
       </PageContainer>
     )
   }

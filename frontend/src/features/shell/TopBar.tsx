@@ -83,7 +83,7 @@ export function TopBar() {
   const onCancelRefresh = profileQ.cancelRefresh
 
   return (
-    <header className="shrink-0 border-b border-border-default bg-[hsl(var(--card))]/60 backdrop-blur-md">
+    <header className="shrink-0 border-b border-border-default bg-[hsl(var(--surface-1))]/60 backdrop-blur-md">
       <div className="flex items-start gap-2 px-3 py-2 sm:gap-3 sm:px-4">
         <div className="flex shrink-0 items-center gap-1 pt-0.5 sm:gap-2">
           <Button

@@ -30,16 +30,16 @@ def _profile_refresh_fn(
     settings: SettingsDep,
 ):
     def _refresh(job_id: str) -> dict:
-        if workspace.job_cancel_requested(job_id):
+        if workspace.jobs.job_cancel_requested(job_id):
             return {"dataset_id": dataset_id, "status": "canceled"}
         ds = registry.get(dataset_id)
         if not ds:
             return {"dataset_id": dataset_id, "status": "missing"}
-        workspace.delete_profile_cache(dataset_id)
+        workspace.profiles.delete_profile_cache(dataset_id)
         prof = build_profile(ds, settings)
-        if workspace.job_cancel_requested(job_id):  # pragma: no cover
+        if workspace.jobs.job_cancel_requested(job_id):  # pragma: no cover
             return {"dataset_id": dataset_id, "status": "canceled"}
-        workspace.save_profile_cache(dataset_id, prof.model_dump(mode="json"))
+        workspace.profiles.save_profile_cache(dataset_id, prof.model_dump(mode="json"))
         return {"dataset_id": dataset_id, "quality_score": prof.quality_score}
 
     return _refresh
@@ -52,7 +52,7 @@ def _queue_profile_job(
     workspace: WorkspaceDep,
     settings: SettingsDep,
 ) -> str:
-    existing = workspace.job_find_active_for_dataset(dataset_id, "profile_refresh")
+    existing = workspace.jobs.job_find_active_for_dataset(dataset_id, "profile_refresh")
     if existing:
         return existing
     return jobs.submit(

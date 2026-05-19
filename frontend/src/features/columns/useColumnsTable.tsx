@@ -84,7 +84,7 @@ export function useColumnsTable() {
               <span className="truncate font-mono text-xs text-fg" title={r.physical_type}>
                 {r.physical_type}
               </span>
-              <span className="truncate text-[10px] capitalize text-[hsl(var(--muted))]" title={r.semantic_type}>
+              <span className="truncate text-[10px] capitalize text-[hsl(var(--fg-muted))]" title={r.semantic_type}>
                 {r.semantic_type.replaceAll('_', ' ')}
               </span>
             </div>
@@ -97,7 +97,7 @@ export function useColumnsTable() {
         sortingFn: sortOptionalNumber,
         cell: (ctx) => {
           const roles = columnRoleMap.get(ctx.row.original.name) ?? []
-          if (!roles.length) return <span className="text-[hsl(var(--muted))]">—</span>
+          if (!roles.length) return <span className="text-[hsl(var(--fg-muted))]">—</span>
           return (
             <div
               className="flex max-w-[min(14rem,28vw)] min-w-0 flex-wrap gap-1"
@@ -136,10 +136,10 @@ export function useColumnsTable() {
           return (
             <div className="min-w-[110px] text-xs" title={`Uniqueness is based on the ${scope}.`}>
               <span className="tabular-nums text-fg">{formatCount(r.unique_count)}</span>
-              <span className="text-[hsl(var(--muted))]"> · </span>
+              <span className="text-[hsl(var(--fg-muted))]"> · </span>
               <span className="tabular-nums text-fg">{formatPercent(r.unique_pct)}</span>
               {r.metric_scope === 'sample' ? (
-                <span className="ml-1 text-[10px] text-[hsl(var(--muted))]">sample</span>
+                <span className="ml-1 text-[10px] text-[hsl(var(--fg-muted))]">sample</span>
               ) : null}
             </div>
           )
@@ -152,7 +152,7 @@ export function useColumnsTable() {
         cell: (ctx) => {
           const r = ctx.row.original
           if (r.min_value == null && r.max_value == null) {
-            return <span className="text-[hsl(var(--muted))]">—</span>
+            return <span className="text-[hsl(var(--fg-muted))]">—</span>
           }
           const minShown = r.min_value != null ? formatEdaNumericString(r.min_value) : '—'
           const maxShown = r.max_value != null ? formatEdaNumericString(r.max_value) : '—'
@@ -178,7 +178,7 @@ export function useColumnsTable() {
           const r = ctx.row.original
           const mean = r.mean_value
           const med = r.median_value
-          if (!mean && !med) return <span className="text-[hsl(var(--muted))]">—</span>
+          if (!mean && !med) return <span className="text-[hsl(var(--fg-muted))]">—</span>
           return (
             <div className="max-w-[12rem] text-xs">
               {mean ? (
@@ -187,7 +187,7 @@ export function useColumnsTable() {
                 </div>
               ) : null}
               {med ? (
-                <div className="truncate font-mono text-[hsl(var(--muted))]" title={`median ${med}`}>
+                <div className="truncate font-mono text-[hsl(var(--fg-muted))]" title={`median ${med}`}>
                   med {formatEdaNumericString(med)}
                 </div>
               ) : null}
@@ -212,7 +212,7 @@ export function useColumnsTable() {
               : null
           const iqrTitle =
             r.p25_value != null && r.p75_value != null ? `${r.p25_value}–${r.p75_value}` : undefined
-          if (!std && !iqr) return <span className="text-[hsl(var(--muted))]">—</span>
+          if (!std && !iqr) return <span className="text-[hsl(var(--fg-muted))]">—</span>
           return (
             <div className="max-w-[12rem] text-xs">
               {std ? (
@@ -221,7 +221,7 @@ export function useColumnsTable() {
                 </div>
               ) : null}
               {iqr ? (
-                <div className="truncate font-mono text-[hsl(var(--muted))]" title={iqrTitle ? `IQR ${iqrTitle}` : undefined}>
+                <div className="truncate font-mono text-[hsl(var(--fg-muted))]" title={iqrTitle ? `IQR ${iqrTitle}` : undefined}>
                   IQR {iqr}
                 </div>
               ) : null}
@@ -236,14 +236,14 @@ export function useColumnsTable() {
         cell: (ctx) => {
           const r = ctx.row.original
           if (r.top_value == null && r.top_count == null) {
-            return <span className="text-[hsl(var(--muted))]">—</span>
+            return <span className="text-[hsl(var(--fg-muted))]">—</span>
           }
           const scope = metricScopeLabel(r.metric_scope)
           const title = `${r.top_value ?? ''} (${r.top_count}, ${r.top_pct ?? ''}%; ${scope})`
           return (
             <div className="max-w-[min(14rem,30vw)] min-w-0" title={title}>
               <span className="block truncate font-mono text-xs text-fg">{r.top_value ?? '—'}</span>
-              <span className="block truncate tabular-nums text-[10px] text-[hsl(var(--muted))]">
+              <span className="block truncate tabular-nums text-[10px] text-[hsl(var(--fg-muted))]">
                 {formatCount(r.top_count)} · {formatPercent(r.top_pct)}
                 {r.metric_scope === 'sample' ? ' · sample' : ''}
               </span>
@@ -260,7 +260,7 @@ export function useColumnsTable() {
         },
         cell: (ctx) => {
           const flags = ctx.getValue()
-          if (!flags.length) return <span className="text-[hsl(var(--muted))]">—</span>
+          if (!flags.length) return <span className="text-[hsl(var(--fg-muted))]">—</span>
           return (
             <div
               className="flex max-w-[min(14rem,30vw)] min-w-0 flex-wrap gap-1"

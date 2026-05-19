@@ -7,13 +7,13 @@ import { SamplesPage } from '@/features/samples/SamplesPage'
 import { useUiStore } from '@/store/uiStore'
 import { mkProfile } from '@/test/profileFixtures'
 
-const h = vi.hoisted(() => ({ getSample: vi.fn(), getProfile: vi.fn() }))
+const h = vi.hoisted(() => ({ getSample: vi.fn(), fetchDatasetProfile: vi.fn() }))
 
 vi.mock('@/api/client', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/api/client')>()
   return {
     ...mod,
-    api: { ...mod.api, getSample: h.getSample, getProfile: h.getProfile, fetchDatasetProfile: h.getProfile },
+    api: { ...mod.api, getSample: h.getSample, fetchDatasetProfile: h.fetchDatasetProfile },
   }
 })
 
@@ -27,7 +27,7 @@ function wrap(ui: React.ReactElement) {
 describe('SamplesPage', () => {
   beforeEach(() => {
     h.getSample.mockReset()
-    h.getProfile.mockResolvedValue(mkProfile({ column_profiles: [] }))
+    h.fetchDatasetProfile.mockResolvedValue(mkProfile({ column_profiles: [] }))
   })
 
   it('no dataset', () => {

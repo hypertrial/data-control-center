@@ -50,7 +50,7 @@ def list_datasets(registry: RegistryDep, workspace: WorkspaceDep) -> list[Datase
     for ds in registry.list_all():
         s = registry.to_summary(ds)
         qs: int | None = None
-        cached = workspace.load_profile_cache(ds.dataset_id)
+        cached = workspace.profiles.load_profile_cache(ds.dataset_id)
         if isinstance(cached, dict):
             raw = cached.get("quality_score")
             if raw is not None:

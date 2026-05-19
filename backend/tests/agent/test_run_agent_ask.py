@@ -9,9 +9,7 @@ import httpx
 
 from app.config import Settings
 from app.models.api import AgentAskRequest
-from app.services.agent import (
-    run_agent_ask,
-)
+from tests.agent.conftest import collect_ask_result
 from app.services.registry import DatasetRegistry
 from app.services.workspace import Workspace
 
@@ -19,7 +17,7 @@ def test_run_agent_no_datasets(tmp_path: Path) -> None:
     settings = Settings(workspace_db_path=tmp_path / "w.duckdb")
     ws = Workspace(settings)
     reg = DatasetRegistry(ws, settings)
-    out = run_agent_ask(reg, settings, AgentAskRequest(question="x"), ollama_call=lambda *a, **k: "")
+    out = collect_ask_result(reg, settings, AgentAskRequest(question="x"), ollama_call=lambda *a, **k: "")
     assert out.error and "No datasets" in out.error
 
 
@@ -29,7 +27,7 @@ def test_run_agent_ollama_connection_error_has_hint(registry_csv: DatasetRegistr
     def fake_ollama(s, messages, format_schema=None):  # noqa: ANN001
         raise httpx.ConnectError("refused")
 
-    out = run_agent_ask(
+    out = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="x"),
@@ -51,7 +49,7 @@ def test_run_agent_happy_path(registry_csv: DatasetRegistry) -> None:
             return f'{{"sql":"SELECT COUNT(*) AS n FROM {vw}","explanation":"count rows"}}'
         return '{"answer":"There are 2 rows."}'
 
-    out = run_agent_ask(
+    out = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="How many rows?"),
@@ -77,7 +75,7 @@ def test_run_agent_sql_retry_then_success(registry_csv: DatasetRegistry) -> None
             return '{"sql":"INSERT INTO foo SELECT 1","explanation":"bad"}'
         return f'{{"sql":"SELECT COUNT(*) AS n FROM {vw}","explanation":"fixed"}}'
 
-    out = run_agent_ask(
+    out = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="count"),
@@ -94,7 +92,7 @@ def test_run_agent_sql_fails_exhausted(registry_csv: DatasetRegistry) -> None:
     def fake_ollama(s, messages, format_schema=None):  # noqa: ANN001
         return f'{{"sql":"SELECT not_a_column FROM {vw}","explanation":"x"}}'
 
-    out = run_agent_ask(
+    out = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="x"),
@@ -120,7 +118,7 @@ def test_run_agent_retries_empty_filtered_result(registry_csv: DatasetRegistry) 
         assert "returned 0 rows" in messages[-1]["content"]
         return f'{{"sql":"SELECT val FROM {vw}","explanation":"unfiltered"}}'
 
-    out = run_agent_ask(
+    out = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="show values"),
@@ -141,7 +139,7 @@ def test_run_agent_does_not_retry_empty_unfiltered_result(registry_csv: DatasetR
         calls += 1
         return f'{{"sql":"SELECT val FROM {vw} LIMIT 0","explanation":"empty"}}'
 
-    out = run_agent_ask(
+    out = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="show no rows"),
@@ -164,7 +162,7 @@ def test_run_agent_invalid_json_retries(registry_csv: DatasetRegistry) -> None:
             return "NOT JSON"
         return f'{{"sql":"SELECT 1 AS x FROM {vw}","explanation":"ok"}}'
 
-    out = run_agent_ask(
+    out = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="x"),
@@ -177,7 +175,7 @@ def test_run_agent_invalid_json_retries(registry_csv: DatasetRegistry) -> None:
 def test_run_agent_invalid_json_gives_up(registry_csv: DatasetRegistry) -> None:
     settings = Settings(agent_sql_attempts=1)
 
-    out = run_agent_ask(
+    out = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="x"),
@@ -192,7 +190,7 @@ def test_run_agent_http_error(registry_csv: DatasetRegistry) -> None:
     def boom(*a, **k):  # noqa: ANN001
         raise httpx.ReadTimeout("slow")
 
-    out = run_agent_ask(
+    out = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="x"),
@@ -207,7 +205,7 @@ def test_run_agent_generic_exception(registry_csv: DatasetRegistry) -> None:
     def boom(*a, **k):  # noqa: ANN001
         raise RuntimeError("x")
 
-    out = run_agent_ask(
+    out = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="x"),
@@ -228,7 +226,7 @@ def test_run_agent_summary_bad_json(registry_csv: DatasetRegistry) -> None:
             return f'{{"sql":"SELECT COUNT(*) AS n FROM {vw}","explanation":"e"}}'
         return "not-summary-json"
 
-    out = run_agent_ask(
+    out = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="x"),
@@ -250,7 +248,7 @@ def test_run_agent_summary_http_error(registry_csv: DatasetRegistry) -> None:
             return f'{{"sql":"SELECT COUNT(*) AS n FROM {vw}","explanation":"e"}}'
         raise httpx.ReadTimeout("t")
 
-    out = run_agent_ask(
+    out = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="x"),
@@ -272,7 +270,7 @@ def test_run_agent_summary_oserror_fallback(registry_csv: DatasetRegistry) -> No
             return f'{{"sql":"SELECT COUNT(*) AS n FROM {vw}","explanation":"e"}}'
         raise OSError("sum")
 
-    out = run_agent_ask(
+    out = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="x"),
@@ -282,9 +280,9 @@ def test_run_agent_summary_oserror_fallback(registry_csv: DatasetRegistry) -> No
     assert out.answer and "Summarization unavailable" in out.answer
 
 
-def test_run_agent_ask_conversation_not_found(registry_csv: DatasetRegistry) -> None:
+def test_collect_ask_result_conversation_not_found(registry_csv: DatasetRegistry) -> None:
     settings = Settings(agent_summarize_with_llm=False)
-    out = run_agent_ask(
+    out = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="x", conversation_id="bad"),
@@ -292,19 +290,17 @@ def test_run_agent_ask_conversation_not_found(registry_csv: DatasetRegistry) -> 
     assert out.error and "Conversation" in out.error
 
 
-def test_run_agent_ask_second_turn_includes_history(registry_csv: DatasetRegistry) -> None:
-    from app.services import ask_store
-
+def test_collect_ask_result_second_turn_includes_history(registry_csv: DatasetRegistry) -> None:
+    
     settings = Settings(agent_summarize_with_llm=False)
-    con = registry_csv.workspace.connection
-    conv = ask_store.create_conversation(con)
+    conv = registry_csv.workspace.ask.create_conversation()
     cid = conv["conversation_id"]
     vw = registry_csv.list_all()[0].view_name
 
     def r1(s, m, f=None):  # noqa: ANN001
         return json.dumps({"sql": f"SELECT * FROM {vw} LIMIT 1", "explanation": "a"})
 
-    out1 = run_agent_ask(
+    out1 = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="first question", conversation_id=cid),
@@ -318,7 +314,7 @@ def test_run_agent_ask_second_turn_includes_history(registry_csv: DatasetRegistr
         captured.append(list(m))
         return json.dumps({"sql": f"SELECT COUNT(*) AS n FROM {vw}", "explanation": "b"})
 
-    out2 = run_agent_ask(
+    out2 = collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="second question", conversation_id=cid),
@@ -330,19 +326,17 @@ def test_run_agent_ask_second_turn_includes_history(registry_csv: DatasetRegistr
     assert any("Recent conversation" in uc or "Turn 1" in uc for uc in user_contents)
 
 
-def test_run_agent_ask_skips_history_when_disabled(registry_csv: DatasetRegistry) -> None:
-    from app.services import ask_store
-
+def test_collect_ask_result_skips_history_when_disabled(registry_csv: DatasetRegistry) -> None:
+    
     settings = Settings(agent_summarize_with_llm=False)
-    con = registry_csv.workspace.connection
-    conv = ask_store.create_conversation(con)
+    conv = registry_csv.workspace.ask.create_conversation()
     cid = conv["conversation_id"]
     vw = registry_csv.list_all()[0].view_name
 
     def r1(s, m, f=None):  # noqa: ANN001
         return json.dumps({"sql": f"SELECT * FROM {vw} LIMIT 1", "explanation": "a"})
 
-    run_agent_ask(
+    collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="only turn", conversation_id=cid),
@@ -355,7 +349,7 @@ def test_run_agent_ask_skips_history_when_disabled(registry_csv: DatasetRegistry
         captured.append(list(m))
         return json.dumps({"sql": f"SELECT COUNT(*) AS n FROM {vw}", "explanation": "b"})
 
-    run_agent_ask(
+    collect_ask_result(
         registry_csv,
         settings,
         AgentAskRequest(question="next", conversation_id=cid, use_history=False),
