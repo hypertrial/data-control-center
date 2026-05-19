@@ -99,7 +99,7 @@ def test_build_dataset_context_no_columns_resolved(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "app.services.agent._pragma_column_summaries",
+        "app.services.agent.context._pragma_column_summaries",
         lambda *a, **k: [],
     )
     registry_csv.workspace.delete_profile_cache(registry_csv.list_all()[0].dataset_id)
