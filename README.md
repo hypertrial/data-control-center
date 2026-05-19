@@ -36,7 +36,9 @@ Then open **`http://127.0.0.1:8000`**. This builds `frontend/dist` and sets **`D
 
 ## Upgrading / workspace schema
 
-Workspace state lives in **`DCC_WORKSPACE_DB_PATH`** (default **`.dcc_workspace.duckdb`**): cached profiles (**`structure_version: "v4"`**), Ask conversations, jobs, saved SQL, etc. If startup fails with an **unsupported workspace schema** error, either run **`make clean-local`** (destructive to app-owned state) or delete the workspace DuckDB file by hand. That **does not** remove your original data files—only app metadata, profiles, Ask history, and uploaded **copies** under **`.dcc_uploads/`** when you use `clean-local`.
+Workspace state lives in **`DCC_WORKSPACE_DB_PATH`** (default **`.dcc_workspace.duckdb`**): cached profiles (**`structure_version: "v4"`**), Ask conversations, jobs, saved SQL, etc. The app maintains a **`schema_version`** table and runs forward-only migrations on startup (existing DBs that already match the current schema are **stamped** without data loss). Before applying a real upgrade, set **`DCC_WORKSPACE_BACKUP_BEFORE_MIGRATE=true`** (default) to copy the workspace file to **`.dcc_workspace.duckdb.pre-migrate-vN`**.
+
+If startup fails with an **unsupported workspace schema** error (including **downgrade** from a newer app), either run **`make clean-local`** (destructive to app-owned state) or delete the workspace DuckDB file by hand. That **does not** remove your original data files—only app metadata, profiles, Ask history, and uploaded **copies** under **`.dcc_uploads/`** when you use `clean-local`. Pre-**0.1.0** alpha workspaces without compatible tables still need a clean recreate.
 
 ## API reference (OpenAPI)
 

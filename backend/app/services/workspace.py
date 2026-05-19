@@ -30,7 +30,7 @@ class Workspace:
         self._engine = WorkspaceEngine(settings)
         self._schema = WorkspaceSchema()
         with self._engine.lock_db() as con:
-            self._schema.initialize(con)
+            self._schema.initialize(con, settings)
         self._profiles = ProfileStore(self._engine)
         self._saved_queries = SavedQueryStore(self._engine)
         self._jobs = JobStore(self._engine)

@@ -583,8 +583,9 @@ def test_workspace_facade_delegates_to_engine_and_stores(
             calls["sleep_poll"] = seconds
 
     class FakeSchema:
-        def initialize(self, con: object) -> None:
+        def initialize(self, con: object, settings: object) -> None:
             calls["schema_init"] = con
+            calls["schema_settings"] = settings
 
     class FakeProfiles:
         def __init__(self, engine: object) -> None:
