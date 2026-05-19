@@ -15,12 +15,13 @@ from app.services.jobs import JobService
 from app.services.workspace import Workspace
 
 
-def _settings(tmp_path: Path):
+def _settings(tmp_path: Path, *, local_api_token: str | None = "test-local-token"):
     from app.config import Settings
 
     return Settings(
         workspace_db_path=tmp_path / "w.duckdb",
         allow_arbitrary_registration_paths=True,
+        local_api_token=local_api_token,
     )
 
 
@@ -48,16 +49,26 @@ def test_job_service_completed_and_request_cancel_missing(tmp_path: Path) -> Non
 
 
 def test_job_service_failed_path(tmp_path: Path) -> None:
-    ws = Workspace(_settings(tmp_path))
-    svc = JobService(ws, max_workers=1)
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    token = settings.local_api_token or ""
+    db_path = str(ws.path)
+    svc = JobService(ws, max_workers=1, redact_secrets=(token,) if token else ())
     try:
         def boom(_job_id: str) -> dict:
-            raise RuntimeError("boom")
+            raise RuntimeError(f"failed at {db_path} with {token}")
 
         job_id = svc.submit(kind="profile_refresh", dataset_id="ds_001", fn=boom)
         row = _wait_for_workspace_job(ws, job_id)
         assert row["status"] == "failed"
         assert row["error_code"] == CODES.JOB_FAILED
+        msg = row["error_message"]
+        assert msg.startswith("RuntimeError:")
+        assert db_path not in msg
+        assert token not in msg
+        assert "<path>" in msg
+        assert "<redacted>" in msg
+        assert len(msg) <= 240
     finally:
         ws.close()
 
