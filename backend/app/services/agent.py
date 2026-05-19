@@ -22,23 +22,12 @@ from app.models.api import (
 from app.services import ask_store
 from app.services.query import execute_query
 from app.services.registry import DatasetRegistry
+from app.services.ollama_http import parse_ollama_error_detail
 from app.services.workspace import Workspace, sanitize_sql_identifier
 
 logger = logging.getLogger(__name__)
 
-
-def _ollama_error_body(response: httpx.Response) -> str:
-    """Ollama JSON error field, e.g. model not found (often returned as HTTP 404)."""
-    try:
-        payload = response.json()
-        if isinstance(payload, dict):
-            err = payload.get("error")
-            if isinstance(err, str) and err.strip():
-                return err.strip()
-    except Exception:
-        pass
-    text = (response.text or "").strip()
-    return text[:500] if text else ""
+_ollama_error_body = parse_ollama_error_detail
 
 
 OLLAMA_SQL_DRAFT_FORMAT: dict[str, Any] = {
