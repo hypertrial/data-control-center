@@ -104,6 +104,13 @@ class RegisteredDataset:
 
 
 class DatasetRegistry:
+    """In-memory dataset index backed by DuckDB.
+
+    Lock ordering: acquire ``self._lock`` before any call that may take
+    ``workspace.lock_db()``; never hold ``workspace.lock_db()`` while waiting
+    on ``self._lock``.
+    """
+
     def __init__(self, workspace: Workspace, settings: Settings) -> None:
         self._workspace = workspace
         self._settings = settings
@@ -160,7 +167,12 @@ class DatasetRegistry:
             return
         ttl_seconds = self._settings.upload_orphan_ttl_hours * 3600
         cutoff = time.time() - ttl_seconds
-        active = {ds.source_path.resolve() for ds in self._by_id.values() if self.is_app_owned_upload(ds.source_path)}
+        with self._lock:
+            active = {
+                ds.source_path.resolve()
+                for ds in self._by_id.values()
+                if self.is_app_owned_upload(ds.source_path)
+            }
         for child in root.iterdir():
             if not child.is_dir():
                 continue
@@ -278,16 +290,17 @@ class DatasetRegistry:
                 raise
 
     def set_counts(self, dataset_id: str, row_count: int | None, column_count: int | None) -> None:
-        ds = self._by_id.get(dataset_id)
-        if not ds:
-            return
-        with self._workspace.lock_db() as con:
-            con.execute(
-                "UPDATE dcc_datasets SET row_count = ?, column_count = ? WHERE dataset_id = ?",
-                [row_count, column_count, dataset_id],
-            )
-        ds.row_count = row_count
-        ds.column_count = column_count
+        with self._lock:
+            ds = self._by_id.get(dataset_id)
+            if not ds:
+                return
+            with self._workspace.lock_db() as con:
+                con.execute(
+                    "UPDATE dcc_datasets SET row_count = ?, column_count = ? WHERE dataset_id = ?",
+                    [row_count, column_count, dataset_id],
+                )
+            ds.row_count = row_count
+            ds.column_count = column_count
 
     def register_folder(self, folder: Path, recursive: bool = False) -> list[RegisteredDataset]:
         root = folder.expanduser().resolve()
@@ -339,17 +352,22 @@ class DatasetRegistry:
             return True
 
     def get(self, dataset_id: str) -> RegisteredDataset | None:
-        return self._by_id.get(dataset_id)
+        with self._lock:
+            return self._by_id.get(dataset_id)
 
     def list_all(self) -> list[RegisteredDataset]:
-        return list(self._by_id.values())
+        with self._lock:
+            return list(self._by_id.values())
 
     @property
     def workspace(self) -> Workspace:
         return self._workspace
 
     def to_summary(self, ds: RegisteredDataset) -> DatasetSummary:
-        source_path = str(ds.source_path) if self._settings.expose_absolute_source_paths else ds.source_label
+        with self._lock:
+            source_path = (
+                str(ds.source_path) if self._settings.expose_absolute_source_paths else ds.source_label
+            )
         return DatasetSummary(
             dataset_id=ds.dataset_id,
             name=ds.source_label,
