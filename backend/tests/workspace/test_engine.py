@@ -121,6 +121,19 @@ def test_drop_view_if_exists(tmp_path: Path) -> None:
         ws.close()
 
 
+def test_job_find_active_for_dataset(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    try:
+        assert ws.job_find_active_for_dataset("ds_001", "profile_refresh") is None
+        ws.job_insert("j1", "profile_refresh", "ds_001", "queued")
+        assert ws.job_find_active_for_dataset("ds_001", "profile_refresh") == "j1"
+        ws.job_finish("j1", "completed")
+        assert ws.job_find_active_for_dataset("ds_001", "profile_refresh") is None
+    finally:
+        ws.close()
+
+
 def test_jobs_insert_and_finish(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     ws = Workspace(settings)
