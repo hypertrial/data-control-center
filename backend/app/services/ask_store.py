@@ -366,3 +366,78 @@ def format_history_block(turns: list[dict[str, Any]]) -> str:
             chunk += "\n"
         lines.append(chunk.rstrip())
     return "\n".join(lines) + "\n\n"
+
+
+class AskStore:
+    """Workspace-backed Ask conversation persistence."""
+
+    def __init__(self, engine) -> None:  # noqa: ANN001 — WorkspaceEngine
+        self._engine = engine
+
+    def create_conversation(
+        self,
+        title: str | None = None,
+        dataset_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        with self._engine.lock_db() as con:
+            return create_conversation(con, title=title, dataset_ids=dataset_ids)
+
+    def get_conversation(self, conversation_id: str) -> dict[str, Any] | None:
+        with self._engine.lock_db() as con:
+            return get_conversation(con, conversation_id)
+
+    def list_conversations(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self._engine.lock_db() as con:
+            return list_conversations(con, limit=limit)
+
+    def rename_conversation(self, conversation_id: str, title: str) -> bool:
+        with self._engine.lock_db() as con:
+            return rename_conversation(con, conversation_id, title)
+
+    def delete_conversation(self, conversation_id: str) -> bool:
+        with self._engine.lock_db() as con:
+            return delete_conversation(con, conversation_id)
+
+    def delete_turn(self, conversation_id: str, turn_id: str) -> bool:
+        with self._engine.lock_db() as con:
+            return delete_turn(con, conversation_id, turn_id)
+
+    def append_turn(
+        self,
+        conversation_id: str,
+        question: str,
+        sql: str | None,
+        explanation: str | None,
+        answer: str | None,
+        error: str | None,
+        attempts: list[dict[str, Any]],
+        query_result: QueryResult | None,
+        model: str | None,
+        elapsed_ms: int | None,
+    ) -> tuple[str, int]:
+        with self._engine.lock_db() as con:
+            return append_turn(
+                con,
+                conversation_id,
+                question,
+                sql,
+                explanation,
+                answer,
+                error,
+                attempts,
+                query_result,
+                model,
+                elapsed_ms,
+            )
+
+    def list_turns(self, conversation_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        with self._engine.lock_db() as con:
+            return list_turns(con, conversation_id, limit=limit)
+
+    def last_turns_for_context(self, conversation_id: str, n: int = 3) -> list[dict[str, Any]]:
+        with self._engine.lock_db() as con:
+            return last_turns_for_context(con, conversation_id, n=n)
+
+    @staticmethod
+    def format_history_block(turns: list[dict[str, Any]]) -> str:
+        return format_history_block(turns)
