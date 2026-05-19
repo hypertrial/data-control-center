@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Sparkles } from 'lucide-react'
+import { Settings2, Sparkles } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverAnchor } from '@/components/ui/popover'
 import { api } from '@/api/client'
 import { AskOptionsPopover } from '@/features/ask/AskOptionsPopover'
 import {
@@ -16,6 +17,8 @@ function truncateLabel(text: string, max = 18): string {
   if (text.length <= max) return text
   return `${text.slice(0, max - 1)}…`
 }
+
+type AskPopoverAnchor = AskOptionsFocus | 'options'
 
 export function AskComposer({
   busy,
@@ -39,6 +42,7 @@ export function AskComposer({
   const [selectedModel, setSelectedModel] = useState(readSavedAskModel)
   const [optionsOpen, setOptionsOpen] = useState(false)
   const [optionsFocus, setOptionsFocus] = useState<AskOptionsFocus | null>(null)
+  const [optionsAnchor, setOptionsAnchor] = useState<AskPopoverAnchor>('options')
   const internalRef = useRef<HTMLTextAreaElement | null>(null)
   const taRef = inputRef ?? internalRef
 
@@ -101,104 +105,132 @@ export function AskComposer({
     submit()
   }
 
-  const openOptions = (focus: AskOptionsFocus) => {
+  const openOptions = (focus: AskOptionsFocus | null, anchor: AskPopoverAnchor) => {
+    setOptionsAnchor(anchor)
     setOptionsFocus(focus)
     setOptionsOpen(true)
   }
 
+  const renderPopoverAnchor = (anchor: AskPopoverAnchor, node: React.ReactElement) =>
+    optionsOpen && optionsAnchor === anchor ? <PopoverAnchor asChild>{node}</PopoverAnchor> : node
+
   const scopeLabel = scopeSummary(scope, datasets.length)
 
   return (
-    <div className="sticky bottom-0 z-10 shrink-0 border-t border-border-default bg-surface-1/95 pb-3 pt-3 backdrop-blur md:pt-2">
-      <div className="space-y-2">
-        <div className="flex items-start gap-2">
-          <label htmlFor="dcc-ask-q" className="sr-only">
-            Question
-          </label>
-          <textarea
-            id="dcc-ask-q"
-            ref={taRef}
-            value={question}
-            onChange={(e) => onQuestionChange(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Ask a question about your data in plain language…"
-            rows={2}
-            className="min-h-[3.5rem] max-h-60 flex-1 resize-y rounded-xl border border-border-default bg-black/30 px-3 py-2 text-sm text-white placeholder:text-fg-muted focus:border-border-accent focus:outline-none"
-          />
-          <div className="flex shrink-0 flex-col gap-1.5">
-            <Button
-              type="button"
-              className="gap-1"
-              disabled={busy || !question.trim()}
-              onClick={() => submit()}
-            >
-              <Sparkles className="h-4 w-4" />
-              {busy ? 'Streaming…' : 'Ask (stream)'}
-            </Button>
-            {busy ? (
-              <Button type="button" variant="outline" size="sm" onClick={() => onStop()}>
-                Stop (Esc)
-              </Button>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              className="rounded-full border border-border-default bg-black/20 px-2 py-0.5 text-[11px] text-fg-muted hover:bg-white/10 hover:text-fg"
-              onClick={() => openOptions('model')}
-              title="Model"
-            >
-              {truncateLabel(effectiveSelectedModel || 'model…')}
-            </button>
-            <button
-              type="button"
-              className="rounded-full border border-border-default bg-black/20 px-2 py-0.5 text-[11px] text-fg-muted hover:bg-white/10 hover:text-fg"
-              onClick={() => openOptions('rows')}
-              title="Max rows in preview"
-            >
-              {maxRows} rows
-            </button>
-            {datasets.length > 0 ? (
-              <button
-                type="button"
-                className="rounded-full border border-border-default bg-black/20 px-2 py-0.5 text-[11px] text-fg-muted hover:bg-white/10 hover:text-fg"
-                onClick={() => openOptions('scope')}
-                title="Dataset scope"
-              >
-                {scopeLabel}
-              </button>
-            ) : null}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <AskOptionsPopover
-              open={optionsOpen}
-              onOpenChange={(open) => {
-                setOptionsOpen(open)
-                if (!open) setOptionsFocus(null)
-              }}
-              focusSection={optionsFocus}
-              busy={busy}
-              maxRows={maxRows}
-              onMaxRowsChange={setMaxRows}
-              scope={scope}
-              onScopeChange={setScope}
-              selectedModel={selectedModel}
-              onSelectedModelChange={setSelectedModel}
-              effectiveSelectedModel={effectiveSelectedModel}
-              allIds={allIds}
+    <Popover
+      open={optionsOpen}
+      onOpenChange={(open) => {
+        setOptionsOpen(open)
+        if (!open) setOptionsFocus(null)
+      }}
+    >
+      <div className="sticky bottom-0 z-10 shrink-0 border-t border-border-default bg-surface-1/95 pb-3 pt-3 backdrop-blur md:pt-2">
+        <div className="space-y-2">
+          <div className="flex items-start gap-2">
+            <label htmlFor="dcc-ask-q" className="sr-only">
+              Question
+            </label>
+            <textarea
+              id="dcc-ask-q"
+              ref={taRef}
+              value={question}
+              onChange={(e) => onQuestionChange(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Ask a question about your data in plain language…"
+              rows={2}
+              className="min-h-[3.5rem] max-h-60 flex-1 resize-y rounded-xl border border-border-default bg-black/30 px-3 py-2 text-sm text-white placeholder:text-fg-muted focus:border-border-accent focus:outline-none"
             />
-            <span className="text-[10px] text-fg-muted">
-              <kbd className="rounded border border-border-default px-1 font-mono">⌘</kbd>+
-              <kbd className="rounded border border-border-default px-1 font-mono">Enter</kbd> send ·{' '}
-              <kbd className="rounded border border-border-default px-1 font-mono">↑</kbd> recall
-            </span>
+            <div className="flex shrink-0 flex-col gap-1.5">
+              <Button
+                type="button"
+                className="gap-1"
+                disabled={busy || !question.trim()}
+                onClick={() => submit()}
+              >
+                <Sparkles className="h-4 w-4" />
+                {busy ? 'Streaming…' : 'Ask (stream)'}
+              </Button>
+              {busy ? (
+                <Button type="button" variant="outline" size="sm" onClick={() => onStop()}>
+                  Stop (Esc)
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {renderPopoverAnchor(
+                'model',
+                <button
+                  type="button"
+                  className="rounded-full border border-border-default bg-black/20 px-2 py-0.5 text-[11px] text-fg-muted hover:bg-white/10 hover:text-fg"
+                  onClick={() => openOptions('model', 'model')}
+                  title="Model"
+                >
+                  {truncateLabel(effectiveSelectedModel || 'model…')}
+                </button>,
+              )}
+              {renderPopoverAnchor(
+                'rows',
+                <button
+                  type="button"
+                  className="rounded-full border border-border-default bg-black/20 px-2 py-0.5 text-[11px] text-fg-muted hover:bg-white/10 hover:text-fg"
+                  onClick={() => openOptions('rows', 'rows')}
+                  title="Max rows in preview"
+                >
+                  {maxRows} rows
+                </button>,
+              )}
+              {datasets.length > 0
+                ? renderPopoverAnchor(
+                    'scope',
+                    <button
+                      type="button"
+                      className="rounded-full border border-border-default bg-black/20 px-2 py-0.5 text-[11px] text-fg-muted hover:bg-white/10 hover:text-fg"
+                      onClick={() => openOptions('scope', 'scope')}
+                      title="Dataset scope"
+                    >
+                      {scopeLabel}
+                    </button>,
+                  )
+                : null}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {renderPopoverAnchor(
+                'options',
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 text-xs"
+                  onClick={() => openOptions(null, 'options')}
+                >
+                  <Settings2 className="h-3.5 w-3.5" />
+                  Options
+                </Button>,
+              )}
+              <AskOptionsPopover
+                focusSection={optionsFocus}
+                busy={busy}
+                maxRows={maxRows}
+                onMaxRowsChange={setMaxRows}
+                scope={scope}
+                onScopeChange={setScope}
+                onSelectedModelChange={setSelectedModel}
+                effectiveSelectedModel={effectiveSelectedModel}
+                allIds={allIds}
+              />
+              <span className="text-[10px] text-fg-muted">
+                <kbd className="rounded border border-border-default px-1 font-mono">⌘</kbd>+
+                <kbd className="rounded border border-border-default px-1 font-mono">Enter</kbd> send ·{' '}
+                <kbd className="rounded border border-border-default px-1 font-mono">↑</kbd> recall
+              </span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </Popover>
   )
 }

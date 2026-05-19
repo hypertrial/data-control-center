@@ -110,6 +110,48 @@ describe('AskComposer', () => {
     expect(payload.model).toBe('qwen3:4b')
   })
 
+  it('opens the popover from the model chip and keeps the model controls usable', async () => {
+    const user = userEvent.setup()
+    renderHarness(<Harness />)
+    await user.click(await screen.findByRole('button', { name: /qwen3:4b/i }))
+
+    const modelSelect = screen.getByRole('combobox', { name: /Ollama model/i })
+    expect(modelSelect).toBeInTheDocument()
+    expect(modelSelect.closest('section')).toHaveAttribute('data-focus', 'true')
+    expect(screen.getByRole('button', { name: /qwen3:4b/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Options' })).toBeInTheDocument()
+  })
+
+  it('opens the rows section from the rows chip', async () => {
+    const user = userEvent.setup()
+    renderHarness(<Harness />)
+    await user.click(await screen.findByRole('button', { name: /200 rows/i }))
+
+    const rowsInput = screen.getByLabelText(/Max rows in preview/i)
+    expect(rowsInput).toBeInTheDocument()
+    expect(rowsInput.closest('section')).toHaveAttribute('data-focus', 'true')
+  })
+
+  it('opens the dataset scope section from the scope chip', async () => {
+    const user = userEvent.setup()
+    renderHarness(<Harness />)
+    await user.click(await screen.findByRole('button', { name: 'All datasets' }))
+
+    const allCheckbox = screen.getByRole('checkbox', { name: /All datasets/i })
+    expect(allCheckbox).toBeInTheDocument()
+    expect(allCheckbox.closest('section')).toHaveAttribute('data-focus', 'true')
+  })
+
+  it('opens the full options popover from the options button', async () => {
+    const user = userEvent.setup()
+    renderHarness(<Harness />)
+    await user.click(await screen.findByRole('button', { name: 'Options' }))
+
+    expect(screen.getByRole('combobox', { name: /Ollama model/i })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Max rows in preview/i)).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /All datasets/i })).toBeInTheDocument()
+  })
+
   it('shows dataset names in scope options, not raw ids as chips', async () => {
     const user = userEvent.setup()
     renderHarness(<Harness />)
