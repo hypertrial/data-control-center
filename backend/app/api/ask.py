@@ -6,7 +6,6 @@ from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.api.deps import WorkspaceDep
 from app.models.api import AskConversation, AskConversationCreate, AskConversationPatch, AskTurn
-from app.services import ask_store
 
 router = APIRouter(prefix="/api/ask", tags=["ask"])
 
@@ -16,19 +15,16 @@ def list_conversations(
     workspace: WorkspaceDep,
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[AskConversation]:
-    with workspace.lock_db() as con:
-        rows = ask_store.list_conversations(con, limit=limit)
+    rows = workspace.ask.list_conversations(limit=limit)
     return [AskConversation(**r) for r in rows]
 
 
 @router.post("/conversations", response_model=AskConversation)
 def create_conversation(body: AskConversationCreate, workspace: WorkspaceDep) -> AskConversation:
-    with workspace.lock_db() as con:
-        row = ask_store.create_conversation(
-            con,
-            title=body.title,
-            dataset_ids=body.dataset_ids,
-        )
+    row = workspace.ask.create_conversation(
+        title=body.title,
+        dataset_ids=body.dataset_ids,
+    )
     return AskConversation(**row)
 
 
@@ -40,19 +36,17 @@ def patch_conversation(
 ) -> AskConversation:
     if body.title is None:
         raise HTTPException(status_code=400, detail="No fields to update")
-    with workspace.lock_db() as con:
-        if not ask_store.rename_conversation(con, conversation_id, body.title):
-            raise HTTPException(status_code=404, detail="Conversation not found")
-        row = ask_store.get_conversation(con, conversation_id)
+    if not workspace.ask.rename_conversation(conversation_id, body.title):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    row = workspace.ask.get_conversation(conversation_id)
     assert row is not None  # renamed row exists
     return AskConversation(**row)
 
 
 @router.delete("/conversations/{conversation_id}", status_code=204)
 def delete_conversation(conversation_id: str, workspace: WorkspaceDep) -> Response:
-    with workspace.lock_db() as con:
-        if not ask_store.delete_conversation(con, conversation_id):
-            raise HTTPException(status_code=404, detail="Conversation not found")
+    if not workspace.ask.delete_conversation(conversation_id):
+        raise HTTPException(status_code=404, detail="Conversation not found")
     return Response(status_code=204)
 
 
@@ -62,10 +56,9 @@ def list_turns_route(
     workspace: WorkspaceDep,
     limit: int = Query(default=100, ge=1, le=200),
 ) -> list[AskTurn]:
-    with workspace.lock_db() as con:
-        if not ask_store.get_conversation(con, conversation_id):
-            raise HTTPException(status_code=404, detail="Conversation not found")
-        rows = ask_store.list_turns(con, conversation_id, limit=limit)
+    if not workspace.ask.get_conversation(conversation_id):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    rows = workspace.ask.list_turns(conversation_id, limit=limit)
     return [AskTurn(**r) for r in rows]
 
 
@@ -75,7 +68,6 @@ def delete_turn_route(
     turn_id: str,
     workspace: WorkspaceDep,
 ) -> Response:
-    with workspace.lock_db() as con:
-        if not ask_store.delete_turn(con, conversation_id, turn_id):
-            raise HTTPException(status_code=404, detail="Turn not found")
+    if not workspace.ask.delete_turn(conversation_id, turn_id):
+        raise HTTPException(status_code=404, detail="Turn not found")
     return Response(status_code=204)

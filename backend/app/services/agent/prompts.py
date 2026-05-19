@@ -6,7 +6,6 @@ import re
 from typing import Any
 
 from app.models.api import AgentAskRequest
-from app.services import ask_store
 from app.services.registry import DatasetRegistry
 
 OLLAMA_SQL_DRAFT_FORMAT: dict[str, Any] = {
@@ -78,13 +77,8 @@ def _empty_result_retry_prompt() -> str:
 def _build_user_block(registry: DatasetRegistry, req: AgentAskRequest, ctx: str) -> str:
     hist = ""
     if req.conversation_id and req.use_history:
-        with registry.workspace.lock_db() as con:
-            turns = ask_store.last_turns_for_context(
-                con,
-                req.conversation_id,
-                n=3,
-            )
-        hist = ask_store.format_history_block(turns)
+        turns = registry.workspace.ask.last_turns_for_context(req.conversation_id, n=3)
+        hist = registry.workspace.ask.format_history_block(turns)
     return (
         f"{hist}"
         f"Datasets and schema:\n{ctx}\n\n"
