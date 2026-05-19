@@ -8,19 +8,10 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import RegistryDep, SettingsDep
-from app.models.api import AgentAskRequest, AgentAskResponse
-from app.services.agent import run_agent_ask, run_agent_ask_stream
+from app.models.api import AgentAskRequest
+from app.services.agent import run_agent_ask_stream
 
 router = APIRouter(prefix="/api", tags=["agent"])
-
-
-@router.post("/agent/ask", response_model=AgentAskResponse)
-def agent_ask(
-    body: AgentAskRequest,
-    registry: RegistryDep,
-    settings: SettingsDep,
-) -> AgentAskResponse:
-    return run_agent_ask(registry, settings, body)
 
 
 @router.post("/agent/ask/stream")

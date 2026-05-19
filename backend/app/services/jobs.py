@@ -42,14 +42,14 @@ class JobService:
 
     def submit(self, *, kind: str, dataset_id: str | None, fn: JobFn) -> str:
         job_id = uuid.uuid4().hex
-        self._workspace.job_insert(job_id, kind, dataset_id, "queued")
+        self._workspace.jobs.job_insert(job_id, kind, dataset_id, "queued")
 
         def _run() -> None:
-            self._workspace.job_update(job_id, status="running", progress=0.05)
+            self._workspace.jobs.job_update(job_id, status="running", progress=0.05)
             try:
                 result = fn(job_id)
-                if self._workspace.job_cancel_requested(job_id):
-                    self._workspace.job_update(
+                if self._workspace.jobs.job_cancel_requested(job_id):
+                    self._workspace.jobs.job_update(
                         job_id,
                         status="canceled",
                         progress=1.0,
@@ -58,7 +58,7 @@ class JobService:
                     emit("job.complete", job_id=job_id, kind=kind, status="canceled")
                     return
 
-                self._workspace.job_update(
+                self._workspace.jobs.job_update(
                     job_id,
                     status="completed",
                     progress=1.0,
@@ -67,8 +67,8 @@ class JobService:
                 )
                 emit("job.complete", job_id=job_id, kind=kind, status="completed")
             except Exception as exc:  # noqa: BLE001
-                if self._workspace.job_cancel_requested(job_id):
-                    self._workspace.job_update(
+                if self._workspace.jobs.job_cancel_requested(job_id):
+                    self._workspace.jobs.job_update(
                         job_id,
                         status="canceled",
                         progress=1.0,
@@ -82,7 +82,7 @@ class JobService:
                     redact_paths=self._redact_paths,
                     redact_secrets=self._redact_secrets,
                 )
-                self._workspace.job_update(
+                self._workspace.jobs.job_update(
                     job_id,
                     status="failed",
                     progress=1.0,
@@ -104,7 +104,7 @@ class JobService:
         return job_id
 
     def request_cancel(self, job_id: str) -> bool:
-        ok = self._workspace.job_request_cancel(job_id)
+        ok = self._workspace.jobs.job_request_cancel(job_id)
         if ok:
             emit("job.cancel_requested", job_id=job_id)
         return ok

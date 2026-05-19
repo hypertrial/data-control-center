@@ -282,7 +282,7 @@ class DatasetRegistry:
                     file_size_bytes=fsize,
                 )
                 self._by_id[dataset_id] = ds
-                self._workspace.delete_profile_cache(dataset_id)
+                self._workspace.profiles.delete_profile_cache(dataset_id)
                 return ds
             except Exception:
                 if view_created:
@@ -335,7 +335,7 @@ class DatasetRegistry:
             source_path = ds.source_path
             delete_source = self.is_app_owned_upload(source_path)
             self._workspace.drop_view_if_exists(ds.view_name)
-            self._workspace.delete_profile_cache(dataset_id)
+            self._workspace.profiles.delete_profile_cache(dataset_id)
             with self._workspace.lock_db() as con:
                 con.execute("DELETE FROM dcc_profile_history WHERE dataset_id = ?", [dataset_id])
                 con.execute("DELETE FROM dcc_jobs WHERE dataset_id = ?", [dataset_id])

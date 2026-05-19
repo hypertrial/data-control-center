@@ -16,11 +16,11 @@ vi.mock('echarts', () => ({
   })),
 }))
 
-const h = vi.hoisted(() => ({ getProfile: vi.fn(), listDatasets: vi.fn() }))
+const h = vi.hoisted(() => ({ fetchDatasetProfile: vi.fn(), listDatasets: vi.fn() }))
 
 vi.mock('@/api/client', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/api/client')>()
-  return { ...mod, api: { ...mod.api, getProfile: h.getProfile, fetchDatasetProfile: h.getProfile, listDatasets: h.listDatasets } }
+  return { ...mod, api: { ...mod.api, fetchDatasetProfile: h.fetchDatasetProfile, listDatasets: h.listDatasets } }
 })
 
 function wrap(ui: React.ReactElement) {
@@ -49,7 +49,7 @@ describe('ColumnsPage', () => {
         file_size_bytes: 1,
       },
     ])
-    h.getProfile.mockResolvedValue(
+    h.fetchDatasetProfile.mockResolvedValue(
       mkProfile({
         column_profiles: [
           mkColumn({ name: 'alpha', semantic_type: 'numeric' }),
@@ -79,13 +79,13 @@ describe('ColumnsPage', () => {
 
   it('loading', () => {
     useUiStore.setState({ activeDatasetId: 'ds_1' })
-    h.getProfile.mockImplementation(() => new Promise(() => {}))
+    h.fetchDatasetProfile.mockImplementation(() => new Promise(() => {}))
     wrap(<ColumnsPage />)
     expect(screen.getByRole('status', { name: /loading table/i })).toBeInTheDocument()
   })
 
   it('error', async () => {
-    h.getProfile.mockRejectedValue(new Error('e1'))
+    h.fetchDatasetProfile.mockRejectedValue(new Error('e1'))
     useUiStore.setState({ activeDatasetId: 'ds_1' })
     wrap(<ColumnsPage />)
     await waitFor(() => expect(screen.getByText('e1')).toBeInTheDocument())
@@ -100,7 +100,7 @@ describe('ColumnsPage', () => {
   })
 
   it('labels sampled uniqueness and top-value metrics', async () => {
-    h.getProfile.mockResolvedValue(
+    h.fetchDatasetProfile.mockResolvedValue(
       mkProfile({
         rows: 5_000,
         profiler_sample_rows: 2_000,
@@ -123,7 +123,7 @@ describe('ColumnsPage', () => {
   })
 
   it('shows Role badges from dataset profile structure metadata', async () => {
-    h.getProfile.mockResolvedValue(
+    h.fetchDatasetProfile.mockResolvedValue(
       mkProfile({
         primary_grain_key_columns: ['player_id', 'season_year'],
         entity_id_columns: [{ name: 'player_id', confidence: 'high' }],
@@ -169,7 +169,7 @@ describe('ColumnsPage', () => {
 
   it('truncates long column names but keeps full title', async () => {
     const long = 'world_cup_squad_tournament_year_extra_suffix_for_test'
-    h.getProfile.mockResolvedValue(
+    h.fetchDatasetProfile.mockResolvedValue(
       mkProfile({
         column_profiles: [mkColumn({ name: long, semantic_type: 'text' })],
       }),

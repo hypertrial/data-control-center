@@ -7,10 +7,16 @@ versioning once formal releases begin.
 
 ## [Unreleased]
 
+### Breaking
+
+- Workspace DB: removed versioned migrations and **`DCC_WORKSPACE_BACKUP_BEFORE_MIGRATE`**; existing **`.dcc_workspace.duckdb`** files from older builds require **`make clean-local`** (or manual delete). Leftover **`schema_version`** tables are rejected at startup.
+- Profile API: removed legacy fields **`potential_id_columns`**, **`potential_key_columns`**, **`primary_date_column`**; only **`structure_version: "v4"`** cache entries are served (stale cache is auto-deleted).
+- Agent Ask: removed synchronous **`POST /api/agent/ask`**; clients must use **`POST /api/agent/ask/stream`** (frontend: **`askAgentStream`** only).
+- Frontend: removed **`api.getProfile`**, exported **`api.waitForJob`**, and **`api.askAgent`**.
+
 ### Added
 
 - Frontend API type conformance tests (`types.test.ts` + `src/api/__fixtures__/`).
-- Versioned workspace schema migrations with implicit baseline stamping and pre-migration backups (`DCC_WORKSPACE_BACKUP_BEFORE_MIGRATE`).
 - `make check-ci` for clean-room CI-parity validation (`npm ci` then `make check`).
 - `useDatasetProfile` hook and `api.fetchDatasetProfile` for async first-open profiling (`PROFILE_NOT_READY` + job polling).
 - Registry `RLock` coverage for concurrent count/unregister paths.

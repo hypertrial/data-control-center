@@ -25,7 +25,7 @@ const h = vi.hoisted(() => ({
   listDatasets: vi.fn(),
   listSavedQueries: vi.fn(),
   createSavedQuery: vi.fn(),
-  getProfile: vi.fn(),
+  fetchDatasetProfile: vi.fn(),
 }))
 
 vi.mock('@/api/client', async (importOriginal) => {
@@ -38,7 +38,7 @@ vi.mock('@/api/client', async (importOriginal) => {
       listDatasets: h.listDatasets,
       listSavedQueries: h.listSavedQueries,
       createSavedQuery: h.createSavedQuery,
-      getProfile: h.getProfile, fetchDatasetProfile: h.getProfile,
+      fetchDatasetProfile: h.fetchDatasetProfile,
     },
   }
 })
@@ -80,7 +80,7 @@ describe('QueryPage', () => {
     h.listDatasets.mockResolvedValue([])
     h.listSavedQueries.mockResolvedValue([])
     h.createSavedQuery.mockReset()
-    h.getProfile.mockReset()
+    h.fetchDatasetProfile.mockReset()
     toastMock.success.mockReset()
     toastMock.error.mockReset()
     localStorage.clear()
@@ -198,7 +198,7 @@ describe('QueryPage', () => {
   it('expands schema, loads profile columns, and inserts identifiers into the editor', async () => {
     const user = userEvent.setup()
     h.listDatasets.mockResolvedValue([dsFooRow])
-    h.getProfile.mockResolvedValue({
+    h.fetchDatasetProfile.mockResolvedValue({
       column_profiles: [{ name: 'total cost', physical_type: 'DOUBLE' }],
     })
     useUiStore.setState({ activeDatasetId: 'ds_001' })

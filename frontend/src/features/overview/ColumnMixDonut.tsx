@@ -37,7 +37,7 @@ export function ColumnMixDonut({
         legend: {
           orient: 'horizontal' as const,
           bottom: 0,
-          textStyle: { color: hslFromRootVar('--muted'), fontSize: 11 },
+          textStyle: { color: hslFromRootVar('--fg-muted'), fontSize: 11 },
         },
         series: [
           {
@@ -49,11 +49,11 @@ export function ColumnMixDonut({
               show: true,
               formatter: '{b}\n{c}',
               fontSize: 10,
-              color: hslFromRootVar('--foreground'),
+              color: hslFromRootVar('--fg'),
             },
             data: seriesData.length
               ? seriesData
-              : [{ name: 'No columns', value: 1, itemStyle: { color: hslFromRootVar('--muted', 0.28) } }],
+              : [{ name: 'No columns', value: 1, itemStyle: { color: hslFromRootVar('--fg-muted', 0.28) } }],
           },
         ],
       }
@@ -62,7 +62,7 @@ export function ColumnMixDonut({
   )
 
   if (totalColumns === 0) {
-    return <p className="text-sm text-[hsl(var(--muted))]">No column metadata.</p>
+    return <p className="text-sm text-[hsl(var(--fg-muted))]">No column metadata.</p>
   }
 
   return (

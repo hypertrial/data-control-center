@@ -44,7 +44,7 @@ export function ColumnsFilters({
       <div className="mb-3 text-xs font-semibold tracking-tight text-white">Filter columns</div>
       <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end lg:gap-x-4 lg:gap-y-3">
         <div className="min-w-[200px] flex-1 lg:max-w-md">
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--fg-muted))]">
             Name contains
           </div>
           <div className="relative">
@@ -61,7 +61,7 @@ export function ColumnsFilters({
           </div>
         </div>
         <div className="min-w-0 flex-1 lg:min-w-[320px]">
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--fg-muted))]">
             Semantic type
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -74,7 +74,7 @@ export function ColumnsFilters({
                   'rounded-full px-3 py-1.5 text-xs transition',
                   semanticFilter === opt.value
                     ? 'bg-white/12 text-white'
-                    : 'text-[hsl(var(--muted))] hover:bg-white/5 hover:text-white',
+                    : 'text-[hsl(var(--fg-muted))] hover:bg-white/5 hover:text-white',
                 )}
               >
                 {opt.label}
@@ -84,7 +84,7 @@ export function ColumnsFilters({
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
           <div>
-            <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+            <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--fg-muted))]">
               Quality
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -97,7 +97,7 @@ export function ColumnsFilters({
                     'rounded-full px-3 py-1.5 text-xs transition',
                     columnQualityFilter === opt.value
                       ? 'bg-white/12 text-white'
-                      : 'text-[hsl(var(--muted))] hover:bg-white/5 hover:text-white',
+                      : 'text-[hsl(var(--fg-muted))] hover:bg-white/5 hover:text-white',
                   )}
                 >
                   {opt.label}

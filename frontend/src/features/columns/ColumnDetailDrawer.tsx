@@ -19,7 +19,7 @@ function SqlSnippet({ label, sql }: { label: string; sql: string }) {
   const open = useOpenInSql()
   return (
     <div className="rounded-lg border border-border-default bg-black/20 p-3 text-xs">
-      <div className="mb-1 text-[hsl(var(--muted))]">{label}</div>
+      <div className="mb-1 text-[hsl(var(--fg-muted))]">{label}</div>
       <pre className="mb-2 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-white/90">
         {sql}
       </pre>
@@ -110,22 +110,22 @@ export function ColumnDetailDrawer({
           </div>
           {column.histogram?.length ? (
             <div>
-              <div className="mb-2 text-xs font-medium text-[hsl(var(--muted))]">Histogram</div>
+              <div className="mb-2 text-xs font-medium text-[hsl(var(--fg-muted))]">Histogram</div>
               <div ref={histRef} className="h-56 w-full" />
             </div>
           ) : (
             <div>
-              <div className="mb-2 text-xs font-medium text-[hsl(var(--muted))]">Top values</div>
+              <div className="mb-2 text-xs font-medium text-[hsl(var(--fg-muted))]">Top values</div>
               <div ref={topRef} className="h-56 w-full" />
             </div>
           )}
         </TabsContent>
 
         <TabsContent value="stats" className="mt-0">
-          <p className="mb-2 text-[10px] text-[hsl(var(--muted))]">
+          <p className="mb-2 text-[10px] text-[hsl(var(--fg-muted))]">
             Null metrics use the full table. Distribution and uniqueness metrics below use the {metricScope}.
           </p>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-[hsl(var(--muted))]">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-[hsl(var(--fg-muted))]">
             <div>Count (non-null, full table)</div>
             <div className="break-all text-white tabular-nums">{formatCount(column.non_null_count)}</div>
             <div>Null count (full table)</div>
@@ -177,13 +177,13 @@ export function ColumnDetailDrawer({
 
         <TabsContent value="quality" className="mt-0 space-y-3 text-sm">
           {column.quality_flags.length === 0 ? (
-            <p className="text-[hsl(var(--muted))]">No quality flags on this column.</p>
+            <p className="text-[hsl(var(--fg-muted))]">No quality flags on this column.</p>
           ) : (
             <ul className="space-y-2">
               {column.quality_flags.map((f) => (
                 <li key={f} className="rounded-lg border border-border-default bg-white/[0.03] p-3">
                   <div className="font-mono text-xs text-amber-100">{f}</div>
-                  <p className="mt-1 text-xs text-[hsl(var(--muted))]">
+                  <p className="mt-1 text-xs text-[hsl(var(--fg-muted))]">
                     {FLAG_HELP[f] ?? 'See profiler output for details.'}
                   </p>
                 </li>
@@ -199,7 +199,7 @@ export function ColumnDetailDrawer({
               <SqlSnippet label="Full sample" sql={selectStar} />
             </>
           ) : (
-            <p className="text-xs text-[hsl(var(--muted))]">Loading table name…</p>
+            <p className="text-xs text-[hsl(var(--fg-muted))]">Loading table name…</p>
           )}
         </TabsContent>
       </Tabs>

@@ -12,9 +12,9 @@ export function SuggestedPrompts({
 
   const prompts: string[] = []
   prompts.push(`How many rows are in this dataset?`)
-  if (profile.primary_date_column) {
+  if (profile.primary_temporal_column?.name) {
     prompts.push(
-      `What is the date range of column ${profile.primary_date_column}?`,
+      `What is the date range of column ${profile.primary_temporal_column.name}?`,
     )
   }
   const cat = profile.column_profiles.find((c) => c.semantic_type === 'categorical')

@@ -155,14 +155,6 @@ describe('api client', () => {
     expect(init.body).toBeInstanceOf(FormData)
   })
 
-  it('getProfile GET', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonOk({ dataset_id: 'x' }))
-    vi.stubGlobal('fetch', fetchMock)
-    await api.getProfile('ds_1')
-    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/profile', expect.any(Object))
-    expectToken(fetchMock.mock.calls[0]![1] as RequestInit)
-  })
-
   it('parseApiErrorFromResponse reads structured and detail payloads', async () => {
     const structured = await parseApiErrorFromResponse({
       text: () =>
@@ -388,38 +380,6 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries', expect.objectContaining({ method: 'POST' }))
     expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries/sq_1', expect.objectContaining({ method: 'PATCH' }))
     expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries/sq_1', expect.objectContaining({ method: 'DELETE' }))
-  })
-
-  it('askAgent POST', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonOk({
-        answer: 'ok',
-        sql: 'SELECT 1',
-        model: 'qwen3:4b',
-        error: null,
-      }),
-    )
-    vi.stubGlobal('fetch', fetchMock)
-    await api.askAgent({
-      question: 'how many rows?',
-      dataset_ids: ['ds_001'],
-      max_rows: 50,
-      conversation_id: 'c1',
-      use_history: false,
-    })
-    expect(fetchMock).toHaveBeenCalledWith('/api/agent/ask', expect.objectContaining({
-      method: 'POST',
-      body: JSON.stringify({
-        question: 'how many rows?',
-        dataset_ids: ['ds_001'],
-        max_rows: 50,
-        conversation_id: 'c1',
-        use_history: false,
-      }),
-    }))
-    const init = fetchMock.mock.calls[0]![1] as RequestInit
-    expectToken(init)
-    expect(new Headers(init.headers).get('Content-Type')).toBe('application/json')
   })
 
   it('ask conversations and turns API', async () => {

@@ -1,6 +1,5 @@
 import type {
   AgentAskRequest,
-  AgentAskResponse,
   AgentStreamEvent,
   ApiError,
   AskConversation,
@@ -171,12 +170,7 @@ export const api = {
     )
   },
 
-  getProfile: (datasetId: string) =>
-    handle<DatasetProfile>(apiFetch(`${API}/datasets/${datasetId}/profile`)),
-
   fetchDatasetProfile,
-
-  waitForJob,
 
   deleteDataset: async (datasetId: string) => {
     const r = await apiFetch(`${API}/datasets/${encodeURIComponent(datasetId)}`, { method: 'DELETE' })
@@ -201,15 +195,6 @@ export const api = {
   runQuery: (body: QueryRequest) =>
     handle<QueryResult>(
       apiFetch(`${API}/query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }),
-    ),
-
-  askAgent: (body: AgentAskRequest) =>
-    handle<AgentAskResponse>(
-      apiFetch(`${API}/agent/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

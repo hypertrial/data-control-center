@@ -47,7 +47,7 @@ def cap_result_json(qres: QueryResult | None) -> str | None:
     return raw[: RESULT_JSON_CAP - 24] + '\n... (truncated json)'
 
 
-def create_conversation(
+def _create_conversation(
     con: duckdb.DuckDBPyConnection,
     title: str | None = None,
     dataset_ids: list[str] | None = None,
@@ -79,7 +79,7 @@ def create_conversation(
     }
 
 
-def get_conversation(con: duckdb.DuckDBPyConnection, conversation_id: str) -> dict[str, Any] | None:
+def _get_conversation(con: duckdb.DuckDBPyConnection, conversation_id: str) -> dict[str, Any] | None:
     row = con.execute(
         """
         SELECT conversation_id, title, dataset_ids, created_at, updated_at
@@ -98,7 +98,7 @@ def get_conversation(con: duckdb.DuckDBPyConnection, conversation_id: str) -> di
     }
 
 
-def list_conversations(con: duckdb.DuckDBPyConnection, limit: int = 100) -> list[dict[str, Any]]:
+def _list_conversations(con: duckdb.DuckDBPyConnection, limit: int = 100) -> list[dict[str, Any]]:
     lim = max(1, min(limit, 500))
     rows = con.execute(
         f"""
@@ -122,7 +122,7 @@ def list_conversations(con: duckdb.DuckDBPyConnection, limit: int = 100) -> list
     return out
 
 
-def rename_conversation(con: duckdb.DuckDBPyConnection, conversation_id: str, title: str) -> bool:
+def _rename_conversation(con: duckdb.DuckDBPyConnection, conversation_id: str, title: str) -> bool:
     cur = con.execute(
         "SELECT conversation_id FROM dcc_ask_conversations WHERE conversation_id = ?",
         [conversation_id],
@@ -139,7 +139,7 @@ def rename_conversation(con: duckdb.DuckDBPyConnection, conversation_id: str, ti
     return True
 
 
-def delete_conversation(con: duckdb.DuckDBPyConnection, conversation_id: str) -> bool:
+def _delete_conversation(con: duckdb.DuckDBPyConnection, conversation_id: str) -> bool:
     cur = con.execute(
         "SELECT conversation_id FROM dcc_ask_conversations WHERE conversation_id = ?",
         [conversation_id],
@@ -151,7 +151,7 @@ def delete_conversation(con: duckdb.DuckDBPyConnection, conversation_id: str) ->
     return True
 
 
-def delete_turn(con: duckdb.DuckDBPyConnection, conversation_id: str, turn_id: str) -> bool:
+def _delete_turn(con: duckdb.DuckDBPyConnection, conversation_id: str, turn_id: str) -> bool:
     row = con.execute(
         """
         SELECT turn_id FROM dcc_ask_turns
@@ -180,7 +180,7 @@ def _next_seq(con: duckdb.DuckDBPyConnection, conversation_id: str) -> int:
     return int(row[0]) if row else 1
 
 
-def append_turn(
+def _append_turn(
     con: duckdb.DuckDBPyConnection,
     conversation_id: str,
     question: str,
@@ -220,7 +220,7 @@ def append_turn(
             elapsed_ms,
         ],
     )
-    conv = get_conversation(con, conversation_id)
+    conv = _get_conversation(con, conversation_id)
     if conv and conv["title"] == _DEFAULT_TITLE and question.strip():
         short = question.strip()[:60]
         con.execute(
@@ -238,7 +238,7 @@ def append_turn(
     return tid, seq
 
 
-def list_turns(
+def _list_turns(
     con: duckdb.DuckDBPyConnection,
     conversation_id: str,
     limit: int = 100,
@@ -298,7 +298,7 @@ def _preview_row_cells(row: dict[str, Any], max_cols: int = 3) -> str:
     return ", ".join(parts)
 
 
-def last_turns_for_context(
+def _last_turns_for_context(
     con: duckdb.DuckDBPyConnection,
     conversation_id: str,
     n: int = 3,
@@ -344,7 +344,7 @@ def last_turns_for_context(
     return out
 
 
-def format_history_block(turns: list[dict[str, Any]]) -> str:
+def _format_history_block(turns: list[dict[str, Any]]) -> str:
     if not turns:
         return ""
     lines = ["Recent conversation turns (oldest first):"]
@@ -380,27 +380,27 @@ class AskStore:
         dataset_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         with self._engine.lock_db() as con:
-            return create_conversation(con, title=title, dataset_ids=dataset_ids)
+            return _create_conversation(con, title=title, dataset_ids=dataset_ids)
 
     def get_conversation(self, conversation_id: str) -> dict[str, Any] | None:
         with self._engine.lock_db() as con:
-            return get_conversation(con, conversation_id)
+            return _get_conversation(con, conversation_id)
 
     def list_conversations(self, limit: int = 100) -> list[dict[str, Any]]:
         with self._engine.lock_db() as con:
-            return list_conversations(con, limit=limit)
+            return _list_conversations(con, limit=limit)
 
     def rename_conversation(self, conversation_id: str, title: str) -> bool:
         with self._engine.lock_db() as con:
-            return rename_conversation(con, conversation_id, title)
+            return _rename_conversation(con, conversation_id, title)
 
     def delete_conversation(self, conversation_id: str) -> bool:
         with self._engine.lock_db() as con:
-            return delete_conversation(con, conversation_id)
+            return _delete_conversation(con, conversation_id)
 
     def delete_turn(self, conversation_id: str, turn_id: str) -> bool:
         with self._engine.lock_db() as con:
-            return delete_turn(con, conversation_id, turn_id)
+            return _delete_turn(con, conversation_id, turn_id)
 
     def append_turn(
         self,
@@ -416,7 +416,7 @@ class AskStore:
         elapsed_ms: int | None,
     ) -> tuple[str, int]:
         with self._engine.lock_db() as con:
-            return append_turn(
+            return _append_turn(
                 con,
                 conversation_id,
                 question,
@@ -432,12 +432,12 @@ class AskStore:
 
     def list_turns(self, conversation_id: str, limit: int = 100) -> list[dict[str, Any]]:
         with self._engine.lock_db() as con:
-            return list_turns(con, conversation_id, limit=limit)
+            return _list_turns(con, conversation_id, limit=limit)
 
     def last_turns_for_context(self, conversation_id: str, n: int = 3) -> list[dict[str, Any]]:
         with self._engine.lock_db() as con:
-            return last_turns_for_context(con, conversation_id, n=n)
+            return _last_turns_for_context(con, conversation_id, n=n)
 
     @staticmethod
     def format_history_block(turns: list[dict[str, Any]]) -> str:
-        return format_history_block(turns)
+        return _format_history_block(turns)

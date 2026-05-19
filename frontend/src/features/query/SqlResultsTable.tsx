@@ -49,7 +49,7 @@ export function SqlResultsTable({
     >
       <table className="w-full border-collapse text-left text-sm">
         <caption className="sr-only">Query result</caption>
-        <thead className="sticky top-0 z-20 bg-[hsl(var(--card))]/98 shadow-[0_1px_0_rgba(255,255,255,0.08)] backdrop-blur">
+        <thead className="sticky top-0 z-20 bg-[hsl(var(--surface-1))]/98 shadow-[0_1px_0_rgba(255,255,255,0.08)] backdrop-blur">
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id}>
               {hg.headers.map((header) => {
@@ -60,8 +60,8 @@ export function SqlResultsTable({
                   <th
                     key={header.id}
                     className={cn(
-                      'relative border-b border-white/10 px-2 py-2 text-xs font-medium text-[hsl(var(--muted))]',
-                      isRowNum && 'sticky left-0 z-30 min-w-[3rem] bg-[hsl(var(--card))]/98 shadow-[2px_0_8px_rgba(0,0,0,0.35)]',
+                      'relative border-b border-white/10 px-2 py-2 text-xs font-medium text-[hsl(var(--fg-muted))]',
+                      isRowNum && 'sticky left-0 z-30 min-w-[3rem] bg-[hsl(var(--surface-1))]/98 shadow-[2px_0_8px_rgba(0,0,0,0.35)]',
                       !isRowNum && 'min-w-[6rem]',
                     )}
                     style={{ width: header.getSize(), maxWidth: header.getSize() }}
@@ -123,7 +123,7 @@ export function SqlResultsTable({
                     data-col={colIndex}
                     className={cn(
                       'border-r border-white/5 px-2 py-1 align-middle',
-                      isRowNumCell && 'sticky left-0 z-10 bg-[hsl(var(--background))]/98 text-xs shadow-[2px_0_8px_rgba(0,0,0,0.2)]',
+                      isRowNumCell && 'sticky left-0 z-10 bg-[hsl(var(--bg-1))]/98 text-xs shadow-[2px_0_8px_rgba(0,0,0,0.2)]',
                       selected && 'bg-[hsl(var(--accent))]/25 ring-1 ring-inset ring-white/20',
                     )}
                     style={{ width: cell.column.getSize(), maxWidth: cell.column.getSize() }}

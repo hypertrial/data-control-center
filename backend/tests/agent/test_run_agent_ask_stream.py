@@ -293,10 +293,8 @@ def test_run_agent_ask_stream_conversation_not_found(registry_csv: DatasetRegist
 
 
 def test_run_agent_ask_stream_emits_turn_when_persisting(registry_csv: DatasetRegistry) -> None:
-    from app.services import ask_store
-
-    con = registry_csv.workspace.connection
-    conv = ask_store.create_conversation(con)
+    
+    conv = registry_csv.workspace.ask.create_conversation()
     cid = conv["conversation_id"]
     settings = Settings(agent_summarize_with_llm=False)
     vw = registry_csv.list_all()[0].view_name
@@ -313,16 +311,14 @@ def test_run_agent_ask_stream_emits_turn_when_persisting(registry_csv: DatasetRe
         ),
     )
     assert any(e["type"] == "turn" for e in ev)
-    turns = ask_store.list_turns(con, cid)
+    turns = registry_csv.workspace.ask.list_turns( cid)
     assert len(turns) == 1
     assert turns[0]["question"] == "hello"
 
 
 def test_run_agent_ask_stream_connect_error_persists_with_conversation(registry_csv: DatasetRegistry) -> None:
-    from app.services import ask_store
-
-    con = registry_csv.workspace.connection
-    conv = ask_store.create_conversation(con)
+    
+    conv = registry_csv.workspace.ask.create_conversation()
     cid = conv["conversation_id"]
 
     def boom(*a, **k):  # noqa: ANN001
@@ -337,16 +333,14 @@ def test_run_agent_ask_stream_connect_error_persists_with_conversation(registry_
         ),
     )
     assert any(e["type"] == "turn" for e in ev)
-    turns = ask_store.list_turns(con, cid)
+    turns = registry_csv.workspace.ask.list_turns( cid)
     assert len(turns) == 1
     assert turns[0]["error"]
 
 
 def test_run_agent_ask_stream_http_error_persists_with_conversation(registry_csv: DatasetRegistry) -> None:
-    from app.services import ask_store
-
-    con = registry_csv.workspace.connection
-    conv = ask_store.create_conversation(con)
+    
+    conv = registry_csv.workspace.ask.create_conversation()
     cid = conv["conversation_id"]
 
     def boom(*a, **k):  # noqa: ANN001
@@ -361,14 +355,12 @@ def test_run_agent_ask_stream_http_error_persists_with_conversation(registry_csv
         ),
     )
     assert any(e["type"] == "turn" for e in ev)
-    assert ask_store.list_turns(con, cid)[0]["error"]
+    assert registry_csv.workspace.ask.list_turns( cid)[0]["error"]
 
 
 def test_run_agent_ask_stream_generic_error_persists_with_conversation(registry_csv: DatasetRegistry) -> None:
-    from app.services import ask_store
-
-    con = registry_csv.workspace.connection
-    conv = ask_store.create_conversation(con)
+    
+    conv = registry_csv.workspace.ask.create_conversation()
     cid = conv["conversation_id"]
 
     def boom(*a, **k):  # noqa: ANN001
@@ -382,14 +374,12 @@ def test_run_agent_ask_stream_generic_error_persists_with_conversation(registry_
             ollama_call=boom,
         ),
     )
-    assert ask_store.list_turns(con, cid)[0]["error"]
+    assert registry_csv.workspace.ask.list_turns( cid)[0]["error"]
 
 
 def test_run_agent_ask_stream_bad_json_persists_with_conversation(registry_csv: DatasetRegistry) -> None:
-    from app.services import ask_store
-
-    con = registry_csv.workspace.connection
-    conv = ask_store.create_conversation(con)
+    
+    conv = registry_csv.workspace.ask.create_conversation()
     cid = conv["conversation_id"]
 
     def bad(*a, **k):  # noqa: ANN001
@@ -403,14 +393,12 @@ def test_run_agent_ask_stream_bad_json_persists_with_conversation(registry_csv: 
             ollama_call=bad,
         ),
     )
-    assert ask_store.list_turns(con, cid)[0]["error"]
+    assert registry_csv.workspace.ask.list_turns( cid)[0]["error"]
 
 
 def test_run_agent_ask_stream_sql_error_persists_turn(registry_csv: DatasetRegistry) -> None:
-    from app.services import ask_store
-
-    con = registry_csv.workspace.connection
-    conv = ask_store.create_conversation(con)
+    
+    conv = registry_csv.workspace.ask.create_conversation()
     cid = conv["conversation_id"]
 
     def bad(*a, **k):  # noqa: ANN001
@@ -425,14 +413,12 @@ def test_run_agent_ask_stream_sql_error_persists_turn(registry_csv: DatasetRegis
         ),
     )
     assert any(e["type"] == "turn" for e in ev)
-    assert ask_store.list_turns(con, cid)[0]["error"]
+    assert registry_csv.workspace.ask.list_turns( cid)[0]["error"]
 
 
 def test_run_agent_ask_stream_summary_emits_turn_with_conversation(registry_csv: DatasetRegistry) -> None:
-    from app.services import ask_store
-
-    con = registry_csv.workspace.connection
-    conv = ask_store.create_conversation(con)
+    
+    conv = registry_csv.workspace.ask.create_conversation()
     cid = conv["conversation_id"]
     settings = Settings(agent_summarize_with_llm=True)
     vw = registry_csv.list_all()[0].view_name
@@ -458,5 +444,5 @@ def test_run_agent_ask_stream_summary_emits_turn_with_conversation(registry_csv:
         ),
     )
     assert any(e["type"] == "turn" for e in ev)
-    assert ask_store.list_turns(con, cid)[0]["answer"] == "hi"
+    assert registry_csv.workspace.ask.list_turns( cid)[0]["answer"] == "hi"
 

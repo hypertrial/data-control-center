@@ -85,3 +85,8 @@ gitleaks detect --source . --redact
 The app can ingest arbitrary local files. Uploaded copies and workspace state can
 contain sensitive data. Use `make clean-local` only when you intentionally want
 to delete local app state and generated artifacts.
+
+After pulling changes that alter workspace layout or profile cache shape, run
+**`make clean-local`** before `make dev` if you see unsupported-schema errors or
+stale profile behavior; older **`.dcc_workspace.duckdb`** files are not migrated
+in place.

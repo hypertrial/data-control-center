@@ -362,14 +362,14 @@ def test_unregister_removes_dataset_view_and_profile_state(tmp_path: Path) -> No
     p = tmp_path / "gone.csv"
     p.write_text("a\n1\n")
     ds = reg.register_path(p)
-    ws.save_profile_cache(ds.dataset_id, {"rows": 1, "columns": 1, "column_profiles": []})
-    ws.job_insert("job_1", "profile_refresh", ds.dataset_id, "running")
+    ws.profiles.save_profile_cache(ds.dataset_id, {"rows": 1, "columns": 1, "column_profiles": []})
+    ws.jobs.job_insert("job_1", "profile_refresh", ds.dataset_id, "running")
 
     assert reg.unregister(ds.dataset_id)
     assert reg.get(ds.dataset_id) is None
     assert not reg.unregister(ds.dataset_id)
-    assert ws.load_profile_cache(ds.dataset_id) is None
-    assert ws.list_profile_history(ds.dataset_id) == []
+    assert ws.profiles.load_profile_cache(ds.dataset_id) is None
+    assert ws.profiles.list_profile_history(ds.dataset_id) == []
     assert ws.connection.execute(
         "SELECT dataset_id FROM dcc_datasets WHERE dataset_id = ?",
         [ds.dataset_id],

@@ -14,15 +14,8 @@ export function buildColumnRoleMap(profile: DatasetProfile | undefined): Map<str
   const out = new Map<string, ColumnRoleLabel[]>()
   if (!profile) return out
 
-  const grainCols =
-    profile.primary_grain_key_columns.length > 0
-      ? profile.primary_grain_key_columns
-      : profile.potential_key_columns
-
-  const entityCols =
-    profile.entity_id_columns.length > 0
-      ? profile.entity_id_columns.map((e) => e.name)
-      : profile.potential_id_columns
+  const grainCols = profile.primary_grain_key_columns
+  const entityCols = profile.entity_id_columns.map((e) => e.name)
 
   const measureCols =
     profile.measure_candidates.length > 0
@@ -31,7 +24,6 @@ export function buildColumnRoleMap(profile: DatasetProfile | undefined): Map<str
 
   const timeNames = new Set<string>()
   if (profile.primary_temporal_column?.name) timeNames.add(profile.primary_temporal_column.name)
-  if (profile.primary_date_column) timeNames.add(profile.primary_date_column)
   for (const t of profile.temporal_columns) timeNames.add(t.name)
 
   const addRole = (col: string, role: ColumnRoleLabel) => {

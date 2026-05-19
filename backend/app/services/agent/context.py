@@ -35,7 +35,7 @@ def build_dataset_context(
     for ds in registry.list_all():
         if dataset_ids is not None and ds.dataset_id not in dataset_ids:
             continue
-        prof_raw = workspace.load_profile_cache(ds.dataset_id)
+        prof_raw = workspace.profiles.load_profile_cache(ds.dataset_id)
         col_bits: list[str] = []
         if isinstance(prof_raw, dict):
             columns = prof_raw.get("column_profiles") or []

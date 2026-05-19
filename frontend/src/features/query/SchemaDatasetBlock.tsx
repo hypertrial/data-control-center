@@ -34,7 +34,7 @@ export function SchemaDatasetBlock({
       </button>
       {expanded && (
         <ul className="max-h-48 overflow-auto border-t border-border-default px-2 py-1">
-          {pq.isPendingProfile && <li className="py-1 text-[hsl(var(--muted))]">Profiling…</li>}
+          {pq.isPendingProfile && <li className="py-1 text-[hsl(var(--fg-muted))]">Profiling…</li>}
           {pq.isError && <li className="py-1 text-red-300">{(pq.error as Error).message}</li>}
           {cols.map((c) => (
             <li key={c.name}>
@@ -47,7 +47,7 @@ export function SchemaDatasetBlock({
                 title="Insert at cursor"
               >
                 <span className="truncate">{c.name}</span>
-                <span className="shrink-0 text-[10px] text-[hsl(var(--muted))]">{c.physical_type}</span>
+                <span className="shrink-0 text-[10px] text-[hsl(var(--fg-muted))]">{c.physical_type}</span>
               </button>
             </li>
           ))}

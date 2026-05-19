@@ -8,13 +8,13 @@ import { QualityPage } from '@/features/quality/QualityPage'
 import { useUiStore } from '@/store/uiStore'
 import { mkIssue, mkProfile } from '@/test/profileFixtures'
 
-const h = vi.hoisted(() => ({ getQuality: vi.fn(), getProfile: vi.fn() }))
+const h = vi.hoisted(() => ({ getQuality: vi.fn(), fetchDatasetProfile: vi.fn() }))
 
 vi.mock('@/api/client', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/api/client')>()
   return {
     ...mod,
-    api: { ...mod.api, getQuality: h.getQuality, getProfile: h.getProfile, fetchDatasetProfile: h.getProfile },
+    api: { ...mod.api, getQuality: h.getQuality, fetchDatasetProfile: h.fetchDatasetProfile },
   }
 })
 
@@ -37,7 +37,7 @@ describe('QualityPage', () => {
 
   it('loading', () => {
     h.getQuality.mockImplementation(() => new Promise(() => {}))
-    h.getProfile.mockImplementation(() => new Promise(() => {}))
+    h.fetchDatasetProfile.mockImplementation(() => new Promise(() => {}))
     useUiStore.setState({ activeDatasetId: 'ds_1' })
     wrap(<QualityPage />)
     expect(screen.getAllByRole('status', { name: 'Loading' }).length).toBeGreaterThan(0)
@@ -45,7 +45,7 @@ describe('QualityPage', () => {
 
   it('error', async () => {
     h.getQuality.mockRejectedValue(new Error('qe'))
-    h.getProfile.mockResolvedValue(mkProfile())
+    h.fetchDatasetProfile.mockResolvedValue(mkProfile())
     useUiStore.setState({ activeDatasetId: 'ds_1' })
     wrap(<QualityPage />)
     await waitFor(() => expect(screen.getByText('qe')).toBeInTheDocument())
@@ -65,7 +65,7 @@ describe('QualityPage', () => {
       }),
       mkIssue({ severity: 'info', id: 'i1', title: 'Info thing' }),
     ])
-    h.getProfile.mockResolvedValue(mkProfile())
+    h.fetchDatasetProfile.mockResolvedValue(mkProfile())
     useUiStore.setState({ activeDatasetId: 'ds_1' })
     wrap(<QualityPage />)
     await waitFor(() => expect(screen.getByText('Critical thing')).toBeInTheDocument())

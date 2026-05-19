@@ -42,12 +42,14 @@ export function SamplesPage() {
     return m
   }, [profileQ.data])
 
-  const idCol = profileQ.data?.potential_id_columns[0] ?? profileQ.data?.potential_key_columns[0]
+  const idCol =
+    profileQ.data?.primary_grain_key_columns[0] ??
+    profileQ.data?.entity_id_columns[0]?.name
 
   if (!activeId) {
     return (
       <PageContainer>
-        <p className="text-sm text-[hsl(var(--muted))]">Select a dataset.</p>
+        <p className="text-sm text-[hsl(var(--fg-muted))]">Select a dataset.</p>
       </PageContainer>
     )
   }
@@ -78,7 +80,7 @@ export function SamplesPage() {
   return (
     <PageContainer>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm text-[hsl(var(--muted))]">
+        <div className="text-sm text-[hsl(var(--fg-muted))]">
           Rows{' '}
           <span className="tabular-nums text-white/90">
             {start}-{Math.max(start, end)}
@@ -89,7 +91,7 @@ export function SamplesPage() {
           <span className="tabular-nums">{totalPages}</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1 text-xs text-[hsl(var(--muted))]">
+          <label className="flex items-center gap-1 text-xs text-[hsl(var(--fg-muted))]">
             Go to
             <Input
               className="h-8 w-16 px-2 text-xs"
@@ -106,7 +108,7 @@ export function SamplesPage() {
               }}
             />
           </label>
-          <label className="flex items-center gap-2 text-xs text-[hsl(var(--muted))]">
+          <label className="flex items-center gap-2 text-xs text-[hsl(var(--fg-muted))]">
             Page size
             <select
               className="h-9 rounded-md border border-border-default bg-black/30 px-2 text-sm"
@@ -143,12 +145,12 @@ export function SamplesPage() {
             <TR>
               <TH
                 scope="col"
-                className="sticky left-0 z-20 min-w-[3rem] bg-[hsl(var(--background))] shadow-[2px_0_8px_rgba(0,0,0,0.4)]"
+                className="sticky left-0 z-20 min-w-[3rem] bg-[hsl(var(--bg-1))] shadow-[2px_0_8px_rgba(0,0,0,0.4)]"
               >
                 #
               </TH>
               {cols.map((c) => (
-                <TH key={c} scope="col" className="whitespace-nowrap bg-[hsl(var(--card))]/95 backdrop-blur">
+                <TH key={c} scope="col" className="whitespace-nowrap bg-[hsl(var(--surface-1))]/95 backdrop-blur">
                   <div className="flex flex-col gap-1">
                     <span>{c}</span>
                     {typeByCol[c] && (
@@ -171,7 +173,7 @@ export function SamplesPage() {
                   : null
               return (
                 <TR key={i} className="group">
-                  <TD className="sticky left-0 z-10 bg-[hsl(var(--background))]/98 text-xs text-[hsl(var(--muted))] shadow-[2px_0_8px_rgba(0,0,0,0.25)]">
+                  <TD className="sticky left-0 z-10 bg-[hsl(var(--bg-1))]/98 text-xs text-[hsl(var(--fg-muted))] shadow-[2px_0_8px_rgba(0,0,0,0.25)]">
                     <div className="flex items-center gap-1.5 font-mono">
                       {globalIdx}
                       {whereSql && (

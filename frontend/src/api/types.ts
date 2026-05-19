@@ -94,12 +94,9 @@ export type DatasetProfile = {
   numeric_column_count: number
   categorical_column_count: number
   datetime_column_count: number
-  potential_id_columns: string[]
-  potential_key_columns: string[]
   quality_score: number | null
   narrative: string
   likely_grain: string | null
-  primary_date_column: string | null
   main_numeric_measures: string[]
   structure_version: string
   grain_key_scope?: MetricScope

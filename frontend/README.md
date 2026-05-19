@@ -37,6 +37,8 @@ If Vite logs **`http proxy error`** / **`socket hang up`** for several `/api/...
 
 TanStack Query keys commonly used: `['datasets']`, `['profile', datasetId]`, `['quality', datasetId]`. Prefer **`useDatasetProfile`** (or **`api.fetchDatasetProfile`**) for profile loads; it handles **`PROFILE_NOT_READY`** by polling the job in **`details.job_id`**. Manual refresh uses **`api.refreshProfile`** and the hook’s job polling before invalidating profile-related keys.
 
+**Ask** uses **`askAgentStream`** (SSE) only; there is no synchronous **`api.askAgent`**. Profiles are **v4**-shaped (`entity_id_columns`, `primary_grain_key_columns`, `primary_temporal_column`, etc.).
+
 ## Tests & coverage
 
 Tests live next to sources as `*.test.ts(x)`. Coverage thresholds are defined in [`vitest.config.ts`](vitest.config.ts): **`COVERAGE_BASELINE`** is **92** for both **lines** and **statements** (with deliberate excludes such as `main.tsx` and `types.ts`); CI runs `npm run test:coverage`.

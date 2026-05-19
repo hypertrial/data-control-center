@@ -128,7 +128,7 @@ export function QueryPage() {
 
   return (
     <PageContainer>
-      <p className="text-xs text-[hsl(var(--muted))]">
+      <p className="text-xs text-[hsl(var(--fg-muted))]">
         Dataset view alias: <span className="font-mono text-white">{viewHint}</span>. Press{' '}
         <kbd className="rounded border border-border-default px-1 font-mono text-[10px]">⌘</kbd>+
         <kbd className="rounded border border-border-default px-1 font-mono text-[10px]">Enter</kbd> to run.
@@ -140,7 +140,7 @@ export function QueryPage() {
 
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[120px] flex-1">
-              <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted))]">
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--fg-muted))]">
                 max_rows
               </div>
               <Input
@@ -240,7 +240,7 @@ export function QueryPage() {
         </div>
 
         <div className="rounded-xl border border-border-default bg-black/20 p-3">
-          <div className="text-xs font-semibold text-[hsl(var(--muted))]">Schema</div>
+          <div className="text-xs font-semibold text-[hsl(var(--fg-muted))]">Schema</div>
           <div className="mt-2 max-h-[320px] space-y-2 overflow-auto text-xs">
             {(dq.data ?? []).map((ds: DatasetSummary) => (
               <SchemaDatasetBlock
@@ -251,12 +251,12 @@ export function QueryPage() {
                 onInsert={(frag) => insertAtCursor(frag)}
               />
             ))}
-            {dq.data?.length === 0 && <div className="text-[hsl(var(--muted))]">No datasets.</div>}
+            {dq.data?.length === 0 && <div className="text-[hsl(var(--fg-muted))]">No datasets.</div>}
           </div>
         </div>
       </div>
 
-      {runMutation.isPending && <div className="text-sm text-[hsl(var(--muted))]">Running…</div>}
+      {runMutation.isPending && <div className="text-sm text-[hsl(var(--fg-muted))]">Running…</div>}
       {runMutation.isError && <QueryErrorBanner message={(runMutation.error as Error).message} />}
 
       {runMutation.data?.error && <QueryErrorBanner message={runMutation.data.error} />}

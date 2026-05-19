@@ -35,7 +35,7 @@ function buildColumns(queryColumns: QueryResultColumn[]) {
     maxSize: 80,
     enableSorting: false,
     enableResizing: false,
-    cell: (ctx) => createElement('span', { className: 'tabular-nums text-[hsl(var(--muted))]' }, ctx.row.index + 1),
+    cell: (ctx) => createElement('span', { className: 'tabular-nums text-[hsl(var(--fg-muted))]' }, ctx.row.index + 1),
   })
 
   const dataCols = queryColumns.map((col: QueryResultColumn) =>
@@ -47,7 +47,7 @@ function buildColumns(queryColumns: QueryResultColumn[]) {
           { className: 'flex flex-col gap-0.5 pr-2 text-left' },
           createElement('span', { className: 'truncate font-medium' }, col.name),
           col.type
-            ? createElement('span', { className: 'truncate text-[10px] font-normal text-[hsl(var(--muted))]' }, col.type)
+            ? createElement('span', { className: 'truncate text-[10px] font-normal text-[hsl(var(--fg-muted))]' }, col.type)
             : null,
         ),
       size: 180,
@@ -70,7 +70,7 @@ function buildColumns(queryColumns: QueryResultColumn[]) {
         return createElement(
           'span',
           {
-            className: cn('block max-w-full truncate', num ? 'font-mono' : 'font-mono text-xs', nullish && 'text-[hsl(var(--muted))]'),
+            className: cn('block max-w-full truncate', num ? 'font-mono' : 'font-mono text-xs', nullish && 'text-[hsl(var(--fg-muted))]'),
             title: disp,
           },
           nullish ? 'NULL' : disp,

@@ -21,7 +21,6 @@ class Settings(BaseSettings):
 
     # Local DuckDB file for workspace metadata/cache (profiles, issues JSON)
     workspace_db_path: Path = Path(".dcc_workspace.duckdb")
-    workspace_backup_before_migrate: bool = True
 
     # Reader connection pool for concurrent read queries.
     db_reader_pool_size: int = Field(default=4, ge=1, le=16)

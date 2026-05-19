@@ -8,7 +8,7 @@ import { OverviewPage } from '@/features/overview/OverviewPage'
 import { useUiStore } from '@/store/uiStore'
 import { mkProfile } from '@/test/profileFixtures'
 
-const h = vi.hoisted(() => ({ getProfile: vi.fn(), getProfileHistory: vi.fn() }))
+const h = vi.hoisted(() => ({ fetchDatasetProfile: vi.fn(), getProfileHistory: vi.fn() }))
 const chartFns = vi.hoisted(() => ({
   on: vi.fn(),
   off: vi.fn(),
@@ -26,7 +26,7 @@ vi.mock('echarts', () => ({
 
 vi.mock('@/api/client', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/api/client')>()
-  return { ...mod, api: { ...mod.api, getProfile: h.getProfile, fetchDatasetProfile: h.getProfile, getProfileHistory: h.getProfileHistory } }
+  return { ...mod, api: { ...mod.api, fetchDatasetProfile: h.fetchDatasetProfile, getProfileHistory: h.getProfileHistory } }
 })
 
 function wrap(ui: React.ReactElement) {
@@ -56,7 +56,7 @@ describe('OverviewPage', () => {
   })
 
   it('loads profile when active', async () => {
-    h.getProfile.mockResolvedValue(mkProfile({ file_size_bytes: 100, narrative: '**Hello** world' }))
+    h.fetchDatasetProfile.mockResolvedValue(mkProfile({ file_size_bytes: 100, narrative: '**Hello** world' }))
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     wrap(<OverviewPage />)
     await waitFor(() => expect(screen.getByText(/100 B/)).toBeInTheDocument())
@@ -67,7 +67,7 @@ describe('OverviewPage', () => {
   })
 
   it('renders structure summary (entity + row grain)', async () => {
-    h.getProfile.mockResolvedValue(
+    h.fetchDatasetProfile.mockResolvedValue(
       mkProfile({
         primary_grain_key_columns: ['player_id', 'year'],
         likely_grain: 'One row per player_id + year.',
@@ -90,12 +90,11 @@ describe('OverviewPage', () => {
   })
 
   it('formatBytes scales', async () => {
-    h.getProfile.mockResolvedValue(
+    h.fetchDatasetProfile.mockResolvedValue(
       mkProfile({
         file_size_bytes: 10_000,
         quality_score: null,
         likely_grain: null,
-        primary_date_column: null,
       }),
     )
     useUiStore.setState({ activeDatasetId: 'ds_001' })
@@ -105,21 +104,21 @@ describe('OverviewPage', () => {
   })
 
   it('shows loading', () => {
-    h.getProfile.mockImplementation(() => new Promise(() => {}))
+    h.fetchDatasetProfile.mockImplementation(() => new Promise(() => {}))
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     wrap(<OverviewPage />)
     expect(screen.getAllByRole('status', { name: 'Loading' }).length).toBeGreaterThan(0)
   })
 
   it('formatBytes MB', async () => {
-    h.getProfile.mockResolvedValue(mkProfile({ file_size_bytes: 3 * 1024 * 1024 }))
+    h.fetchDatasetProfile.mockResolvedValue(mkProfile({ file_size_bytes: 3 * 1024 * 1024 }))
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     wrap(<OverviewPage />)
     await waitFor(() => expect(screen.getByText(/3\.0 MB/)).toBeInTheDocument())
   })
 
   it('formatBytes GB', async () => {
-    h.getProfile.mockResolvedValue(mkProfile({ file_size_bytes: 2 * 1024 ** 3 }))
+    h.fetchDatasetProfile.mockResolvedValue(mkProfile({ file_size_bytes: 2 * 1024 ** 3 }))
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     wrap(<OverviewPage />)
     await waitFor(() => expect(screen.getByText(/2\.0 GB/)).toBeInTheDocument())
@@ -131,7 +130,7 @@ describe('OverviewPage', () => {
       score: 0.5,
       confidence: 'high' as const,
     }))
-    h.getProfile.mockResolvedValue(mkProfile({ measure_candidates: measures }))
+    h.fetchDatasetProfile.mockResolvedValue(mkProfile({ measure_candidates: measures }))
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     wrap(<OverviewPage />)
     await waitFor(() => expect(screen.getByText('+4 more')).toBeInTheDocument())
@@ -141,14 +140,14 @@ describe('OverviewPage', () => {
   })
 
   it('shows error state', async () => {
-    h.getProfile.mockRejectedValue(new Error('boom'))
+    h.fetchDatasetProfile.mockRejectedValue(new Error('boom'))
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     wrap(<OverviewPage />)
     await waitFor(() => expect(screen.getByText('boom')).toBeInTheDocument())
   })
 
   it('labels duplicate rows as sample-based when profiler scope is sample', async () => {
-    h.getProfile.mockResolvedValue(
+    h.fetchDatasetProfile.mockResolvedValue(
       mkProfile({
         duplicate_row_pct: 2,
         duplicate_row_pct_scope: 'sample',
@@ -161,7 +160,7 @@ describe('OverviewPage', () => {
 
   it('opens the diff dialog and renders empty chart fallbacks', async () => {
     const user = userEvent.setup()
-    h.getProfile.mockResolvedValue(
+    h.fetchDatasetProfile.mockResolvedValue(
       mkProfile({
         columns: 0,
         numeric_column_count: 0,
@@ -173,7 +172,6 @@ describe('OverviewPage', () => {
         missing_cell_pct: null,
         duplicate_row_pct: null,
         primary_temporal_column: null,
-        primary_date_column: null,
         structure_warnings: [],
       }),
     )
@@ -189,16 +187,13 @@ describe('OverviewPage', () => {
   })
 
   it('uses fallback structure columns and wires issue-click handlers', async () => {
-    h.getProfile.mockResolvedValue(
+    h.fetchDatasetProfile.mockResolvedValue(
       mkProfile({
-        entity_id_columns: [],
-        potential_id_columns: ['account_id'],
-        primary_grain_key_columns: [],
-        potential_key_columns: ['account_id', 'month'],
+        entity_id_columns: [{ name: 'account_id', confidence: 'high' }],
+        primary_grain_key_columns: ['account_id', 'month'],
         measure_candidates: [],
         main_numeric_measures: ['m1', 'm2'],
-        primary_temporal_column: null,
-        primary_date_column: 'month',
+        primary_temporal_column: { name: 'month', kind: 'discrete_period', confidence: 'high' },
         quality_issues: [
           {
             id: 'nulls',

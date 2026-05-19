@@ -12,7 +12,7 @@ import type { SemanticType } from '@/api/types'
 import { cn } from '@/lib/utils'
 
 export function TypeIcon({ sem }: { sem: SemanticType }) {
-  const cls = 'h-3.5 w-3.5 shrink-0 text-[hsl(var(--muted))]'
+  const cls = 'h-3.5 w-3.5 shrink-0 text-[hsl(var(--fg-muted))]'
   const wrap = (label: string, node: ReactNode) => (
     <span title={label} className="inline-flex">
       {node}
@@ -43,7 +43,7 @@ export function NullBar({ pct }: { pct: number }) {
       <div className="h-2 w-24 overflow-hidden rounded-full bg-white/10" title={`${pct.toFixed(2)}% null`}>
         <div className={cn('h-full rounded-full transition-all', warm)} style={{ width: `${Math.min(100, pct)}%` }} />
       </div>
-      <span className="tabular-nums text-xs text-[hsl(var(--muted))]">{pct.toFixed(1)}</span>
+      <span className="tabular-nums text-xs text-[hsl(var(--fg-muted))]">{pct.toFixed(1)}</span>
     </div>
   )
 }

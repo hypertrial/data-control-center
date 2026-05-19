@@ -21,7 +21,7 @@ export function Section({
           <div className="space-y-1">
             {title != null && <h2 className="text-lg font-semibold tracking-tight">{title}</h2>}
             {description != null && (
-              <p className="max-w-3xl text-sm text-[hsl(var(--muted))]">{description}</p>
+              <p className="max-w-3xl text-sm text-[hsl(var(--fg-muted))]">{description}</p>
             )}
           </div>
           {action}

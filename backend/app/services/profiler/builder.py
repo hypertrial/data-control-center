@@ -165,8 +165,6 @@ def build_profile(ds: RegisteredDataset, settings: Settings) -> DatasetProfile:
         datetime_column_count=len(
             {c.name for c in col_profiles if c.semantic_type == SemanticType.datetime}
         ),
-        potential_id_columns=id_column_names[:15],
-        potential_key_columns=key_candidates[:15],
         quality_score=round(quality_score, 2),
         narrative="\n\n".join(narrative_parts),
         likely_grain=(
@@ -176,7 +174,6 @@ def build_profile(ds: RegisteredDataset, settings: Settings) -> DatasetProfile:
             if primary_grain
             else None
         ),
-        primary_date_column=primary_date,
         main_numeric_measures=measures,
         structure_version=CURRENT_PROFILE_STRUCTURE_VERSION,
         grain_key_scope=metric_scope,

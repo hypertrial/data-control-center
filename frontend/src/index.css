@@ -64,19 +64,6 @@
     --status-info: 196 89% 61%;
     --status-warning: 29 89% 61%;
     --status-error: 350 100% 68%;
-    /* Legacy aliases (used by existing components) */
-    --background: var(--bg-1);
-    --foreground: var(--fg);
-    --card: var(--surface-1);
-    --muted: var(--fg-muted);
-    --border: var(--border-triple);
-    --severity-critical: var(--status-error);
-    --severity-warning: var(--status-warning);
-    --severity-info: var(--status-info);
-    --severity-ok: var(--status-success);
-    --quality-low: var(--severity-critical);
-    --quality-mid: var(--severity-warning);
-    --quality-high: var(--severity-ok);
   }
 
   body {

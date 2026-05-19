@@ -16,23 +16,24 @@ from app.models.api import (
     SemanticType,
     StructureConfidence,
 )
-from app.services.profiler import (
+from app.services.profiler import build_profile
+from app.services.profiler.columns import (
+    _infer_semantic,
+    _numeric_describe_strings,
+    _numeric_histogram,
+    _series_quantile_str,
+    _top_values,
+)
+from app.services.profiler.io import _lazy_frame_for
+from app.services.profiler.patterns import _entity_name_strength
+from app.services.profiler.quality import _detect_quality_issues, _severity_order
+from app.services.profiler.structure import (
     _build_grain_key_candidates,
     _build_key_candidate_pool,
     _confidence_from_ratio,
-    _detect_quality_issues,
-    _entity_name_strength,
     _is_discrete_temporal_column,
-    _infer_semantic,
-    _lazy_frame_for,
     _merge_entity_candidates,
-    _numeric_describe_strings,
-    _numeric_histogram,
     _rank_measure_candidates,
-    _series_quantile_str,
-    _severity_order,
-    _top_values,
-    build_profile,
 )
 from app.services.registry import RegisteredDataset
 
@@ -204,7 +205,7 @@ def test_build_profile_triggers_quality_branches(tmp_path: Path) -> None:
     )
     prof = build_profile(ds, Settings())
     assert prof.quality_issues
-    assert prof.potential_id_columns or prof.likely_grain
+    assert prof.entity_id_columns or prof.likely_grain
 
 
 def test_build_profile_high_null_column_flag(tmp_path: Path) -> None:
@@ -313,7 +314,7 @@ def test_build_profile_detects_discrete_temporal_and_composite_grain(tmp_path: P
     assert prof.grain_key_candidates
     assert prof.grain_key_candidates[0].uniqueness_ratio >= 0.99
     assert any(e.name == "player_id" for e in prof.entity_id_columns)
-    assert "player_id" in prof.potential_id_columns
+    assert any(e.name == "player_id" for e in prof.entity_id_columns)
 
 
 def test_build_profile_finds_panel_grain_with_player_id_late_in_schema(tmp_path: Path) -> None:
@@ -801,7 +802,7 @@ def test_build_profile_narrative_likely_identifier_columns(
     )
     monkeypatch.setattr("app.services.profiler.builder._build_grain_key_candidates", lambda *a, **k: [])
     prof = build_profile(ds, Settings())
-    assert prof.potential_id_columns
+    assert prof.entity_id_columns
     assert "Likely identifier columns" in prof.narrative
 
 

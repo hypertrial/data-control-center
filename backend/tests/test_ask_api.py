@@ -53,14 +53,12 @@ def test_ask_turns_list_and_delete(client):
 def test_ask_turns_roundtrip_delete(client, tmp_path, monkeypatch):
     monkeypatch.setenv("DCC_WORKSPACE_DB_PATH", str(tmp_path / "ask_roundtrip.duckdb"))
     from app.main import create_app
-    from app.services import ask_store
     from fastapi.testclient import TestClient
 
     with TestClient(create_app()) as c:
         cid = c.post("/api/ask/conversations", json={}).json()["conversation_id"]
         ws = c.app.state.workspace
-        tid, _ = ask_store.append_turn(
-            ws.connection,
+        tid, _ = ws.ask.append_turn(
             cid,
             "hi",
             sql="SELECT 1",

@@ -19,7 +19,7 @@ export function ColumnsTable({
   return (
     <Table className="min-w-[1280px]">
       <caption className="sr-only">Columns for dataset {activeId}</caption>
-      <THead className="sticky top-0 z-10 bg-[hsl(var(--background))]/95 backdrop-blur">
+      <THead className="sticky top-0 z-10 bg-[hsl(var(--bg-1))]/95 backdrop-blur">
         {table.getHeaderGroups().map((hg) => (
           <TR key={hg.id}>
             {hg.headers.map((h) => {
@@ -31,7 +31,7 @@ export function ColumnsTable({
                   scope="col"
                   className={cn(
                     isName &&
-                      'sticky left-0 z-30 w-[min(28rem,40vw)] min-w-[12rem] max-w-[min(28rem,40vw)] border-r border-border-default bg-[hsl(var(--background))]/95 backdrop-blur',
+                      'sticky left-0 z-30 w-[min(28rem,40vw)] min-w-[12rem] max-w-[min(28rem,40vw)] border-r border-border-default bg-[hsl(var(--bg-1))]/95 backdrop-blur',
                   )}
                   aria-sort={
                     sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'
@@ -85,7 +85,7 @@ export function ColumnsTable({
                 key={cell.id}
                 className={cn(
                   cell.column.id === 'name' &&
-                    'sticky left-0 z-20 w-[min(28rem,40vw)] min-w-[12rem] max-w-[min(28rem,40vw)] border-r border-border-default bg-[hsl(var(--background))]/95 backdrop-blur group-hover:bg-white/[0.04]',
+                    'sticky left-0 z-20 w-[min(28rem,40vw)] min-w-[12rem] max-w-[min(28rem,40vw)] border-r border-border-default bg-[hsl(var(--bg-1))]/95 backdrop-blur group-hover:bg-white/[0.04]',
                 )}
               >
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}

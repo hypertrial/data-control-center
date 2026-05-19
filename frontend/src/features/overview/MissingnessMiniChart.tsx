@@ -68,7 +68,7 @@ export function MissingnessMiniChart({ names, values }: { names: string[]; value
     [names, values, leftGutter],
   )
 
-  if (!names.length) return <p className="text-sm text-[hsl(var(--muted))]">No column stats.</p>
+  if (!names.length) return <p className="text-sm text-[hsl(var(--fg-muted))]">No column stats.</p>
 
   return <div ref={ref} className="h-64 w-full" role="img" aria-label="Top columns by null percent" />
 }
