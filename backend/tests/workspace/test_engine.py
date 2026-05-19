@@ -770,7 +770,7 @@ def test_fresh_workspace_creates_dcc_tables(tmp_path: Path) -> None:
         ws.close()
 
 
-def test_workspace_rejects_schema_version_table(tmp_path: Path) -> None:
+def test_workspace_drops_legacy_schema_version_table(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     ws = Workspace(settings)
     ws.close()
@@ -787,5 +787,22 @@ def test_workspace_rejects_schema_version_table(tmp_path: Path) -> None:
         )
     finally:
         con.close()
-    with pytest.raises(UnsupportedWorkspaceSchemaError, match="schema_version migrations"):
-        Workspace(settings).close()
+    ws2 = Workspace(settings)
+    try:
+        con2 = duckdb.connect(str(settings.workspace_db_path))
+        try:
+            tables = {
+                str(row[0])
+                for row in con2.execute(
+                    """
+                    SELECT table_name FROM information_schema.tables
+                    WHERE table_schema = 'main' AND table_type = 'BASE TABLE'
+                    """
+                ).fetchall()
+            }
+            assert "schema_version" not in tables
+            assert "dcc_datasets" in tables
+        finally:
+            con2.close()
+    finally:
+        ws2.close()

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+
 import duckdb
 
 from app.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 class UnsupportedWorkspaceSchemaError(RuntimeError):
@@ -281,14 +285,18 @@ def _validate_schema(con: duckdb.DuckDBPyConnection) -> None:
             raise _unsupported(f"index {index_name} is missing or does not match the current schema")
 
 
+def _drop_legacy_schema_version_table(con: duckdb.DuckDBPyConnection) -> None:
+    if not _schema_version_table_exists(con):
+        return
+    con.execute("DROP TABLE schema_version")
+    logger.info("Removed obsolete schema_version table from workspace database")
+
+
 class WorkspaceSchema:
     def initialize(self, con: duckdb.DuckDBPyConnection, settings: Settings) -> None:
         del settings  # reserved for future init options
         if _existing_dcc_tables(con):
-            if _schema_version_table_exists(con):
-                raise UnsupportedWorkspaceSchemaError(
-                    "Workspace uses removed schema_version migrations. Run make clean-local."
-                )
             _validate_schema(con)
         else:
             create_workspace_schema(con)
+        _drop_legacy_schema_version_table(con)
