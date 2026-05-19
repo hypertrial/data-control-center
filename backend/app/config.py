@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     api_port: int = 8000
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
+    # Local-only security boundary. This app is designed for a single trusted workstation.
+    local_only: bool = True
+    allow_non_local_host: bool = False
+    require_local_api_token: bool = True
+    local_api_token: str | None = None
+
     # Local DuckDB file for workspace metadata/cache (profiles, issues JSON)
     workspace_db_path: Path = Path(".dcc_workspace.duckdb")
 
@@ -40,10 +46,15 @@ class Settings(BaseSettings):
 
     # Browser uploads are copied here, then registered with DuckDB
     upload_dir: Path = Path(".dcc_uploads")
-    upload_max_bytes_per_file: int = 2 * 1024 * 1024 * 1024  # 2 GiB
+    upload_max_bytes_per_file: int = 256 * 1024 * 1024  # 256 MiB
+    upload_max_files_per_batch: int = Field(default=50, ge=1, le=1000)
+    upload_max_batch_bytes: int = 512 * 1024 * 1024  # 512 MiB
+    upload_validate_parse: bool = True
+    upload_orphan_ttl_hours: float = Field(default=24.0, ge=0.0)
 
     # Filesystem security boundaries.
     allow_arbitrary_registration_paths: bool = False
+    enable_path_registration: bool = False
     registration_allowed_roots: list[Path] = Field(default_factory=list)
     expose_absolute_source_paths: bool = False
 

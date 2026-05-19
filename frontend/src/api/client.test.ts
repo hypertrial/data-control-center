@@ -1,5 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api, askAgentStream } from '@/api/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  api,
+  askAgentStream,
+  resetLocalSessionTokenForTests,
+  setLocalSessionTokenForTests,
+} from '@/api/client'
+
+const LOCAL_TOKEN_HEADER = 'X-DCC-Local-Token'
 
 function jsonOk(data: unknown): Response {
   return {
@@ -19,9 +26,28 @@ function textErr(message: string, statusText = 'Bad'): Response {
   } as Response
 }
 
+function apiError(message: string, status = 403): Response {
+  return {
+    ok: false,
+    status,
+    statusText: 'Forbidden',
+    text: () => Promise.resolve(JSON.stringify({ error: { message } })),
+    json: () => Promise.reject(new Error('no json')),
+  } as Response
+}
+
+beforeEach(() => {
+  setLocalSessionTokenForTests('test-token')
+})
+
 afterEach(() => {
+  resetLocalSessionTokenForTests()
   vi.restoreAllMocks()
 })
+
+function expectToken(init: RequestInit | undefined): void {
+  expect(new Headers(init?.headers).get(LOCAL_TOKEN_HEADER)).toBe('test-token')
+}
 
 describe('api client', () => {
   it('health calls /api/health', async () => {
@@ -52,7 +78,62 @@ describe('api client', () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonOk([]))
     vi.stubGlobal('fetch', fetchMock)
     await api.listDatasets()
-    expect(fetchMock).toHaveBeenCalledWith('/api/datasets')
+    expect(fetchMock).toHaveBeenCalledWith('/api/datasets', expect.any(Object))
+    expectToken(fetchMock.mock.calls[0]![1] as RequestInit)
+  })
+
+  it('fetches local session once and reuses the token', async () => {
+    resetLocalSessionTokenForTests()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonOk({ token: 'boot-token', local_only: true }))
+      .mockResolvedValueOnce(jsonOk([]))
+      .mockResolvedValueOnce(jsonOk([]))
+    vi.stubGlobal('fetch', fetchMock)
+    await api.listDatasets()
+    await api.listDatasets()
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
+      '/api/local-session',
+      '/api/datasets',
+      '/api/datasets',
+    ])
+    expect(new Headers((fetchMock.mock.calls[1]![1] as RequestInit).headers).get(LOCAL_TOKEN_HEADER)).toBe(
+      'boot-token',
+    )
+    expect(new Headers((fetchMock.mock.calls[2]![1] as RequestInit).headers).get(LOCAL_TOKEN_HEADER)).toBe(
+      'boot-token',
+    )
+  })
+
+  it('refreshes local session once after a protected call rejects the cached token', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(apiError('Missing or invalid local API token.'))
+      .mockResolvedValueOnce(jsonOk({ token: 'new-token', local_only: true }))
+      .mockResolvedValueOnce(jsonOk([]))
+    vi.stubGlobal('fetch', fetchMock)
+    await api.listDatasets()
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
+      '/api/datasets',
+      '/api/local-session',
+      '/api/datasets',
+    ])
+    expect(new Headers((fetchMock.mock.calls[0]![1] as RequestInit).headers).get(LOCAL_TOKEN_HEADER)).toBe(
+      'test-token',
+    )
+    expect(new Headers((fetchMock.mock.calls[2]![1] as RequestInit).headers).get(LOCAL_TOKEN_HEADER)).toBe(
+      'new-token',
+    )
+  })
+
+  it('does not retry a protected 403 when local-session returns the same token', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(apiError('Path registration is disabled.'))
+      .mockResolvedValueOnce(jsonOk({ token: 'test-token', local_only: true }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(api.listDatasets()).rejects.toThrow('Path registration is disabled.')
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual(['/api/datasets', '/api/local-session'])
   })
 
   it('uploadDatasets POST FormData', async () => {
@@ -65,6 +146,7 @@ describe('api client', () => {
       expect.objectContaining({ method: 'POST' }),
     )
     const init = fetchMock.mock.calls[0]![1] as RequestInit
+    expectToken(init)
     expect(init.body).toBeInstanceOf(FormData)
   })
 
@@ -72,7 +154,8 @@ describe('api client', () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonOk({ dataset_id: 'x' }))
     vi.stubGlobal('fetch', fetchMock)
     await api.getProfile('ds_1')
-    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/profile')
+    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/profile', expect.any(Object))
+    expectToken(fetchMock.mock.calls[0]![1] as RequestInit)
   })
 
   it('deleteDataset DELETE', async () => {
@@ -83,7 +166,8 @@ describe('api client', () => {
     } as Response)
     vi.stubGlobal('fetch', fetchMock)
     await api.deleteDataset('ds_1')
-    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1', { method: 'DELETE' })
+    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1', expect.objectContaining({ method: 'DELETE' }))
+    expectToken(fetchMock.mock.calls[0]![1] as RequestInit)
   })
 
   it('refreshProfile POST', async () => {
@@ -91,15 +175,18 @@ describe('api client', () => {
     vi.stubGlobal('fetch', fetchMock)
     await api.refreshProfile('ds_1')
     expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/profile/refresh', {
+      headers: expect.any(Headers),
       method: 'POST',
     })
+    expectToken(fetchMock.mock.calls[0]![1] as RequestInit)
   })
 
   it('getQuality GET', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonOk([]))
     vi.stubGlobal('fetch', fetchMock)
     await api.getQuality('ds_1')
-    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/quality-issues')
+    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/quality-issues', expect.any(Object))
+    expectToken(fetchMock.mock.calls[0]![1] as RequestInit)
   })
 
   it('getSample GET with query', async () => {
@@ -110,7 +197,9 @@ describe('api client', () => {
     await api.getSample('ds_1', 2, 20)
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/datasets/ds_1/sample?page=2&page_size=20',
+      expect.any(Object),
     )
+    expectToken(fetchMock.mock.calls[0]![1] as RequestInit)
   })
 
   it('runQuery POST', async () => {
@@ -119,18 +208,21 @@ describe('api client', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
     await api.runQuery({ sql: 'SELECT 1', max_rows: 5 })
-    expect(fetchMock).toHaveBeenCalledWith('/api/query', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/query', expect.objectContaining({
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sql: 'SELECT 1', max_rows: 5 }),
-    })
+    }))
+    const init = fetchMock.mock.calls[0]![1] as RequestInit
+    expectToken(init)
+    expect(new Headers(init.headers).get('Content-Type')).toBe('application/json')
   })
 
   it('getProfileHistory GET', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonOk([]))
     vi.stubGlobal('fetch', fetchMock)
     await api.getProfileHistory('ds_1', 5)
-    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/profile/history?limit=5')
+    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/profile/history?limit=5', expect.any(Object))
+    expectToken(fetchMock.mock.calls[0]![1] as RequestInit)
   })
 
   it('getProfileDiff GET with snapshot ids', async () => {
@@ -148,7 +240,8 @@ describe('api client', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
     await api.getProfileDiff('ds_1', 'a', 'b')
-    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/profile/diff?a=a&b=b')
+    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/profile/diff?a=a&b=b', expect.any(Object))
+    expectToken(fetchMock.mock.calls[0]![1] as RequestInit)
   })
 
   it('saved queries CRUD', async () => {
@@ -179,10 +272,10 @@ describe('api client', () => {
     await api.createSavedQuery({ name: 'q', sql: 'SELECT 1' })
     await api.patchSavedQuery('sq_1', { name: 'q2' })
     await api.deleteSavedQuery('sq_1')
-    expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries')
+    expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries', expect.any(Object))
     expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries', expect.objectContaining({ method: 'POST' }))
     expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries/sq_1', expect.objectContaining({ method: 'PATCH' }))
-    expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries/sq_1', { method: 'DELETE' })
+    expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries/sq_1', expect.objectContaining({ method: 'DELETE' }))
   })
 
   it('askAgent POST', async () => {
@@ -202,9 +295,8 @@ describe('api client', () => {
       conversation_id: 'c1',
       use_history: false,
     })
-    expect(fetchMock).toHaveBeenCalledWith('/api/agent/ask', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/agent/ask', expect.objectContaining({
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         question: 'how many rows?',
         dataset_ids: ['ds_001'],
@@ -212,7 +304,10 @@ describe('api client', () => {
         conversation_id: 'c1',
         use_history: false,
       }),
-    })
+    }))
+    const init = fetchMock.mock.calls[0]![1] as RequestInit
+    expectToken(init)
+    expect(new Headers(init.headers).get('Content-Type')).toBe('application/json')
   })
 
   it('ask conversations and turns API', async () => {
@@ -256,12 +351,12 @@ describe('api client', () => {
     await api.listAskTurns('c1', 50)
     await api.deleteAskTurn('c1', 't1')
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations')
+    expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations', expect.any(Object))
     expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations', expect.objectContaining({ method: 'POST' }))
     expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations/c1', expect.objectContaining({ method: 'PATCH' }))
-    expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations/c1', { method: 'DELETE' })
-    expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations/c1/turns?limit=50')
-    expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations/c1/turns/t1', { method: 'DELETE' })
+    expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations/c1', expect.objectContaining({ method: 'DELETE' }))
+    expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations/c1/turns?limit=50', expect.any(Object))
+    expect(fetchMock).toHaveBeenCalledWith('/api/ask/conversations/c1/turns/t1', expect.objectContaining({ method: 'DELETE' }))
   })
 
   it('askAgentStream parses SSE events across chunks', async () => {
@@ -289,6 +384,7 @@ describe('api client', () => {
       { type: 'answer', data: { answer: 'ok' } },
     ])
     expect(fetchMock).toHaveBeenCalledWith('/api/agent/ask/stream', expect.objectContaining({ method: 'POST' }))
+    expectToken(fetchMock.mock.calls[0]![1] as RequestInit)
   })
 
   it('askAgentStream throws for HTTP and missing body errors', async () => {

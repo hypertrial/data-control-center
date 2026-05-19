@@ -26,6 +26,7 @@ from app.models.api import (
 from app.services.profile_diff import diff_profile_dicts
 from app.services.profiler import CURRENT_PROFILE_STRUCTURE_VERSION, build_profile
 from app.services.registry import SUPPORTED_EXTENSIONS
+from app.services.upload_validation import UploadValidationError, validate_upload_file
 from app.services.workspace import sanitize_sql_identifier
 from app.telemetry import emit, timed_event
 
@@ -66,6 +67,13 @@ async def upload_datasets(
 ):
     if not files:
         raise to_http_error(status_code=400, code=CODES.BAD_REQUEST, message="No files uploaded")
+    if len(files) > settings.upload_max_files_per_batch:
+        emit("security.upload_reject", reason="too_many_files", count=len(files))
+        raise to_http_error(
+            status_code=400,
+            code=CODES.BAD_REQUEST,
+            message=f"Too many files uploaded; max is {settings.upload_max_files_per_batch}",
+        )
     upload_root = settings.upload_dir
     if not upload_root.is_absolute():
         upload_root = Path.cwd() / upload_root
@@ -75,6 +83,7 @@ async def upload_datasets(
 
     summaries: list[DatasetSummary] = []
     skipped: list[str] = []
+    batch_size = 0
     for uf in files:
         raw_name = uf.filename or ""
         safe = _safe_upload_filename(raw_name)
@@ -91,11 +100,20 @@ async def upload_datasets(
             with dest.open("wb") as out:
                 while chunk := await uf.read(1024 * 1024):
                     size += len(chunk)
+                    batch_size += len(chunk)
                     if size > settings.upload_max_bytes_per_file:
+                        emit("security.upload_reject", reason="file_too_large", filename=safe)
                         raise to_http_error(
                             status_code=400,
                             code=CODES.BAD_REQUEST,
                             message=f"File exceeds max size ({settings.upload_max_bytes_per_file} bytes): {safe}",
+                        )
+                    if batch_size > settings.upload_max_batch_bytes:
+                        emit("security.upload_reject", reason="batch_too_large")
+                        raise to_http_error(
+                            status_code=400,
+                            code=CODES.BAD_REQUEST,
+                            message=f"Upload batch exceeds max size ({settings.upload_max_batch_bytes} bytes)",
                         )
                     out.write(chunk)
         except Exception:
@@ -103,11 +121,13 @@ async def upload_datasets(
             raise
 
         try:
+            validate_upload_file(dest, settings)
             ds = registry.register_path(dest, compute_counts=False)
             summaries.append(registry.to_summary(ds))
             _queue_count_job(ds.dataset_id, jobs, registry, settings)
-        except ValueError:
+        except (ValueError, UploadValidationError) as exc:
             dest.unlink(missing_ok=True)
+            emit("security.upload_reject", reason=type(exc).__name__, filename=safe)
             skipped.append(safe)
 
     if not summaries:
@@ -144,6 +164,13 @@ def register_file(
     jobs: JobsDep,
     settings: SettingsDep,
 ) -> DatasetSummary:
+    if not settings.enable_path_registration:
+        emit("security.path_registration_denied", kind="file")
+        raise to_http_error(
+            status_code=403,
+            code=CODES.PATH_NOT_ALLOWED,
+            message="Path registration is disabled. Upload files through the local UI or enable DCC_ENABLE_PATH_REGISTRATION.",
+        )
     p = Path(body.path)
     try:
         ds = registry.register_path(p, compute_counts=False)
@@ -164,6 +191,13 @@ def register_folder(
     jobs: JobsDep,
     settings: SettingsDep,
 ) -> list[DatasetSummary]:
+    if not settings.enable_path_registration:
+        emit("security.path_registration_denied", kind="folder")
+        raise to_http_error(
+            status_code=403,
+            code=CODES.PATH_NOT_ALLOWED,
+            message="Path registration is disabled. Upload files through the local UI or enable DCC_ENABLE_PATH_REGISTRATION.",
+        )
     p = Path(body.path)
     try:
         dss = registry.register_folder(p, recursive=body.recursive)

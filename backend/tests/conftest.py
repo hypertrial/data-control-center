@@ -10,6 +10,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+@pytest.fixture(autouse=True)
+def _default_security_test_env(monkeypatch):
+    monkeypatch.setenv("DCC_REQUIRE_LOCAL_API_TOKEN", "false")
+    monkeypatch.setenv("DCC_ENABLE_PATH_REGISTRATION", "true")
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DCC_WORKSPACE_DB_PATH", str(tmp_path / "test_workspace.duckdb"))

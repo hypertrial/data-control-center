@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
@@ -109,6 +111,7 @@ class DatasetRegistry:
         self._next_id = self._load_max_id() + 1
         self._by_id: dict[str, RegisteredDataset] = {}
         self._load_from_db()
+        self.cleanup_upload_orphans()
 
     def _allowed_roots(self) -> list[Path]:
         roots: list[Path] = []
@@ -120,6 +123,19 @@ class DatasetRegistry:
             upload_dir = Path.cwd() / upload_dir
         roots.append(upload_dir.resolve())
         return roots
+
+    def _upload_root(self) -> Path:
+        upload_dir = self._settings.upload_dir
+        if not upload_dir.is_absolute():
+            upload_dir = Path.cwd() / upload_dir
+        return upload_dir.resolve()
+
+    def is_app_owned_upload(self, path: Path) -> bool:
+        try:
+            path.expanduser().resolve().relative_to(self._upload_root())
+            return True
+        except ValueError:
+            return False
 
     def ensure_registration_allowed(self, path: Path) -> None:
         if self._settings.allow_arbitrary_registration_paths:
@@ -137,6 +153,27 @@ class DatasetRegistry:
             message="Path is outside allowed registration roots.",
             details={"path": candidate.name},
         )
+
+    def cleanup_upload_orphans(self) -> None:
+        root = self._upload_root()
+        if not root.exists() or not root.is_dir():
+            return
+        ttl_seconds = self._settings.upload_orphan_ttl_hours * 3600
+        cutoff = time.time() - ttl_seconds
+        active = {ds.source_path.resolve() for ds in self._by_id.values() if self.is_app_owned_upload(ds.source_path)}
+        for child in root.iterdir():
+            if not child.is_dir():
+                continue
+            try:
+                newest = max((p.stat().st_mtime for p in child.rglob("*") if p.exists()), default=child.stat().st_mtime)
+                if newest > cutoff:
+                    continue
+                files = {p.resolve() for p in child.rglob("*") if p.is_file()}
+                if files & active:
+                    continue
+                shutil.rmtree(child)
+            except OSError:
+                continue
 
     def _load_max_id(self) -> int:
         with self._workspace.lock_db() as con:
@@ -282,6 +319,8 @@ class DatasetRegistry:
             ds = self._by_id.get(dataset_id)
             if not ds:
                 return False
+            source_path = ds.source_path
+            delete_source = self.is_app_owned_upload(source_path)
             self._workspace.drop_view_if_exists(ds.view_name)
             self._workspace.delete_profile_cache(dataset_id)
             with self._workspace.lock_db() as con:
@@ -289,6 +328,14 @@ class DatasetRegistry:
                 con.execute("DELETE FROM dcc_jobs WHERE dataset_id = ?", [dataset_id])
                 con.execute("DELETE FROM dcc_datasets WHERE dataset_id = ?", [dataset_id])
             self._by_id.pop(dataset_id, None)
+            if delete_source:
+                try:
+                    source_path.unlink(missing_ok=True)
+                    parent = source_path.parent
+                    if parent != self._upload_root() and parent.exists() and not any(parent.iterdir()):
+                        parent.rmdir()
+                except OSError:
+                    pass
             return True
 
     def get(self, dataset_id: str) -> RegisteredDataset | None:

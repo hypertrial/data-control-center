@@ -61,10 +61,10 @@ Open `http://localhost:5173`. The dev server proxies `/api` to the backend.
 
 ## Usage notes
 
-- In the **web UI**, add datasets by **uploading files** (drag-and-drop or folder selection). The API stores copies under **`.dcc_uploads/`** (relative to the backend cwd unless overridden), then registers them; tune size limits with **`DCC_UPLOAD_MAX_BYTES_PER_FILE`** (default 2 GiB).
-- You can still register datasets via the API using **absolute file paths** (CSV, Parquet, JSON / JSON Lines, TSV) or a **folder** of those files.
+- In the **web UI**, add datasets by **uploading files** (drag-and-drop or folder selection). The API stores copies under **`.dcc_uploads/`** (relative to the backend cwd unless overridden), validates them, then registers them; tune size limits with **`DCC_UPLOAD_MAX_BYTES_PER_FILE`** (default 256 MiB), **`DCC_UPLOAD_MAX_BATCH_BYTES`**, and **`DCC_UPLOAD_MAX_FILES_PER_BATCH`**.
+- Direct API registration from **absolute file paths** or folders is disabled by default. Enable **`DCC_ENABLE_PATH_REGISTRATION=true`** only for advanced local workflows, and keep **`DCC_REGISTRATION_ALLOWED_ROOTS`** narrow.
 - DuckDB creates one internal **view per dataset** whose SQL name is derived from the **file stem** (e.g. `player_ratings_2006_2026.parquet` → `player_ratings_2006_2026`). If two files share the same stem, the later registration gets a suffix such as `ratings_ds_002`. Reserved SQL-like names get a `_dcc` suffix. **`GET /api/datasets`** includes **`view_name`** on each summary so the UI can quote it correctly. Ad-hoc SQL must reference at least one registered view when datasets exist.
-- Remove a dataset from the sidebar trash action or **`DELETE /api/datasets/{dataset_id}`**. This unregisters the dataset, drops its DuckDB view, and clears cached profile state; it does **not** delete the source file or uploaded copy from disk.
+- Remove a dataset from the sidebar trash action or **`DELETE /api/datasets/{dataset_id}`**. This unregisters the dataset, drops its DuckDB view, clears cached profile state, and deletes app-owned uploaded copies. Externally registered source files are never deleted.
 - In the **SQL** tab, **⌘+Enter** (macOS) or **Ctrl+Enter** runs the current query (same as **Run query**). The **results** pane is a spreadsheet-style grid: **sortable** columns, **resizable** widths, sticky **#** row index, drag or **Shift+arrow** multi-cell selection, **⌘/Ctrl+C** to copy as **TSV**, plus **Copy JSON**, **Export CSV**, and **double-click** a cell for the full value. Result sets above **200** rows use **virtualized** scrolling for responsiveness.
 - In the **Ask** tab, **⌘+Enter** (macOS) or **Ctrl+Enter** submits the question (same as **Ask (stream)**). **Esc** stops an in-flight stream. Chats are **persisted** in the workspace DuckDB (see below).
 - **Ask conversations** are stored in the workspace DB (`DCC_WORKSPACE_DB_PATH`, default `./.dcc_workspace.duckdb`): tables **`dcc_ask_conversations`** and **`dcc_ask_turns`** (question, SQL attempts, executed SQL, capped result preview, answer, model, timings, dataset scope). REST: **`GET/POST /api/ask/conversations`**, **`PATCH/DELETE /api/ask/conversations/{id}`**, **`GET /api/ask/conversations/{id}/turns`**, **`DELETE /api/ask/conversations/{id}/turns/{turn_id}`**. Send **`conversation_id`** (and optional **`use_history`**, default true) on **`POST /api/agent/ask`** or **`/api/agent/ask/stream`** so turns append to that chat and prior turns are included in the LLM context (bounded to recent turns).
@@ -80,13 +80,28 @@ Open `http://localhost:5173`. The dev server proxies `/api` to the backend.
 - Saved SQL snippets are persisted in the workspace DB via **`/api/saved-queries`** and are available from the SQL tab and command palette.
 - Global UI shortcuts: **⌘/Ctrl+K** opens the command palette, **?** opens the shortcuts sheet, **/** focuses dataset search, **g o/c/q/s/a/y** jumps to Overview/Columns/Quality/Samples/Ask/SQL, and **r** refreshes cached queries.
 
+## Local-only security model
+
+Data Control Center is hardened for **local workstation use only**. By default the backend:
+
+- accepts only loopback/local requests (**`DCC_LOCAL_ONLY=true`**, **`DCC_ALLOW_NON_LOCAL_HOST=false`**);
+- rejects non-local `Host`, `Origin`, `Referer`, or client addresses;
+- generates a per-process local API token unless **`DCC_LOCAL_API_TOKEN`** is set;
+- requires **`X-DCC-Local-Token`** for protected API endpoints (**`DCC_REQUIRE_LOCAL_API_TOKEN=true`**);
+- lets the browser frontend bootstrap that token from **`GET /api/local-session`** only from local requests.
+
+For CLI/API scripts, either call **`GET /api/local-session`** locally or start the backend with **`DCC_LOCAL_API_TOKEN=<token>`** and send **`X-DCC-Local-Token: <token>`**. Do not expose the backend on a LAN or public interface unless you also accept the unsafe local-only override risk.
+
 ## Security and registration paths
 
 Path-based dataset registration is gated by [`backend/app/config.py`](backend/app/config.py) (all env vars prefixed **`DCC_`**):
 
+- **`DCC_ENABLE_PATH_REGISTRATION`** — when **`false`** (default), `/api/datasets/register-file` and `/api/datasets/register-folder` are disabled.
 - **`DCC_ALLOW_ARBITRARY_REGISTRATION_PATHS`** — when **`false`** (default), registration rejects paths outside the allowed roots below.
 - **`DCC_REGISTRATION_ALLOWED_ROOTS`** — extra filesystem roots (in addition to the resolved **`DCC_UPLOAD_DIR`**) from which path registration is permitted.
 - **`DCC_EXPOSE_ABSOLUTE_SOURCE_PATHS`** — whether API responses include absolute source paths.
+
+Upload ingestion also enforces extension allow-listing, filename normalization, per-file and batch size limits, optional parser preflight validation (**`DCC_UPLOAD_VALIDATE_PARSE=true`**), and cleanup of stale failed-upload batches via **`DCC_UPLOAD_ORPHAN_TTL_HOURS`**.
 
 Implementation: [`backend/app/services/registry.py`](backend/app/services/registry.py) (`ensure_registration_allowed`).
 
