@@ -5,6 +5,17 @@ export type ApiError = {
   trace_id?: string
 }
 
+export type LlmHealth = {
+  reachable: boolean
+  model: string
+  detail: string | null
+}
+
+export type HealthResponse = {
+  status: string
+  llm: LlmHealth
+}
+
 export type DatasetSummary = {
   dataset_id: string
   name: string

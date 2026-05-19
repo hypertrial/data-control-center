@@ -14,6 +14,8 @@ make dev
 
 Open the frontend URL printed by Vite, usually `http://127.0.0.1:5173`.
 
+**Alternative (single server):** `make serve` from the repo root serves the built UI and API on **`http://127.0.0.1:8000`** (see root **`README.md`**).
+
 ## 2. Upload Safe Example Data
 
 Open the datasets area and upload:

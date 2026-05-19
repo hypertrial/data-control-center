@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { PageContainer } from '@/components/ui/section'
 import { AskComposer } from '@/features/ask/AskComposer'
+import { LlmStatusBanner } from '@/features/ask/LlmStatusBanner'
 import { AskThread } from '@/features/ask/AskThread'
 import { ConversationList } from '@/features/ask/ConversationList'
 import { SuggestedPrompts } from '@/features/ask/SuggestedPrompts'
@@ -92,6 +93,8 @@ export function AskPage() {
           <div className="shrink-0 text-xs text-fg-muted">
             Chats are saved in the workspace DB. Follow-up questions reuse recent turns for context.
           </div>
+
+          <LlmStatusBanner />
 
           {profile && (!activeConversationId || turns.length === 0) ? (
             <div className="shrink-0">

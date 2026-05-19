@@ -9,6 +9,7 @@ import type {
   AskTurn,
   DatasetProfile,
   DatasetSummary,
+  HealthResponse,
   JobCreateResponse,
   JobDetail,
   JobSummary,
@@ -96,7 +97,7 @@ async function handle<T>(res: Promise<Response>): Promise<T> {
 }
 
 export const api = {
-  health: () => handle<{ status: string }>(fetch(`${API}/health`)),
+  health: () => handle<HealthResponse>(fetch(`${API}/health`)),
 
   listDatasets: () => handle<DatasetSummary[]>(apiFetch(`${API}/datasets`)),
 

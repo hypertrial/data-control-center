@@ -24,7 +24,12 @@ def _wait_for_job(client, job_id: str, *, timeout: float = 2.0) -> dict:
 def test_health(client):
     r = client.get("/api/health")
     assert r.status_code == 200
-    assert r.json()["status"] == "ok"
+    body = r.json()
+    assert body["status"] == "ok"
+    assert "llm" in body
+    assert "reachable" in body["llm"]
+    assert "model" in body["llm"]
+    assert isinstance(body["llm"]["reachable"], bool)
 
 
 def test_list_datasets_empty(client):

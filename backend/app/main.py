@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from app.api.agent import router as agent_router
 from app.api.ask import router as ask_router
@@ -21,6 +23,8 @@ from app.security import generate_local_api_token, local_security_middleware
 from app.services.jobs import JobService
 from app.services.registry import DatasetRegistry
 from app.services.workspace import Workspace
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -65,6 +69,36 @@ def create_app() -> FastAPI:
     app.include_router(ask_router)
     app.include_router(saved_queries_router)
     app.include_router(jobs_router)
+
+    if settings.ui_dist_path is not None:
+        ui_root = settings.ui_dist_path.expanduser()
+        if not ui_root.is_dir():
+            logger.warning("DCC_UI_DIST_PATH is set but not a directory: %s", ui_root)
+        else:
+            resolved_root = ui_root.resolve()
+            index_file = resolved_root / "index.html"
+            if not index_file.is_file():
+                logger.warning("DCC_UI_DIST_PATH has no index.html: %s", resolved_root)
+            else:
+
+                @app.get("/", include_in_schema=False)
+                async def ui_index() -> FileResponse:
+                    return FileResponse(index_file)
+
+                @app.get("/{full_path:path}", include_in_schema=False)
+                async def ui_spa_or_static(full_path: str) -> FileResponse:
+                    # API routes are registered above and take precedence over this pattern.
+                    if full_path == "api" or full_path.startswith("api/"):
+                        raise HTTPException(status_code=404)
+                    target = (resolved_root / full_path).resolve()
+                    try:
+                        target.relative_to(resolved_root)
+                    except ValueError:
+                        return FileResponse(index_file)
+                    if target.is_file():
+                        return FileResponse(target)
+                    return FileResponse(index_file)
+
     return app
 
 

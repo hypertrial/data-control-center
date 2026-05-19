@@ -46,6 +46,7 @@ const h = vi.hoisted(() => ({
   listAskTurns: vi.fn(),
   listDatasets: vi.fn(),
   getProfile: vi.fn(),
+  health: vi.fn(),
 }))
 
 vi.mock('@/api/client', async (importOriginal) => {
@@ -60,6 +61,7 @@ vi.mock('@/api/client', async (importOriginal) => {
       listAskTurns: h.listAskTurns,
       listDatasets: h.listDatasets,
       getProfile: h.getProfile,
+      health: h.health,
     },
   }
 })
@@ -99,7 +101,32 @@ describe('AskPage', () => {
     h.listAskTurns.mockResolvedValue([])
     h.listDatasets.mockResolvedValue([])
     h.getProfile.mockResolvedValue(minimalProfile)
+    h.health.mockResolvedValue({
+      status: 'ok',
+      llm: { reachable: true, model: 'qwen3:4b', detail: null },
+    })
     useUiStore.setState({ pendingQuery: null, activeConversationId: null, activeDatasetId: null })
+  })
+
+  it('shows LLM status banner when health reports unreachable', async () => {
+    h.health.mockResolvedValue({
+      status: 'ok',
+      llm: { reachable: false, model: 'qwen3:4b', detail: 'Could not reach local LLM endpoint.' },
+    })
+    wrap(<AskPage />)
+    await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument())
+    expect(screen.getByText(/Ollama is not reachable/i)).toBeInTheDocument()
+    expect(screen.getByText(/Could not reach local LLM endpoint/)).toBeInTheDocument()
+  })
+
+  it('hides LLM status banner when reachable', async () => {
+    h.health.mockResolvedValue({
+      status: 'ok',
+      llm: { reachable: true, model: 'm', detail: null },
+    })
+    wrap(<AskPage />)
+    await waitFor(() => expect(h.health).toHaveBeenCalled())
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('disables ask when question empty', () => {

@@ -19,6 +19,9 @@ Run commands from the repository root unless noted.
 - Start API and UI: `make dev`
 - Start only backend: `make backend`
 - Start only frontend: `make frontend`
+- Build frontend production bundle: `make build-ui`
+- Single-server mode (API serves built UI): `make serve`
+- Full validation (CI parity): `make check`
 - Delete local app state and generated artifacts: `make clean-local`
 
 Use Node 22 from `.nvmrc` or Node 24+. Use Python 3.11+ with `uv`.
@@ -26,7 +29,8 @@ Use Node 22 from `.nvmrc` or Node 24+. Use Python 3.11+ with `uv`.
 ## Validation Commands
 
 Run targeted tests while iterating, then finish with the relevant full checks.
-For changes that could affect both tiers, run the full set.
+For changes that could affect both tiers, run **`make check`** from the repo
+root (same steps as CI). Individual commands:
 
 ```bash
 cd backend && uv run ruff check app tests

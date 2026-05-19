@@ -27,7 +27,14 @@ on `127.0.0.1:5173`.
 ## Validation
 
 Run the checks that match the area you changed. Before opening a PR, run the
-full set when practical:
+full set when practical. From the repository root:
+
+```bash
+make check
+```
+
+This runs the same backend and frontend checks as CI (ruff, pytest, lint, tests,
+coverage, and `npm run build`). Individual steps:
 
 ```bash
 cd backend && uv run ruff check app tests

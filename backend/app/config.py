@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     registration_allowed_roots: list[Path] = Field(default_factory=list)
     expose_absolute_source_paths: bool = False
 
+    # Optional built frontend (Vite `dist`). When set to an existing directory, served at `/` after API routes.
+    ui_dist_path: Path | None = None
+
     # Local LLM (Ollama default)
     llm_base_url: str = "http://127.0.0.1:11434"
     llm_model: str = "qwen3:4b"

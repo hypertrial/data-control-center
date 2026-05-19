@@ -35,6 +35,10 @@ Uploads are the preferred ingestion path. They use filename/path normalization, 
 
 **`DCC_WORKSPACE_DB_PATH`** (default `./.dcc_workspace.duckdb`, relative to the backend process working directory) holds cached dataset profiles (including **`structure_version`**), profile history, **`dcc_jobs`** rows, saved SQL snippets, and Ask conversation tables. Implementation: façade [`app/services/workspace.py`](app/services/workspace.py), engine [`app/services/workspace_engine.py`](app/services/workspace_engine.py), current-schema initialization/validation in [`app/services/workspace_schema.py`](app/services/workspace_schema.py), and stores in [`app/services/workspace_stores.py`](app/services/workspace_stores.py). Existing workspace DBs must match the current schema; old incompatible DBs fail fast and should be recreated.
 
+### Built UI (single-server mode)
+
+**`DCC_UI_DIST_PATH`** — when set to a directory containing a Vite **`index.html`** (for example **`../frontend/dist`** after `npm run build` in `frontend/`), FastAPI serves that bundle at **`/`** with SPA fallback, in addition to **`/api/*`**. Run from repo root: **`make serve`** (builds the frontend, then starts uvicorn with this variable). Wrong or missing paths log a warning and do not mount the UI.
+
 ### Structure / profiling tuning
 
 Row-grain and entity inference live in [`app/services/profiler.py`](app/services/profiler.py). Useful knobs (all **`DCC_`** + these suffixes):
@@ -49,12 +53,13 @@ Profile responses expose sampling scope metadata so clients can avoid treating s
 
 ## Test and lint
 
-Matches [`.github/workflows/ci.yml`](../.github/workflows/ci.yml):
+Matches [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). From the repo root you can run **`make check`** for the same backend + frontend steps CI runs.
 
 ```bash
 uv sync --extra dev
 uv run ruff check app tests
 uv run pytest
+cd ../frontend && npm ci && npm run lint && npm test && npm run test:coverage && npm run build
 ```
 
 [`pyproject.toml`](pyproject.toml) fails the suite if **`app/`** line coverage drops below **100%** (`--cov-fail-under=100`). HTML coverage: `uv run pytest --cov=app --cov-report=html` → `htmlcov/index.html`.

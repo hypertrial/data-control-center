@@ -9,7 +9,23 @@ versioning once formal releases begin.
 
 ### Added
 
+### Changed
+
+## [0.1.0] - 2026-05-19
+
+### Added
+
 - MIT license and open-source governance files.
 - Contributor, security, issue, and pull request guidance.
 - Safe example datasets and a five-minute tour.
 - Security and dependency automation for OSS release readiness.
+- `GET /api/health` **`llm`** field probing the configured Ollama-compatible endpoint (`/api/tags`).
+- Ask tab banner when the local LLM is unreachable, linking to README setup.
+- **`DCC_UI_DIST_PATH`**: optional serving of the built Vite UI from FastAPI with SPA fallback; **`make serve`** and **`make build-ui`**.
+- **`make check`** for CI-parity validation (backend ruff + pytest, frontend lint + test + coverage + build).
+- CI frontend job runs **`npm run build`**.
+- README quick start, platform notes, upgrading guidance, OpenAPI link, and UI wireframe screenshots under `docs/images/`.
+
+### Changed
+
+- Documentation map and contributor workflow reference **`make check`** and single-server mode.
