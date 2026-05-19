@@ -169,12 +169,21 @@ describe('AskComposer', () => {
     expect(mockSend.mock.calls[0]![0].datasetIds).toBeNull()
   })
 
-  it('sends the selected Ollama model via dropdown and saves it locally', async () => {
+  it('lists installed Ollama models in the Options popover select', async () => {
     const user = userEvent.setup()
     renderHarness(<Harness />)
     await user.click(await screen.findByRole('button', { name: 'Options' }))
-    await user.click(screen.getByRole('button', { name: /Ollama model/i }))
-    await user.click(await screen.findByRole('menuitemradio', { name: /llama3\.2:3b/i }))
+    const modelSelect = screen.getByRole('combobox', { name: /Ollama model/i })
+    expect(modelSelect).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'qwen3:4b' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'llama3.2:3b' })).toBeInTheDocument()
+  })
+
+  it('sends the selected Ollama model via select and saves it locally', async () => {
+    const user = userEvent.setup()
+    renderHarness(<Harness />)
+    await user.click(await screen.findByRole('button', { name: 'Options' }))
+    await user.selectOptions(screen.getByRole('combobox', { name: /Ollama model/i }), 'llama3.2:3b')
     fireEvent.change(screen.getByPlaceholderText(/plain language/i), { target: { value: 'Q' } })
     fireEvent.click(screen.getByRole('button', { name: /Ask \(stream\)/ }))
     await waitFor(() => expect(mockSend).toHaveBeenCalled())
@@ -219,5 +228,19 @@ describe('AskComposer', () => {
     fireEvent.click(screen.getByRole('button', { name: /Ask \(stream\)/ }))
     await waitFor(() => expect(mockSend).toHaveBeenCalled())
     expect(mockSend.mock.calls[0]![0].model).toBe('qwen3:4b')
+  })
+
+  it('shows Ollama reachability detail in Options when model listing fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.listLlmModels).mockResolvedValue({
+      default_model: 'qwen3:4b',
+      models: [],
+      reachable: false,
+      detail: 'Could not reach local LLM endpoint.',
+    })
+    renderHarness(<Harness />)
+    await user.click(await screen.findByRole('button', { name: 'Options' }))
+    expect(screen.getByText('Could not reach local LLM endpoint.')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: /Ollama model/i })).toHaveValue('qwen3:4b')
   })
 })

@@ -1,16 +1,9 @@
-import { useMemo } from 'react'
-import { Settings2 } from 'lucide-react'
+import { useEffect, useMemo, useRef } from 'react'
+import { ChevronDown, Settings2 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Tooltip } from '@/components/ui/tooltip'
 import { api } from '@/api/client'
 import { saveAskModel, type AskScope } from '@/features/ask/askComposerState'
@@ -28,6 +21,14 @@ function formatModelSize(size: number | null | undefined): string | null {
   if (gb >= 0.1) return `${gb.toFixed(1)} GB`
   const mb = size / 1024 ** 2
   return `${mb.toFixed(0)} MB`
+}
+
+function formatModelOptionLabel(
+  name: string,
+  modelMeta: Map<string, { size: number | null | undefined }>,
+): string {
+  const sizeLabel = formatModelSize(modelMeta.get(name)?.size)
+  return sizeLabel ? `${name} (${sizeLabel})` : name
 }
 
 export function AskOptionsPopover({
@@ -56,6 +57,7 @@ export function AskOptionsPopover({
   effectiveSelectedModel: string
   allIds: string[]
 }) {
+  const focusRef = useRef<HTMLElement | null>(null)
   const { data: datasets = [] } = useQuery({ queryKey: ['datasets'], queryFn: api.listDatasets })
   const { data: llmModels } = useQuery({
     queryKey: ['llm', 'models'],
@@ -76,6 +78,11 @@ export function AskOptionsPopover({
     }
     return map
   }, [llmModels])
+
+  useEffect(() => {
+    if (!open || !focusSection) return
+    focusRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [open, focusSection])
 
   const allChecked = scope === 'all'
 
@@ -108,56 +115,60 @@ export function AskOptionsPopover({
           Options
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 space-y-4 p-3">
+      <PopoverContent
+        align="end"
+        side="top"
+        sideOffset={8}
+        collisionPadding={12}
+        className="w-[min(20rem,calc(100vw-2rem))] space-y-4 p-3"
+      >
         <section
+          ref={focusSection === 'model' ? focusRef : undefined}
           className={cn(focusSection === 'model' && 'rounded-md ring-1 ring-border-accent')}
           data-focus={focusSection === 'model' ? 'true' : undefined}
         >
-          <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-fg-muted">Model</div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 w-full justify-between font-normal"
-                disabled={busy || !llmModels}
-                aria-label="Ollama model"
-              >
-                <span className="truncate">{effectiveSelectedModel || 'Loading models…'}</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="max-h-64 w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto">
-              <DropdownMenuRadioGroup
-                value={effectiveSelectedModel || ''}
-                onValueChange={(v) => {
-                  onSelectedModelChange(v)
-                  saveAskModel(v)
-                }}
-              >
-                {modelOptions.length ? (
-                  modelOptions.map((name) => {
-                    const sizeLabel = formatModelSize(modelMeta.get(name)?.size)
-                    return (
-                      <DropdownMenuRadioItem key={name} value={name}>
-                        <span className="truncate">{name}</span>
-                        {sizeLabel ? (
-                          <span className="ml-auto pl-2 text-[10px] text-fg-muted">{sizeLabel}</span>
-                        ) : null}
-                      </DropdownMenuRadioItem>
-                    )
-                  })
-                ) : (
-                  <DropdownMenuRadioItem value={llmModels?.default_model ?? ''} disabled>
-                    {llmModels?.default_model ?? 'No models'}
-                  </DropdownMenuRadioItem>
-                )}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <label
+            htmlFor="dcc-ask-model"
+            className="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-fg-muted"
+          >
+            Model
+          </label>
+          <div className="relative">
+            <select
+              id="dcc-ask-model"
+              value={effectiveSelectedModel || ''}
+              onChange={(e) => {
+                onSelectedModelChange(e.target.value)
+                saveAskModel(e.target.value)
+              }}
+              disabled={busy || !llmModels}
+              aria-label="Ollama model"
+              className="h-8 w-full appearance-none rounded-md border border-border-default bg-black/30 py-1 pl-2 pr-8 text-sm text-white disabled:opacity-60"
+            >
+              {modelOptions.length ? (
+                modelOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {formatModelOptionLabel(name, modelMeta)}
+                  </option>
+                ))
+              ) : (
+                <option value={llmModels?.default_model ?? ''}>
+                  {llmModels?.default_model ?? 'Loading models…'}
+                </option>
+              )}
+            </select>
+            <ChevronDown
+              aria-hidden
+              className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted"
+            />
+          </div>
+          {llmModels && !llmModels.reachable && llmModels.detail ? (
+            <p className="mt-1.5 text-[11px] text-amber-200/90">{llmModels.detail}</p>
+          ) : null}
         </section>
 
         <section
+          ref={focusSection === 'rows' ? focusRef : undefined}
           className={cn(focusSection === 'rows' && 'rounded-md ring-1 ring-border-accent')}
           data-focus={focusSection === 'rows' ? 'true' : undefined}
         >
@@ -180,6 +191,7 @@ export function AskOptionsPopover({
 
         {datasets.length > 0 ? (
           <section
+            ref={focusSection === 'scope' ? focusRef : undefined}
             className={cn(focusSection === 'scope' && 'rounded-md ring-1 ring-border-accent')}
             data-focus={focusSection === 'scope' ? 'true' : undefined}
           >
