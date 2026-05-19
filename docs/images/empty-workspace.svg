@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-label="Placeholder: empty workspace with sidebar and welcome hero">
-  <rect width="960" height="540" fill="#1a1b26"/>
-  <rect x="0" y="0" width="200" height="540" fill="#16161e" stroke="#3b4261" stroke-width="1"/>
-  <rect x="220" y="40" width="700" height="460" fill="#24283b" rx="8" stroke="#565f89" stroke-width="1"/>
-  <text x="480" y="200" fill="#c0caf5" font-family="system-ui,sans-serif" font-size="22" text-anchor="middle">Welcome to Data Control Center</text>
-  <text x="480" y="240" fill="#a9b1d6" font-family="system-ui,sans-serif" font-size="14" text-anchor="middle">Drop datasets or upload  wireframe placeholder</text>
-  <rect x="330" y="290" width="300" height="80" fill="#1a1b26" stroke="#7aa2f7" stroke-width="2" stroke-dasharray="8 6" rx="6"/>
-  <text x="480" y="335" fill="#7aa2f7" font-family="system-ui,sans-serif" font-size="13" text-anchor="middle">Upload drop zone</text>
-</svg>

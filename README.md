@@ -2,16 +2,6 @@
 
 **Local-first tool** for **profiling, exploring, and querying many local data files** (CSV, TSV, Parquet, JSON, JSON Lines) from one interface. It targets **a single trusted workstation**: developers and analysts who want fast EDA and ad-hoc DuckDB SQL—not a hosted BI server or multi-tenant product. See [Local-only security model](#local-only-security-model) and [`SECURITY.md`](SECURITY.md).
 
-## Screenshots
-
-Wireframe placeholders (replace with real captures from your machine when announcing a release if you prefer):
-
-![Empty workspace — welcome and upload area](docs/images/empty-workspace.svg)
-
-![Overview — profile-style summary](docs/images/overview-profile.svg)
-
-![SQL — editor and results grid](docs/images/sql-results.svg)
-
 ## Quick start (no LLM required)
 
 1. From the repo root: `make install` then `make dev` (requires **bash** for the combined dev command; see [Platform notes](#platform-notes)).

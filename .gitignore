@@ -227,6 +227,3 @@ frontend/dist/
 frontend/coverage/
 frontend/node_modules/
 backend/.venv/
-
-# Streamlit
-.streamlit/secrets.toml

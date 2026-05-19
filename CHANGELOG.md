@@ -33,6 +33,14 @@ versioning once formal releases begin.
 - Backend tests reorganized under `tests/api/`, `tests/profiler/`, and `tests/workspace/`.
 - Frontend coverage baseline raised to **92%** (lines/statements); `types.ts` excluded from v8 coverage (still validated via `types.test.ts`).
 
+### Removed
+
+- README Screenshots section and wireframe SVGs under `docs/images/`.
+- Unused `frontend/public/icons.svg` marketing sprite.
+- Unused `Label` and `Kbd` UI primitives (and their tests).
+- Unused exports `cardPadding` and `severityCssVar` from `tokens.ts`, and `chartGrid` from `chartTheme.ts`.
+- Stale `.streamlit/secrets.toml` entry from `.gitignore`.
+
 ## [0.1.0] - 2026-05-19
 
 ### Added

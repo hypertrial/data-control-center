@@ -18,14 +18,6 @@ export function chartPalette(): string[] {
   ]
 }
 
-export const chartGrid = {
-  left: 8,
-  right: 16,
-  top: 16,
-  bottom: 8,
-  containLabel: true,
-} as const
-
 function borderColorResolved(): string {
   if (typeof document === 'undefined') return 'rgba(255,255,255,0.12)'
   const triple = getComputedStyle(document.documentElement).getPropertyValue('--border-triple').trim()
