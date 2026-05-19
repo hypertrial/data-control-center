@@ -2,6 +2,8 @@
 
 React + Vite + TypeScript UI for browsing datasets, profiles, SQL, and quality insights.
 
+Product usage (tabs, shortcuts, Ask): [`docs/user-guide.md`](../docs/user-guide.md).
+
 ## Prerequisites
 
 Use the Node version from [`.nvmrc`](../.nvmrc) (same as CI).
@@ -19,28 +21,52 @@ From `frontend/`:
 | `npm test` | Vitest (happy-dom) |
 | `npm run test:coverage` | Vitest with **v8** coverage thresholds |
 
-You can also run **`npm run dev`**, **`npm run lint`**, **`npm test`**, and **`npm run build`** from the **repository root** — see root [`package.json`](../package.json) / [`README.md`](../README.md); scripts delegate into this package.
+You can also run **`npm run dev`**, **`npm run lint`**, **`npm test`**, and **`npm run build`**
+from the **repository root** — see root [`package.json`](../package.json); scripts delegate
+into this package.
 
 ## API proxy
 
-[`vite.config.ts`](vite.config.ts) proxies **`/api`** → **`http://127.0.0.1:8000`**. Start the FastAPI backend separately (`make backend` or `make dev` from the repo root).
+[`vite.config.ts`](vite.config.ts) proxies **`/api`** → **`http://127.0.0.1:8000`**. Start
+the FastAPI backend separately (`make backend` or `make dev` from the repo root).
 
-If Vite logs **`http proxy error`** / **`socket hang up`** for several `/api/...` paths at once, the connection to the API was cut mid-request — often a **Uvicorn auto-reload** while editing [`backend/app/`](../backend/app) (see root **`Makefile`**: `--reload-dir app`). [`App.tsx`](src/App.tsx) configures TanStack Query with **extra retries** for typical fetch/transport failures so the UI usually recovers without manual reload.
+If Vite logs **`http proxy error`** / **`socket hang up`** for several `/api/...` paths at
+once, the connection to the API was cut mid-request — often a **Uvicorn auto-reload** while
+editing [`backend/app/`](../backend/app) (see root **`Makefile`**: `--reload-dir app`).
+[`App.tsx`](src/App.tsx) configures TanStack Query with extra retries for transport failures.
 
-## Layout & conventions
+## Layout and conventions
 
-- **`src/features/`** — route-level pages (overview, columns, quality, samples, SQL). On **Overview**, the **Structure** card separates **Entities** (identifier-like columns) from **Row grain** (composite key chips); see root [`README.md`](../README.md) usage notes.
-- **`src/api/`** — typed fetch client ([`client.ts`](src/api/client.ts)) and shared DTOs ([`types.ts`](src/api/types.ts)).
-- **`src/lib/sql.ts`** — SQL identifier/string quoting and snippet builders (see unit tests in [`sql.test.ts`](src/lib/sql.test.ts)).
-- **`src/hooks/useDisposableEChart.ts`** — shared ECharts init / `setOption` / resize / dispose lifecycle ([`useDisposableEChart.test.tsx`](src/hooks/useDisposableEChart.test.tsx)).
+- **`src/features/`** — route-level pages (overview, columns, quality, samples, SQL, ask).
+  On **Overview**, the **Structure** card separates **Entities** from **Row grain**; see
+  [user guide](../docs/user-guide.md#profiles-and-jobs).
+- **`src/api/`** — typed fetch client ([`client.ts`](src/api/client.ts)) and DTOs
+  ([`types.ts`](src/api/types.ts)).
+- **`src/lib/sql.ts`** — SQL identifier quoting and snippet builders ([`sql.test.ts`](src/lib/sql.test.ts)).
+- **`src/hooks/useDisposableEChart.ts`** — ECharts lifecycle ([`useDisposableEChart.test.tsx`](src/hooks/useDisposableEChart.test.tsx)).
 - **`src/store/uiStore.ts`** — Zustand UI state (active dataset, drawer, filters).
 
-TanStack Query keys commonly used: `['datasets']`, `['profile', datasetId]`, `['quality', datasetId]`. Prefer **`useDatasetProfile`** (or **`api.fetchDatasetProfile`**) for profile loads; it handles **`PROFILE_NOT_READY`** by polling the job in **`details.job_id`**. Manual refresh uses **`api.refreshProfile`** and the hook’s job polling before invalidating profile-related keys.
+### TanStack Query keys
 
-**Ask** uses **`askAgentStream`** (SSE) only; there is no synchronous **`api.askAgent`**. Profiles are **v4**-shaped (`entity_id_columns`, `primary_grain_key_columns`, `primary_temporal_column`, etc.).
+| Key | Purpose |
+| --- | --- |
+| `['datasets']` | Dataset list |
+| `['profile', datasetId]` | Cached profile (prefer **`useDatasetProfile`**) |
+| `['quality', datasetId]` | Quality issues |
 
-## Tests & coverage
+Prefer **`useDatasetProfile`** (or **`api.fetchDatasetProfile`**) for profile loads; it
+handles **`PROFILE_NOT_READY`** by polling **`details.job_id`**. Manual refresh uses
+**`api.refreshProfile`** and job polling before invalidating profile-related keys.
 
-Tests live next to sources as `*.test.ts(x)`. Coverage thresholds are defined in [`vitest.config.ts`](vitest.config.ts): **`COVERAGE_BASELINE`** is **92** for both **lines** and **statements** (with deliberate excludes such as `main.tsx` and `types.ts`); CI runs `npm run test:coverage`.
+**Ask** uses **`askAgentStream`** (SSE) only. Profiles are **v4**-shaped (`entity_id_columns`,
+`primary_grain_key_columns`, `primary_temporal_column`, etc.).
 
-[`src/api/types.ts`](src/api/types.ts) is validated by [`types.test.ts`](src/api/types.test.ts) using fixtures in [`src/api/__fixtures__/`](src/api/__fixtures__/); keep those fixtures aligned with backend models when API shapes change.
+## Tests and coverage
+
+Tests live next to sources as `*.test.ts(x)`. Thresholds in [`vitest.config.ts`](vitest.config.ts):
+**`COVERAGE_BASELINE`** is **92** for lines and statements (excludes such as `main.tsx` and
+`types.ts`). CI runs `npm run test:coverage` via **`make check`**.
+
+[`src/api/types.ts`](src/api/types.ts) is validated by [`types.test.ts`](src/api/types.test.ts)
+using fixtures in [`src/api/__fixtures__/`](src/api/__fixtures__/); keep fixtures aligned with
+backend models when API shapes change.

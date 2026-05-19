@@ -1,10 +1,16 @@
 # Data Control Center — Backend
 
-FastAPI service with a DuckDB **workspace** database (metadata, profile cache, Ask transcripts, jobs) and **Polars** profiling of registered datasets.
+FastAPI service with a DuckDB **workspace** database (metadata, profile cache, Ask
+transcripts, jobs) and **Polars** profiling of registered datasets.
 
-Dataset HTTP routes are split under [`app/api/`](app/api/): **`datasets_upload.py`** (upload/register), **`datasets_profile.py`** (profile, history, diff, columns, quality), **`datasets_inspect.py`** (list/get/delete/sample), and **`datasets_jobs.py`** (shared job helpers), aggregated by **`datasets.py`**. Profile **`GET`** is cache-only; misses return **`PROFILE_NOT_READY`** with an active **`job_id`**. **`POST .../profile/refresh`** dedupes queued/running profile jobs for the same dataset.
+Dataset HTTP routes are split under [`app/api/`](app/api/): **`datasets_upload.py`**
+(upload/register), **`datasets_profile.py`** (profile, history, diff, columns, quality),
+**`datasets_inspect.py`** (list/get/delete/sample), and **`datasets_jobs.py`** (shared job
+helpers), aggregated by **`datasets.py`**. Profile **`GET`** is cache-only; misses return
+**`PROFILE_NOT_READY`** with an active **`job_id`**. **`POST .../profile/refresh`** dedupes
+queued/running profile jobs for the same dataset.
 
-Feature-level documentation (tabs, REST shapes, structure inference **v4**) is in the root [`README.md`](../README.md).
+Product usage (tabs, shortcuts, Ask workflows): [`docs/user-guide.md`](../docs/user-guide.md).
 
 ## Run locally
 
@@ -15,55 +21,129 @@ uv sync --extra dev
 uv run uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000
 ```
 
-Using `--reload-dir app` limits Uvicorn reloads to application code so edits under `tests/` do not restart the server (this avoids `socket hang up` errors on the Vite `/api` proxy). From the repo root, **`make backend`** uses the same flags.
+Using `--reload-dir app` limits Uvicorn reloads to application code so edits under `tests/`
+do not restart the server (avoids `socket hang up` on the Vite `/api` proxy). From the
+repo root, **`make backend`** uses the same flags.
+
+Validation: run **`make check`** from the repo root (see [`CONTRIBUTING.md`](../CONTRIBUTING.md#validation)).
 
 ## Configuration
 
-Settings are defined in [`app/config.py`](app/config.py). Every environment variable is prefixed with **`DCC_`** (e.g. `workspace_db_path` → **`DCC_WORKSPACE_DB_PATH`**).
+Settings are defined in [`app/config.py`](app/config.py). Every environment variable uses
+the **`DCC_`** prefix (e.g. `workspace_db_path` → **`DCC_WORKSPACE_DB_PATH`**).
 
 ### Local-only security
 
-The backend is intended for local workstation use, and defaults fail closed:
+Defaults fail closed for local workstation use:
 
-- **`DCC_LOCAL_ONLY=true`** rejects non-loopback clients and non-local `Host`, `Origin`, or `Referer` values.
-- **`DCC_ALLOW_NON_LOCAL_HOST=false`** must stay false for normal use; setting it true is an unsafe override.
-- **`DCC_REQUIRE_LOCAL_API_TOKEN=true`** requires **`X-DCC-Local-Token`** on protected API endpoints.
-- **`DCC_LOCAL_API_TOKEN`** can pin a token for CLI scripts; otherwise a per-process token is generated and exposed only to local requests via **`GET /api/local-session`**.
-- **`DCC_ENABLE_PATH_REGISTRATION=false`** disables direct file/folder path registration by default.
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| **`DCC_LOCAL_ONLY`** | `true` | Reject non-loopback clients and non-local Host/Origin/Referer |
+| **`DCC_ALLOW_NON_LOCAL_HOST`** | `false` | Unsafe override; keep false in normal use |
+| **`DCC_REQUIRE_LOCAL_API_TOKEN`** | `true` | Require **`X-DCC-Local-Token`** on protected routes |
+| **`DCC_LOCAL_API_TOKEN`** | (generated) | Pin token for CLI scripts; else per-process token via **`GET /api/local-session`** |
+| **`DCC_ENABLE_PATH_REGISTRATION`** | `false` | Enable `/api/datasets/register-file` and `register-folder` |
+| **`DCC_ALLOW_ARBITRARY_REGISTRATION_PATHS`** | `false` | Allow paths outside allowed roots |
+| **`DCC_REGISTRATION_ALLOWED_ROOTS`** | `[]` | Extra filesystem roots for path registration |
+| **`DCC_EXPOSE_ABSOLUTE_SOURCE_PATHS`** | `false` | Include absolute paths in API responses |
 
-Uploads are the preferred ingestion path. They use filename/path normalization, extension allow-listing, per-file and total batch limits, parser preflight validation, failed-upload cleanup, and app-owned uploaded copies are deleted when their dataset is unregistered.
+Threat model: [`SECURITY.md`](../SECURITY.md).
+
+### Uploads and path registration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| **`DCC_UPLOAD_DIR`** | `.dcc_uploads` | App-owned upload copies (deleted on unregister) |
+| **`DCC_UPLOAD_MAX_BYTES_PER_FILE`** | 256 MiB | Per-file size limit |
+| **`DCC_UPLOAD_MAX_BATCH_BYTES`** | 512 MiB | Total batch size limit |
+| **`DCC_UPLOAD_MAX_FILES_PER_BATCH`** | `50` | Files per batch |
+| **`DCC_UPLOAD_VALIDATE_PARSE`** | `true` | Parser preflight on upload |
+| **`DCC_UPLOAD_ORPHAN_TTL_HOURS`** | `24` | Cleanup TTL for failed upload batches |
+
+Uploads use extension allow-listing, filename normalization, and validation before
+registration. Path registration is gated by the security settings above.
+Implementation: [`app/services/registry.py`](app/services/registry.py) (`ensure_registration_allowed`).
 
 ### Workspace database
 
-**`DCC_WORKSPACE_DB_PATH`** (default `./.dcc_workspace.duckdb`, relative to the backend process working directory) holds cached dataset profiles (including **`structure_version: "v4"`**), profile history, **`dcc_jobs`** rows, saved SQL snippets, and Ask conversation tables. Implementation: façade [`app/services/workspace.py`](app/services/workspace.py), engine [`app/services/workspace_engine.py`](app/services/workspace_engine.py), DDL and validation in [`app/services/workspace_schema.py`](app/services/workspace_schema.py), and stores in [`app/services/workspace_stores.py`](app/services/workspace_stores.py).
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| **`DCC_WORKSPACE_DB_PATH`** | `.dcc_workspace.duckdb` | Metadata DB (relative to backend cwd) |
+| **`DCC_DB_READER_POOL_SIZE`** | `4` | Reader connection pool size (1–16) |
 
-On open, an empty workspace file gets **`create_workspace_schema`**; an existing file must match the expected **`dcc_*`** tables. A legacy **`schema_version`** table is dropped automatically after validation. Incompatible layouts fail fast—see root README **`make clean-local`** guidance.
+Holds cached profiles (**`structure_version: "v4"`**), profile history, **`dcc_jobs`**,
+saved SQL, and Ask tables. Implementation: [`app/services/workspace.py`](app/services/workspace.py),
+[`workspace_engine.py`](app/services/workspace_engine.py),
+[`workspace_schema.py`](app/services/workspace_schema.py),
+[`workspace_stores.py`](app/services/workspace_stores.py).
+
+On open, an empty file gets **`create_workspace_schema`**; an existing file must match
+expected **`dcc_*`** tables. A legacy **`schema_version`** table is dropped automatically
+after validation. Incompatible layouts fail fast—see root [README — Upgrading](../README.md#upgrading--workspace-schema).
+
+### Query and samples
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| **`DCC_QUERY_MAX_ROWS`** | `10000` | Max rows from ad-hoc SQL |
+| **`DCC_QUERY_TIMEOUT_SECONDS`** | `8` | SQL execution timeout |
+| **`DCC_SAMPLE_MAX_PAGE_SIZE`** | `500` | Max sample page size |
+| **`DCC_SAMPLE_DEFAULT_PAGE_SIZE`** | `100` | Default sample page size |
+
+### Profiling
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| **`DCC_PROFILE_TIMEOUT_SECONDS`** | `20` | Overall profiling time budget |
+| **`DCC_REGISTRATION_COUNT_TIMEOUT_SECONDS`** | `6` | Row-count timeout at registration |
+| **`DCC_PROFILE_STRUCTURE_SAMPLE_MAX_ROWS`** | `50000` | Structure inference sample cap |
+| **`DCC_PROFILE_STRUCTURE_SAMPLE_MIN_ROWS`** | `5000` | Structure inference sample floor |
+| **`DCC_PROFILE_STRUCTURE_MAX_KEY_CANDIDATES`** | `10` | Max columns in key search pool |
+| **`DCC_PROFILE_STRUCTURE_MAX_PAIR_CHECKS`** | `40` | Max pair uniqueness checks |
+| **`DCC_PROFILE_STRUCTURE_MAX_TRIPLE_CHECKS`** | `20` | Max triple uniqueness checks |
+| **`DCC_PROFILE_STRUCTURE_HIGH_CONFIDENCE_THRESHOLD`** | `0.999` | High-confidence uniqueness ratio |
+| **`DCC_PROFILE_STRUCTURE_MEDIUM_CONFIDENCE_THRESHOLD`** | `0.98` | Medium-confidence uniqueness ratio |
+
+Profile responses expose sampling scope metadata (`metric_scope`, `duplicate_row_pct_scope`,
+`grain_key_scope`). Inference: [`app/services/profiler/`](app/services/profiler/).
 
 ### Built UI (single-server mode)
 
-**`DCC_UI_DIST_PATH`** — when set to a directory containing a Vite **`index.html`** (for example **`../frontend/dist`** after `npm run build` in `frontend/`), FastAPI serves that bundle at **`/`** with SPA fallback, in addition to **`/api/*`**. Run from repo root: **`make serve`** (builds the frontend, then starts uvicorn with this variable). Wrong or missing paths log a warning and do not mount the UI.
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| **`DCC_UI_DIST_PATH`** | (unset) | Directory with Vite `index.html` for SPA at `/` |
 
-### Structure / profiling tuning
+Run from repo root: **`make serve`**.
 
-Row-grain and entity inference live in [`app/services/profiler.py`](app/services/profiler.py). Useful knobs (all **`DCC_`** + these suffixes):
+### Local LLM (Ask)
 
-- **`PROFILE_TIMEOUT_SECONDS`** — overall profiling time budget
-- **`PROFILE_STRUCTURE_SAMPLE_MAX_ROWS`** / **`PROFILE_STRUCTURE_SAMPLE_MIN_ROWS`** — sample size bounds for inference
-- **`PROFILE_STRUCTURE_MAX_KEY_CANDIDATES`** — max columns in the key search pool (wide schemas)
-- **`PROFILE_STRUCTURE_MAX_PAIR_CHECKS`** / **`PROFILE_STRUCTURE_MAX_TRIPLE_CHECKS`** — caps on pair/triple uniqueness checks
-- **`PROFILE_STRUCTURE_HIGH_CONFIDENCE_THRESHOLD`** / **`PROFILE_STRUCTURE_MEDIUM_CONFIDENCE_THRESHOLD`** — uniqueness ratio thresholds on the sample
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| **`DCC_LLM_BASE_URL`** | `http://127.0.0.1:11434` | Ollama-compatible endpoint |
+| **`DCC_LLM_MODEL`** | `qwen3:4b` | Model name |
+| **`DCC_LLM_TIMEOUT_SECONDS`** | `120` | Request timeout |
+| **`DCC_LLM_SQL_NUM_PREDICT`** | `320` | Max tokens for SQL draft |
+| **`DCC_LLM_SUMMARY_NUM_PREDICT`** | `180` | Max tokens for summary |
+| **`DCC_LLM_TEMPERATURE`** | `0` | Sampling temperature |
+| **`DCC_LLM_THINK`** | `false` | Extended thinking mode |
+| **`DCC_AGENT_CONTEXT_MAX_COLUMNS`** | `40` | Columns in agent context |
+| **`DCC_AGENT_MAX_ROWS`** | `500` | Max rows for agent queries |
+| **`DCC_AGENT_SQL_ATTEMPTS`** | `2` | SQL retry attempts |
+| **`DCC_AGENT_SUMMARIZE_WITH_LLM`** | `false` | Second LLM call to summarize results |
+| **`DCC_AGENT_SUMMARIZE_MAX_JSON_CHARS`** | `4000` | Result JSON cap for summarization |
 
-Profile responses expose sampling scope metadata so clients can avoid treating sampled EDA metrics as full-table facts: `ColumnProfile.metric_scope`, `DatasetProfile.duplicate_row_pct_scope`, and `DatasetProfile.grain_key_scope`.
+Ask usage: [`docs/user-guide.md`](../docs/user-guide.md#ask-tab). Agent code:
+[`app/services/agent/`](app/services/agent/).
 
 ## Test and lint
 
-Matches [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). From the repo root you can run **`make check`** for the same backend + frontend steps CI runs.
+From `backend/`:
 
 ```bash
 uv sync --extra dev
 uv run ruff check app tests
 uv run pytest
-cd ../frontend && npm ci && npm run lint && npm test && npm run test:coverage && npm run build
 ```
 
-[`pyproject.toml`](pyproject.toml) fails the suite if **`app/`** line coverage drops below **100%** (`--cov-fail-under=100`). HTML coverage: `uv run pytest --cov=app --cov-report=html` → `htmlcov/index.html`.
+[`pyproject.toml`](pyproject.toml) fails if **`app/`** line coverage drops below **100%**.
+Full repo validation: **`make check`** (see [`CONTRIBUTING.md`](../CONTRIBUTING.md)).

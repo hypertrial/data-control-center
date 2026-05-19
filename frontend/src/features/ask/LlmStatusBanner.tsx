@@ -3,7 +3,7 @@ import { api } from '@/api/client'
 
 /** Anchor matches README (see root README.md). */
 const LLM_SETUP_DOC =
-  'https://github.com/hypertrial/data-control-center/blob/main/README.md#local-llm-assistant-ask-tab'
+  'https://github.com/hypertrial/data-control-center/blob/main/docs/user-guide.md#ask-tab'
 
 export function LlmStatusBanner() {
   const { data } = useQuery({
