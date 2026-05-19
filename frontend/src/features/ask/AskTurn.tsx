@@ -12,6 +12,7 @@ import { AskResultTable } from '@/features/ask/AskResultTable'
 import { stripTrailingLimit } from '@/features/ask/askTableUtils'
 import { AskStageTimeline } from '@/features/ask/AskStageTimeline'
 import type { AskSqlAttempt, AskStageEntry } from '@/hooks/useAskStream'
+import { shouldShowStreamingModelNote } from '@/features/ask/askTurnDisplay'
 import { toast } from 'sonner'
 
 function formatElapsedMs(ms: number | null | undefined): string {
@@ -222,6 +223,7 @@ export function StreamingAskCard({
   onRetry?: (q: string, model?: string | null) => void
 }) {
   const displayAnswer = answer || streamingPreview || ''
+  const showModelNote = shouldShowStreamingModelNote(explanation, answer)
   return (
     <div
       className="space-y-3 rounded-xl border border-border-default border-dashed bg-white/[0.06] p-4"
@@ -236,7 +238,7 @@ export function StreamingAskCard({
       {(busy || stages.length > 0) && (
         <AskStageTimeline stages={stages} sqlAttempts={sqlAttempts} totalMs={totalMs} busy={busy} />
       )}
-      {explanation ? (
+      {showModelNote ? (
         <div>
           <div className="text-xs font-semibold text-fg-muted">Model note</div>
           <p className="mt-1 text-sm text-white/90">{explanation}</p>

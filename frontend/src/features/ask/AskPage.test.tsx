@@ -221,6 +221,48 @@ describe('AskPage', () => {
     expect(useUiStore.getState().pendingQuery).toBe('SELECT COUNT(*) AS n FROM t')
   })
 
+  it('shows one persisted answer after stream turn is saved', async () => {
+    const user = userEvent.setup()
+    useUiStore.setState({ activeConversationId: 'c_test' })
+    h.listAskTurns.mockResolvedValueOnce([]).mockResolvedValue([
+      {
+        turn_id: 't_new',
+        conversation_id: 'c_test',
+        seq: 1,
+        question: 'How many rows?',
+        answer: 'There are **2** rows.',
+        sql: 'SELECT COUNT(*) AS n FROM t',
+        attempts: [],
+        created_at: 'now',
+      },
+    ])
+    mockStream([
+      { type: 'meta', data: { model: 'qwen3:4b' } },
+      {
+        type: 'sql',
+        data: { sql: 'SELECT COUNT(*) AS n FROM t', explanation: 'Counted rows.' },
+      },
+      {
+        type: 'query_result',
+        data: {
+          columns: [{ name: 'n', type: 'INTEGER' }],
+          rows: [{ n: 2 }],
+          row_count: 1,
+          truncated: false,
+          error: null,
+        },
+      },
+      { type: 'answer', data: { answer: 'There are **2** rows.' } },
+      { type: 'turn', data: { turn_id: 't_new', conversation_id: 'c_test', seq: 1 } },
+      { type: 'done', data: {} },
+    ])
+    wrap(<AskPage />)
+    await user.type(screen.getByPlaceholderText(/plain language/i), 'How many rows?')
+    await user.click(screen.getByRole('button', { name: /Ask \(stream\)/i }))
+    await waitFor(() => expect(screen.getAllByText(/There are/).length).toBe(1))
+    expect(screen.queryByText(/Model note/i)).not.toBeInTheDocument()
+  })
+
   it('submits question on Meta+Enter from textarea', async () => {
     mockStream([
       { type: 'meta', data: { model: 'm' } },

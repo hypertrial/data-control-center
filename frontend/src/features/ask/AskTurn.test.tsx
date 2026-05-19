@@ -115,6 +115,29 @@ describe('AskTurn', () => {
     expect(screen.queryByText(/draft sql/i)).not.toBeInTheDocument()
   })
 
+  it('hides model note once a final answer is present', () => {
+    render(
+      <StreamingAskCard
+        question="How many rows?"
+        busy={false}
+        stages={[]}
+        sqlAttempts={[]}
+        sql="SELECT COUNT(*) AS n FROM t"
+        explanation="Counted rows."
+        queryResult={null}
+        answer="Counted rows.\n\nReturned 1 row."
+        error={null}
+        streamingPreview=""
+        model="qwen"
+        totalMs={12}
+        onOpenInSql={() => {}}
+      />,
+    )
+
+    expect(screen.queryByText(/Model note/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/Returned 1 row/)).toBeInTheDocument()
+  })
+
   it('renders streaming card states including explanation, preview answer, retry gating, and query error', async () => {
     const user = userEvent.setup()
     const onOpenInSql = vi.fn()

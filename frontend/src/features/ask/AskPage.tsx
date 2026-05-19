@@ -8,6 +8,7 @@ import { AskThread } from '@/features/ask/AskThread'
 import { ConversationList } from '@/features/ask/ConversationList'
 import { SuggestedPrompts } from '@/features/ask/SuggestedPrompts'
 import { useAskStream } from '@/hooks/useAskStream'
+import { isPersistedStreamingTurn } from '@/features/ask/askTurnDisplay'
 import { useDatasetProfile } from '@/hooks/useDatasetProfile'
 import { useOpenInSql } from '@/hooks/useOpenInSql'
 import { api } from '@/api/client'
@@ -50,6 +51,8 @@ export function AskPage() {
     }
     prevBusy.current = busy
   }, [busy, current?.turnId, activeConversationId, qc])
+
+  const streamPersisted = isPersistedStreamingTurn(turns, current?.turnId)
 
   const recallLastQuestion = turns.length ? turns[turns.length - 1]!.question : null
 
@@ -106,8 +109,8 @@ export function AskPage() {
           <AskThread
             conversationId={activeConversationId}
             turns={turns}
-            streamingQuestion={streamQuestion}
-            streaming={current}
+            streamingQuestion={streamPersisted ? null : streamQuestion}
+            streaming={streamPersisted ? null : current}
             busy={busy}
             onOpenInSql={openInSql}
             onRetry={onRetry}

@@ -159,6 +159,29 @@ describe('AskThread', () => {
     )
   })
 
+  it('hides streaming card once its persisted turn is loaded', () => {
+    const streaming: AskCallState = {
+      ...baseStream,
+      turnId: 't_new',
+      answer: 'Done.',
+      sql: 'SELECT 1',
+    }
+    render(
+      <AskThread
+        conversationId="c1"
+        turns={[turn('t_new')]}
+        streamingQuestion="Q?"
+        streaming={streaming}
+        busy={false}
+        onOpenInSql={() => {}}
+        onRetry={() => {}}
+      />,
+    )
+
+    expect(screen.getByTestId('turn-t_new')).toBeInTheDocument()
+    expect(screen.queryByTestId('streaming-card')).not.toBeInTheDocument()
+  })
+
   it('pins to bottom when near bottom during streaming updates', () => {
     const streaming: AskCallState = {
       ...baseStream,

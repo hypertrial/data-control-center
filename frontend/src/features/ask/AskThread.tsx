@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import type { AskTurn as AskTurnType } from '@/api/types'
+import { isPersistedStreamingTurn } from '@/features/ask/askTurnDisplay'
 import { AskTurnCard, StreamingAskCard } from '@/features/ask/AskTurn'
 import { Button } from '@/components/ui/button'
 import type { AskCallState } from '@/hooks/useAskStream'
@@ -58,9 +59,12 @@ export function AskThread({
     prevHeightRef.current = el.scrollHeight
   }, [])
 
+  const persistedStreamingTurn = isPersistedStreamingTurn(turns, streaming?.turnId)
+
   const showStreaming =
     streaming &&
     streamingQuestion &&
+    !persistedStreamingTurn &&
     (busy ||
       streaming.answer ||
       streaming.error ||
