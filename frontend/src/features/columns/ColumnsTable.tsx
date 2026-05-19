@@ -1,11 +1,11 @@
-import { flexRender, type Table } from '@tanstack/react-table'
+import { flexRender, type Table as TableInstance } from '@tanstack/react-table'
 import type { ColumnProfile } from '@/api/types'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 
 type ColumnsTableProps = {
   activeId: string
-  table: Table<ColumnProfile>
+  table: TableInstance<ColumnProfile>
   setSelectedColumn: (name: string) => void
   setDrawerOpen: (open: boolean) => void
 }
