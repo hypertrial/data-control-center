@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
+import { useDatasetProfile } from '@/hooks/useDatasetProfile'
 import { ActionInSql } from '@/components/ActionInSql'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,11 +22,13 @@ export function SamplesPage() {
   const [pageSize, setPageSize] = useState<(typeof PAGE_OPTIONS)[number]>(100)
   const [jump, setJump] = useState('')
 
-  const profileQ = useQuery({
-    queryKey: ['profile', activeId],
-    queryFn: () => api.getProfile(activeId!),
-    enabled: !!activeId,
-  })
+  const profileHook = useDatasetProfile(activeId)
+  const profileQ = {
+    data: profileHook.data,
+    isLoading: profileHook.isPendingProfile,
+    isError: profileHook.isError,
+    error: profileHook.error,
+  }
 
   const q = useQuery({
     queryKey: ['sample', activeId, page, pageSize],
