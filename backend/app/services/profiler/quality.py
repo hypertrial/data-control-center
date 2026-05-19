@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
 
 from app.models.api import ColumnProfile, QualityIssue, QualitySeverity, SemanticType
-from app.services.profiler.patterns import _normalize_column_name
 from app.services.registry import RegisteredDataset
 
 def _build_profile_narrative(

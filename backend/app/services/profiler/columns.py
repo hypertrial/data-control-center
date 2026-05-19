@@ -21,7 +21,6 @@ from app.services.profiler.patterns import (
     DISCRETE_TIME_NAME_PATTERN,
     ENTITY_TOKEN_PATTERN,
     ID_NAME_PATTERN,
-    _entity_name_strength,
     _normalize_column_name,
 )
 from app.services.profiler.structure import _is_discrete_temporal_column

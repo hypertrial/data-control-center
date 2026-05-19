@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 
 import polars as pl
 
@@ -14,7 +13,6 @@ from app.models.api import (
     SemanticType,
     StructureConfidence,
     TemporalColumnInfo,
-    TemporalKind,
 )
 from app.services.profiler.patterns import (
     DISCRETE_TIME_NAME_PATTERN,
