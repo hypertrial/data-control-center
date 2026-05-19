@@ -1,22 +1,13 @@
 # Five-Minute Tour
 
-This tour uses only tiny synthetic files in `examples/`. Do not use private
-datasets while evaluating the app for the first time.
+This tour uses only tiny synthetic files in `examples/`. Do not use private datasets
+while evaluating the app for the first time.
 
-## 1. Start The App
+**Prerequisites:** See [README Quick start](../README.md#quick-start-no-llm-required)
+(`make install` && `make dev`, then open **`http://127.0.0.1:5173`**). Single-server
+alternative: `make serve` → **`http://127.0.0.1:8000`**.
 
-From the repository root:
-
-```bash
-make install
-make dev
-```
-
-Open the frontend URL printed by Vite, usually `http://127.0.0.1:5173`.
-
-**Alternative (single server):** `make serve` from the repo root serves the built UI and API on **`http://127.0.0.1:8000`** (see root **`README.md`**).
-
-## 2. Upload Safe Example Data
+## 1. Upload safe example data
 
 Open the datasets area and upload:
 
@@ -26,17 +17,13 @@ Open the datasets area and upload:
 
 Uploads are copied into the app-owned upload directory before registration.
 
-## 3. Inspect The Data
+## 2. Inspect the data
 
-Select each dataset and review:
+Select each dataset and browse **Overview**, **Columns**, and **Samples** (schema,
+profile summaries, and sample rows). The files are deliberately small so inspection is
+immediate.
 
-- Schema and column types.
-- Profile summaries.
-- Sample rows.
-
-The files are deliberately small so inspection is immediate.
-
-## 4. Run A Query
+## 3. Run a query
 
 Open the SQL workspace and try:
 
@@ -50,14 +37,14 @@ group by customer_id
 order by total_usd desc;
 ```
 
-If the registered view name differs because of a duplicate local name, use the
-view name shown in the dataset sidebar.
+If the registered view name differs because of a duplicate local name, use the view
+name shown in the dataset sidebar.
 
-## 5. Delete The Datasets
+## 4. Delete the datasets
 
-Delete the uploaded datasets from the app. App-owned uploaded copies are removed
-when their datasets are unregistered. External files registered through advanced
-path registration are never deleted by unregistering.
+Delete the uploaded datasets from the app. App-owned uploaded copies are removed when
+their datasets are unregistered. External files registered through advanced path
+registration are never deleted by unregistering.
 
-For a full local cleanup, run `make clean-local` only when you intentionally want
-to delete workspace state and generated artifacts.
+For a full local cleanup, see [README — Upgrading](../README.md#upgrading--workspace-schema)
+(`make clean-local`).

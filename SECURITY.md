@@ -8,8 +8,8 @@ Until Data Control Center has formal releases, security fixes are handled on the
 ## Reporting A Vulnerability
 
 Please report vulnerabilities through GitHub private vulnerability reporting for
-`hypertrial/data-control-center`. Do not open public issues for suspected
-security vulnerabilities.
+`hypertrial/data-control-center`. Do not open public issues for suspected security
+vulnerabilities.
 
 Include:
 
@@ -20,18 +20,42 @@ Include:
 
 ## Security Model
 
-Data Control Center is intended for local workstation use only.
+Data Control Center is intended for **local workstation use only**.
 
-- It is not designed for hosted, production, shared-network, or multi-user
-  deployments.
-- The local API token protects against blind cross-site localhost writes. It is
-  not account authentication, authorization, tenancy, or a remote access control
-  system.
-- Uploaded and registered datasets may contain sensitive local files.
-- Workspace databases such as `.dcc_workspace.duckdb` and upload directories such
-  as `.dcc_uploads/` are private local data.
-- Users are responsible for local backups, retention, and secure deletion of
-  their own data.
+### What this app is not
 
-If you need a hosted or multi-user deployment, treat that as a separate product
-security design rather than a configuration change.
+- Not designed for hosted, production, shared-network, or multi-user deployments.
+- The local API token is **not** user authentication, authorization, tenancy, or remote
+  access control—it mitigates blind cross-site writes to localhost APIs.
+- If you need a hosted or multi-user deployment, treat that as a separate product
+  security design rather than a configuration change.
+
+### Default protections
+
+By default the backend:
+
+- Accepts only loopback/local requests (**`DCC_LOCAL_ONLY=true`**,
+  **`DCC_ALLOW_NON_LOCAL_HOST=false`**).
+- Rejects non-local `Host`, `Origin`, `Referer`, or client addresses.
+- Generates a per-process local API token unless **`DCC_LOCAL_API_TOKEN`** is set.
+- Requires **`X-DCC-Local-Token`** on protected API endpoints
+  (**`DCC_REQUIRE_LOCAL_API_TOKEN=true`**).
+- Exposes that token to the browser only via **`GET /api/local-session`** from local
+  requests.
+
+For CLI or API scripts, call **`GET /api/local-session`** locally or start the backend
+with **`DCC_LOCAL_API_TOKEN=<token>`** and send **`X-DCC-Local-Token: <token>`**. Do not
+expose the backend on a LAN or public interface unless you accept the unsafe local-only
+override risk.
+
+### Local data
+
+- Uploaded and registered datasets can contain sensitive local files.
+- **`.dcc_workspace.duckdb`** and **`.dcc_uploads/`** are private local data. Back up,
+  retain, or delete them according to your own policies.
+
+### Registration and uploads
+
+Path-based registration, upload limits, and related **`DCC_*`** settings are documented in
+[`backend/README.md`](backend/README.md#configuration) (see **Local-only security** and
+**Uploads and path registration**). Implementation: [`backend/app/services/registry.py`](backend/app/services/registry.py).

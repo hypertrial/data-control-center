@@ -21,37 +21,19 @@ Run commands from the repository root unless noted.
 - Start only frontend: `make frontend`
 - Build frontend production bundle: `make build-ui`
 - Single-server mode (API serves built UI): `make serve`
-- Full validation (CI parity): `make check` (use `make check-ci` after lockfile changes; runs `npm ci` first)
+- Full validation (CI parity): `make check` (use `make check-ci` after lockfile changes)
 - Delete local app state and generated artifacts: `make clean-local`
 
 Use Node 22 from `.nvmrc` or Node 24+. Use Python 3.11+ with `uv`.
 
 ## Validation Commands
 
-Run targeted tests while iterating, then finish with the relevant full checks.
-For changes that could affect both tiers, run **`make check`** from the repo
-root (same steps as CI). Individual commands:
+Run **`make check`** from the repo root before finishing work that could affect either
+tier. See [`CONTRIBUTING.md`](CONTRIBUTING.md#validation) for individual steps, CI
+parity, coverage thresholds, and security audit commands.
 
-```bash
-cd backend && uv run ruff check app tests
-cd backend && uv run pytest
-cd frontend && npm run lint
-cd frontend && npm test
-cd frontend && npm run test:coverage
-cd frontend && npm run build
-```
-
-Security/release checks when dependency, workflow, ingestion, or OSS-readiness
-surfaces change:
-
-```bash
-cd frontend && npm audit --audit-level=moderate
-cd backend && uv run pip-audit
-gitleaks detect --source . --redact
-```
-
-If a required tool is missing or a network-dependent audit cannot run, state the
-exact blocker and any fallback checks performed.
+If a required tool is missing or a network-dependent audit cannot run, state the exact
+blocker and any fallback checks performed.
 
 ## Code Style
 
@@ -87,6 +69,7 @@ Update docs when behavior, setup, validation commands, env vars, security
 posture, workflows, or public API contracts change.
 
 - User-facing overview: `README.md`
+- Product usage: `docs/user-guide.md`
 - Backend details: `backend/README.md`
 - Frontend details: `frontend/README.md`
 - Contributor workflow: `CONTRIBUTING.md`

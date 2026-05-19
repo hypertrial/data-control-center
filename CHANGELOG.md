@@ -16,6 +16,7 @@ versioning once formal releases begin.
 
 ### Added
 
+- [`docs/user-guide.md`](docs/user-guide.md) for product usage (data ingestion, profiles/jobs, SQL, Ask, shortcuts).
 - Frontend API type conformance tests (`types.test.ts` + `src/api/__fixtures__/`).
 - `make check-ci` for clean-room CI-parity validation (`npm ci` then `make check`).
 - `useDatasetProfile` hook and `api.fetchDatasetProfile` for async first-open profiling (`PROFILE_NOT_READY` + job polling).
@@ -33,6 +34,7 @@ versioning once formal releases begin.
 - Backend tests reorganized under `tests/api/`, `tests/profiler/`, and `tests/workspace/`.
 - Frontend coverage baseline raised to **92%** (lines/statements); `types.ts` excluded from v8 coverage (still validated via `types.test.ts`).
 - Workspace startup drops a legacy **`schema_version`** table when the current **`dcc_*`** schema validates (avoids requiring **`make clean-local`** after the migration removal).
+- Documentation reorganized: slim root **`README.md`**, tightened **`docs/5-minute-tour.md`**, authoritative tier READMEs, expanded **`SECURITY.md`**, contributor-focused **`CONTRIBUTING.md`** / **`AGENTS.md`**.
 
 ### Removed
 
