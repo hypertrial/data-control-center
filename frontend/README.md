@@ -39,4 +39,6 @@ TanStack Query keys commonly used: `['datasets']`, `['profile', datasetId]`, `['
 
 ## Tests & coverage
 
-Tests live next to sources as `*.test.ts(x)`. Coverage thresholds are defined in [`vitest.config.ts`](vitest.config.ts): **`COVERAGE_BASELINE`** is **85** for both **lines** and **statements** (with deliberate excludes); CI runs `npm run test:coverage`.
+Tests live next to sources as `*.test.ts(x)`. Coverage thresholds are defined in [`vitest.config.ts`](vitest.config.ts): **`COVERAGE_BASELINE`** is **88** for both **lines** and **statements** (with deliberate excludes); CI runs `npm run test:coverage`.
+
+[`src/api/types.ts`](src/api/types.ts) is covered by [`types.test.ts`](src/api/types.test.ts) using fixtures in [`src/api/__fixtures__/`](src/api/__fixtures__/); keep those fixtures aligned with backend models when API shapes change.
