@@ -2,6 +2,8 @@
 
 FastAPI service with a DuckDB **workspace** database (metadata, profile cache, Ask transcripts, jobs) and **Polars** profiling of registered datasets.
 
+Dataset HTTP routes are split under [`app/api/`](app/api/): **`datasets_upload.py`** (upload/register), **`datasets_profile.py`** (profile, history, diff, columns, quality), **`datasets_inspect.py`** (list/get/delete/sample), and **`datasets_jobs.py`** (shared job helpers), aggregated by **`datasets.py`**. Profile **`GET`** is cache-only; misses return **`PROFILE_NOT_READY`** with an active **`job_id`**. **`POST .../profile/refresh`** dedupes queued/running profile jobs for the same dataset.
+
 Feature-level documentation (tabs, REST shapes, structure inference **v4**) is in the root [`README.md`](../README.md).
 
 ## Run locally
