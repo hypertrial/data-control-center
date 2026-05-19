@@ -1,6 +1,46 @@
 # Data Control Center
 
-Local-first control center for opening, profiling, exploring, and querying many local data files from one interface.
+**Local-first tool** for **profiling, exploring, and querying many local data files** (CSV, TSV, Parquet, JSON, JSON Lines) from one interface. It targets **a single trusted workstation**: developers and analysts who want fast EDA and ad-hoc DuckDB SQL—not a hosted BI server or multi-tenant product. See [Local-only security model](#local-only-security-model) and [`SECURITY.md`](SECURITY.md).
+
+## Screenshots
+
+Wireframe placeholders (replace with real captures from your machine when announcing a release if you prefer):
+
+![Empty workspace — welcome and upload area](docs/images/empty-workspace.svg)
+
+![Overview — profile-style summary](docs/images/overview-profile.svg)
+
+![SQL — editor and results grid](docs/images/sql-results.svg)
+
+## Quick start (no LLM required)
+
+1. From the repo root: `make install` then `make dev` (requires **bash** for the combined dev command; see [Platform notes](#platform-notes)).
+2. Open **`http://127.0.0.1:5173`**, upload the tiny files in [`examples/`](examples/) (or follow [`docs/5-minute-tour.md`](docs/5-minute-tour.md)).
+3. Use **Overview**, **Columns**, **SQL**, etc. **Ask** is optional and needs [Ollama](https://ollama.com); the app shows a banner on **Ask** if the LLM endpoint is unreachable. Full setup: [Local LLM assistant](#local-llm-assistant-ask-tab).
+
+## Platform notes
+
+- **macOS** — primary platform; Node 22+, Python 3.11+, `uv`, and optional Ollama per [Prerequisites](#prerequisites).
+- **Linux** — same `make` targets; install Node and `uv` from distro or upstream docs.
+- **Windows** — use **WSL2** (e.g. Ubuntu) and the Linux flow. Native Windows without WSL is untested.
+
+## Single-server mode (API serves the built UI)
+
+For a **single process** on port **8000** (no Vite dev server):
+
+```bash
+make serve
+```
+
+Then open **`http://127.0.0.1:8000`**. This builds `frontend/dist` and sets **`DCC_UI_DIST_PATH`** for the backend. Day-to-day development is still **`make dev`** (Vite on **5173** + API on **8000**).
+
+## Upgrading / workspace schema
+
+Workspace state lives in **`DCC_WORKSPACE_DB_PATH`** (default **`.dcc_workspace.duckdb`**): cached profiles (**`structure_version: "v4"`**), Ask conversations, jobs, saved SQL, etc. If startup fails with an **unsupported workspace schema** error, either run **`make clean-local`** (destructive to app-owned state) or delete the workspace DuckDB file by hand. That **does not** remove your original data files—only app metadata, profiles, Ask history, and uploaded **copies** under **`.dcc_uploads/`** when you use `clean-local`.
+
+## API reference (OpenAPI)
+
+With the backend running locally, interactive docs are at **`http://127.0.0.1:8000/docs`** (Swagger UI). **`GET /api/health`** includes a short **`llm`** reachability probe for the configured Ollama endpoint.
 
 ## Architecture
 
@@ -38,7 +78,7 @@ Bare `make` prints the same as `make help`. Needs **bash** for `make dev` (defau
 
 If **`frontend/node_modules`** is missing, **`make dev`** and **`make frontend`** run **`npm install`** in **`frontend/`** once (tracked via the Vite binary) so you do not hit **`vite: command not found`**. **`make install`** is still recommended for a first-time setup because it also syncs the backend with **`uv`**.
 
-Other targets: `make help`, `make backend`, `make frontend`, `make clean-local`.
+Other targets: `make help`, `make backend`, `make frontend`, `make build-ui`, `make serve`, `make check`, `make clean-local`.
 
 `make clean-local` deletes local app state and generated artifacts, including
 workspace DuckDB files, upload copies, coverage output, build output, and Python
@@ -126,6 +166,8 @@ Upload ingestion also enforces extension allow-listing, filename normalization, 
 
 Implementation: [`backend/app/services/registry.py`](backend/app/services/registry.py) (`ensure_registration_allowed`).
 
+<a id="local-llm-assistant-ask-tab"></a>
+
 ## Local LLM assistant (Ask tab)
 
 - Install **[Ollama](https://ollama.com)** on macOS (download from the site, or e.g. `brew install ollama` if you use Homebrew).
@@ -152,14 +194,14 @@ cd backend && uv sync --extra dev && uv run pytest
 cd frontend && npm install && npm test
 ```
 
-For **parity with CI**, also run `uv run ruff check app tests` in `backend/` and `npm run lint` plus `npm run test:coverage` in `frontend/` (see below).
+For **parity with CI**, run **`make check`** from the repo root, or individually: `uv run ruff check app tests` in `backend/` and `npm run lint`, `npm test`, `npm run test:coverage`, and **`npm run build`** in `frontend/` (see below).
 
 ### CI (GitHub Actions)
 
 On push and pull requests to **`main`** / **`master`**, [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs:
 
 - **Backend:** `uv sync --extra dev`, `uv run ruff check app tests`, `uv run pytest`
-- **Frontend:** `npm ci`, `npm run lint`, `npm test`, `npm run test:coverage`
+- **Frontend:** `npm ci`, `npm run lint`, `npm test`, `npm run test:coverage`, `npm run build`
 
 Additional scheduled security automation runs CodeQL, npm audit, pip-audit, and
 gitleaks history scanning. Renovate is configured for npm, GitHub Actions, and

@@ -7,7 +7,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install dev backend frontend clean-local
+.PHONY: help install dev backend frontend clean-local check build-ui serve
 
 help:
 	@echo "Data Control Center (run from repo root)"
@@ -16,6 +16,9 @@ help:
 	@echo "  make dev       Run API + UI together (Ctrl+C stops both)"
 	@echo "  make backend   Run FastAPI only (port 8000)"
 	@echo "  make frontend  Run Vite only (port 5173, proxies /api)"
+	@echo "  make build-ui  Build frontend to frontend/dist"
+	@echo "  make serve     Build UI then run API on :8000 serving that dist"
+	@echo "  make check     Lint and test backend + frontend (parity with CI)"
 	@echo "  make clean-local"
 	@echo "                  Delete local app state and generated artifacts"
 
@@ -44,6 +47,20 @@ backend:
 
 frontend: frontend/node_modules/.bin/vite
 	cd frontend && npm run dev
+
+build-ui: frontend/node_modules/.bin/vite
+	cd frontend && npm run build
+
+serve: build-ui
+	cd backend && DCC_UI_DIST_PATH=../frontend/dist uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+check:
+	cd backend && uv run ruff check app tests
+	cd backend && uv run pytest
+	cd frontend && npm run lint
+	cd frontend && npm test
+	cd frontend && npm run test:coverage
+	cd frontend && npm run build
 
 clean-local:
 	@echo "Deleting local app state and generated artifacts..."

@@ -8,8 +8,17 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+class LlmHealth(BaseModel):
+    """Reachability of the configured local LLM (Ollama-compatible) endpoint."""
+
+    reachable: bool
+    model: str
+    detail: str | None = None
+
+
 class HealthResponse(BaseModel):
     status: str = "ok"
+    llm: LlmHealth
 
 
 class ErrorEnvelope(BaseModel):

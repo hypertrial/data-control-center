@@ -51,9 +51,13 @@ function expectToken(init: RequestInit | undefined): void {
 
 describe('api client', () => {
   it('health calls /api/health', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonOk({ status: 'ok' }))
+    const body = {
+      status: 'ok',
+      llm: { reachable: false, model: 'qwen3:4b', detail: 'offline' },
+    }
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk(body))
     vi.stubGlobal('fetch', fetchMock)
-    await expect(api.health()).resolves.toEqual({ status: 'ok' })
+    await expect(api.health()).resolves.toEqual(body)
     expect(fetchMock).toHaveBeenCalledWith('/api/health')
   })
 
