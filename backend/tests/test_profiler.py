@@ -769,7 +769,7 @@ def test_build_profile_narrative_single_grain_and_medium_warning(
         file_size_bytes=path.stat().st_size,
     )
     monkeypatch.setattr(
-        "app.services.profiler._build_grain_key_candidates",
+        "app.services.profiler.builder._build_grain_key_candidates",
         lambda *a, **k: [
             GrainKeyCandidate(
                 columns=["player_id"],
@@ -799,7 +799,7 @@ def test_build_profile_narrative_likely_identifier_columns(
         column_count=2,
         file_size_bytes=path.stat().st_size,
     )
-    monkeypatch.setattr("app.services.profiler._build_grain_key_candidates", lambda *a, **k: [])
+    monkeypatch.setattr("app.services.profiler.builder._build_grain_key_candidates", lambda *a, **k: [])
     prof = build_profile(ds, Settings())
     assert prof.potential_id_columns
     assert "Likely identifier columns" in prof.narrative
