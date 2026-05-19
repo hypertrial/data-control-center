@@ -12,9 +12,28 @@ import { QueryErrorBanner } from '@/components/ui/query-error-banner'
 import { useDatasetProfile } from '@/hooks/useDatasetProfile'
 import { useOpenColumnDrawer } from '@/hooks/useOpenColumnDrawer'
 import { useUiStore } from '@/store/uiStore'
+import { QualityScoreSummary } from '@/features/overview/OverviewHeroMetrics'
 import { cn } from '@/lib/utils'
 
 const SEV_ORDER: Record<string, number> = { critical: 0, warning: 1, info: 2 }
+
+const severityBarClass: Record<string, string> = {
+  critical: 'bg-[hsl(var(--severity-critical))]',
+  warning: 'bg-[hsl(var(--severity-warning))]',
+  info: 'bg-[hsl(var(--severity-info))]',
+}
+
+const severityBorderClass: Record<string, string> = {
+  critical: 'border-l-[hsl(var(--severity-critical))]',
+  warning: 'border-l-[hsl(var(--severity-warning))]',
+  info: 'border-l-[hsl(var(--severity-info))]',
+}
+
+const severityTabDotClass: Record<string, string> = {
+  critical: 'bg-[hsl(var(--severity-critical))]',
+  warning: 'bg-[hsl(var(--severity-warning))]',
+  info: 'bg-[hsl(var(--severity-info))]',
+}
 
 const sevVariant = (s: string) => {
   if (s === 'critical') return 'critical' as const
@@ -22,11 +41,16 @@ const sevVariant = (s: string) => {
   return 'info' as const
 }
 
-function ImpactBar({ value, max }: { value: number; max: number }) {
+function ImpactBar({ value, max, severity }: { value: number; max: number; severity: string }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0
+  const barCls = severityBarClass[severity] ?? severityBarClass.info
   return (
     <div className="mt-1 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/10">
-      <div className="h-full rounded-full bg-[hsl(var(--accent))]" style={{ width: `${pct}%` }} title={`Impact ${value}`} />
+      <div
+        className={cn('h-full rounded-full', barCls)}
+        style={{ width: `${pct}%` }}
+        title={`Impact ${value}`}
+      />
     </div>
   )
 }
@@ -85,11 +109,16 @@ function IssueCard({
   openCol: (c: string) => void
 }) {
   return (
-    <Card className="border-border-default">
+    <Card
+      className={cn(
+        'border-border-default border-l-4',
+        severityBorderClass[issue.severity] ?? severityBorderClass.info,
+      )}
+    >
       <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
         <div className="min-w-0">
           <CardTitle className="text-base font-medium leading-snug">{issue.title}</CardTitle>
-          <ImpactBar value={issue.score_impact} max={maxImpact} />
+          <ImpactBar value={issue.score_impact} max={maxImpact} severity={issue.severity} />
         </div>
         <Badge variant={sevVariant(issue.severity)}>{issue.severity}</Badge>
       </CardHeader>
@@ -226,15 +255,11 @@ export function QualityPage() {
   return (
     <PageContainer>
       <Section title="Quality overview">
-        <div className="flex flex-wrap items-baseline gap-3 text-sm">
-          <span className="tabular-nums text-2xl font-semibold">{score != null ? score : '—'}</span>
-          <span className="text-[hsl(var(--fg-muted))]">{score != null ? '/100 score' : ''}</span>
-          <span className="text-white/20">·</span>
-          <span>
-            {counts.all} issue{counts.all === 1 ? '' : 's'} across {colSet.size} column
-            {colSet.size === 1 ? '' : 's'}
-          </span>
-        </div>
+        <QualityScoreSummary score={score} />
+        <p className="mt-3 text-sm text-[hsl(var(--fg-muted))]">
+          {counts.all} issue{counts.all === 1 ? '' : 's'} across {colSet.size} column
+          {colSet.size === 1 ? '' : 's'}
+        </p>
         {topCols.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="text-xs text-[hsl(var(--fg-muted))]">Most affected</span>
@@ -273,10 +298,19 @@ export function QualityPage() {
                 type="button"
                 onClick={() => setSev(k)}
                 className={cn(
-                  'rounded-full px-3 py-1 text-xs transition',
+                  'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs transition',
                   sev === k ? 'bg-white/12 text-white' : 'text-[hsl(var(--fg-muted))] hover:bg-white/5',
                 )}
               >
+                {k !== 'all' ? (
+                  <span
+                    className={cn(
+                      'inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+                      severityTabDotClass[k],
+                    )}
+                    aria-hidden
+                  />
+                ) : null}
                 {label}
               </button>
             ))}

@@ -26,6 +26,10 @@
   --color-status-info: hsl(196 89% 61%);
   --color-status-warning: hsl(29 89% 61%);
   --color-status-error: hsl(350 100% 68%);
+  --color-severity-critical: hsl(354 86% 60%);
+  --color-severity-warning: hsl(33 95% 58%);
+  --color-severity-info: hsl(204 80% 62%);
+  --color-severity-ok: hsl(146 60% 50%);
 }
 
 @layer base {
@@ -64,6 +68,11 @@
     --status-info: 196 89% 61%;
     --status-warning: 29 89% 61%;
     --status-error: 350 100% 68%;
+    /* Severity (quality / charts; tuned away from accent-cyan for info) */
+    --severity-critical: 354 86% 60%;
+    --severity-warning: 33 95% 58%;
+    --severity-info: 204 80% 62%;
+    --severity-ok: 146 60% 50%;
   }
 
   body {

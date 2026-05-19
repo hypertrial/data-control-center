@@ -66,12 +66,10 @@ export function StructureSummary({ profile, onPick }: { profile: DatasetProfile;
         </div>
       ) : null}
       <div className="space-y-2.5 border-t border-border-default pt-3">
-        {dateLabel
-          ? chipCols('Primary date', [dateLabel], onPick)
-          : null}
-        {chipCols('Entity IDs', idCols, onPick)}
-        {chipCols('Row grain', keyCols, onPick)}
-        {chipCols('Main measures', measureCols, onPick, { maxItems: 8 })}
+        {dateLabel ? chipCols('Primary date', [dateLabel], onPick, { role: 'date' }) : null}
+        {chipCols('Entity IDs', idCols, onPick, { role: 'entity' })}
+        {chipCols('Row grain', keyCols, onPick, { role: 'grain' })}
+        {chipCols('Main measures', measureCols, onPick, { maxItems: 8, role: 'measure' })}
       </div>
     </div>
   )
