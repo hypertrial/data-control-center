@@ -6,24 +6,10 @@ import httpx
 
 from app.config import Settings
 from app.models.api import LlmHealth
+from app.services.ollama_http import parse_ollama_error_detail
 
 _TAGS_PATH = "/api/tags"
-_DETAIL_MAX = 500
 _PROBE_TIMEOUT_SEC = 2.0
-
-
-def _ollama_error_detail(response: httpx.Response) -> str:
-    """Best-effort parse of Ollama JSON error; never raises."""
-    try:
-        payload = response.json()
-        if isinstance(payload, dict):
-            err = payload.get("error")
-            if isinstance(err, str) and err.strip():
-                return err.strip()[:_DETAIL_MAX]
-    except Exception:
-        pass
-    text = (response.text or "").strip()
-    return text[:_DETAIL_MAX] if text else ""
 
 
 def check_llm_health(settings: Settings) -> LlmHealth:
@@ -54,5 +40,5 @@ def check_llm_health(settings: Settings) -> LlmHealth:
     if response.status_code == 200:
         return LlmHealth(reachable=True, model=model, detail=None)
 
-    detail = _ollama_error_detail(response) or f"HTTP {response.status_code}"
+    detail = parse_ollama_error_detail(response) or f"HTTP {response.status_code}"
     return LlmHealth(reachable=False, model=model, detail=detail)
