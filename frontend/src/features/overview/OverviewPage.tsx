@@ -6,24 +6,37 @@ import { PageContainer, Section } from '@/components/ui/section'
 import { CardSkeleton } from '@/components/ui/skeleton'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
 import { useOpenColumnDrawer } from '@/hooks/useOpenColumnDrawer'
-import { formatBytes, formatCount } from '@/lib/format'
+import { formatBytes, formatCount, formatRelativeTime } from '@/lib/format'
 import { ProfileDiffDialog } from '@/features/overview/DiffDialog'
 import { ColumnMixDonut } from '@/features/overview/ColumnMixDonut'
-import { CompletenessBars } from '@/features/overview/CompletenessBars'
+import { CompletenessPanel } from '@/features/overview/CompletenessPanel'
 import { IssuesImpactChart } from '@/features/overview/IssuesImpactChart'
 import { MissingnessMiniChart } from '@/features/overview/MissingnessMiniChart'
 import { FigureCard } from '@/features/overview/OverviewFigureCard'
-import { HeroMetric, QualityHero } from '@/features/overview/OverviewHeroMetrics'
+import { ColumnTypeHint, HeroMetric, QualityHero } from '@/features/overview/OverviewHeroMetrics'
+import { ProfileNarrative } from '@/features/overview/ProfileNarrative'
 import { StructureSummary } from '@/features/overview/StructureSummary'
+import { useOverviewDrilldown } from '@/features/overview/useOverviewDrilldown'
 import { useOverviewPageData } from '@/features/overview/useOverviewPageData'
 
 export function OverviewPage() {
   const location = useLocation()
   const openCol = useOpenColumnDrawer()
+  const { goToFlaggedColumns } = useOverviewDrilldown()
   const searchSuffix = location.search.startsWith('?') ? location.search.slice(1) : location.search
   const [diffOpen, setDiffOpen] = useState(false)
 
-  const { activeId, q, trend, topNull, topIssues } = useOverviewPageData()
+  const {
+    activeId,
+    q,
+    trend,
+    hasHistoryTrend,
+    profileUpdatedAt,
+    completenessStats,
+    topNullCompact,
+    topNullFull,
+    topIssues,
+  } = useOverviewPageData()
 
   if (!activeId) {
     return (
@@ -51,24 +64,39 @@ export function OverviewPage() {
   }
 
   const p = q.data!
-  const typeDots = (
-    <>
-      <span title="Numeric">{p.numeric_column_count} num</span>
-      <span className="text-white/20">·</span>
-      <span title="Categorical">{p.categorical_column_count} cat</span>
-      <span className="text-white/20">·</span>
-      <span title="Datetime">{p.datetime_column_count} dt</span>
-    </>
-  )
+  const completenessDescription =
+    completenessStats?.isSampleProfile || p.duplicate_row_pct_scope === 'sample'
+      ? 'Aggregate completeness and top offenders (top 5) in the profiler sample.'
+      : 'Aggregate completeness and top offenders (top 5).'
 
   return (
     <PageContainer>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <HeroMetric label="Rows" value={formatCount(p.rows)} hint="Since last profile" />
-        <HeroMetric label="Columns" value={formatCount(p.columns)} hint={typeDots} />
+        <HeroMetric
+          label="Rows"
+          value={formatCount(p.rows)}
+          hint={
+            profileUpdatedAt
+              ? `Profiled ${formatRelativeTime(profileUpdatedAt)}`
+              : 'Since last profile'
+          }
+        />
+        <HeroMetric
+          label="Columns"
+          value={formatCount(p.columns)}
+          hint={
+            <ColumnTypeHint
+              numeric={p.numeric_column_count}
+              categorical={p.categorical_column_count}
+              datetime={p.datetime_column_count}
+            />
+          }
+        />
         <HeroMetric label="File size" value={formatBytes(p.file_size_bytes)} />
-        <QualityHero score={p.quality_score} trend={trend} />
+        <QualityHero score={p.quality_score} trend={trend} hasHistoryTrend={hasHistoryTrend} />
       </div>
+
+      <ProfileNarrative narrative={p.narrative} />
 
       <Section title="Profile snapshot" description="Column mix, completeness, and inferred structure at a glance.">
         <div className="grid gap-3 md:grid-cols-2 md:items-stretch">
@@ -83,19 +111,21 @@ export function OverviewPage() {
               totalColumns={p.columns}
             />
           </FigureCard>
-          <FigureCard
-            title="Completeness"
-            description={
-              p.duplicate_row_pct_scope === 'sample'
-                ? 'Share of missing cells and duplicate rows in the profiler sample.'
-                : 'Share of missing cells and duplicate rows.'
-            }
-          >
-            <CompletenessBars
-              missingPct={p.missing_cell_pct}
-              duplicatePct={p.duplicate_row_pct}
-              duplicateScope={p.duplicate_row_pct_scope}
-            />
+          <FigureCard title="Completeness" description={completenessDescription}>
+            {completenessStats ? (
+              <CompletenessPanel
+                stats={completenessStats}
+                missingPct={p.missing_cell_pct}
+                duplicatePct={p.duplicate_row_pct}
+                duplicateScope={p.duplicate_row_pct_scope}
+                metricWarnings={p.profile_metric_warnings ?? []}
+                topNullNames={topNullCompact.names}
+                topNullValues={topNullCompact.values}
+                qualitySearch={searchSuffix}
+                onColumnClick={openCol}
+                onViewFlaggedColumns={goToFlaggedColumns}
+              />
+            ) : null}
           </FigureCard>
         </div>
         <div className="mt-3 min-w-0">
@@ -132,9 +162,9 @@ export function OverviewPage() {
           </FigureCard>
           <FigureCard
             title="Top null rates"
-            description="Columns with the highest null percentage."
+            description="Highest null % across columns (top 8)."
           >
-            <MissingnessMiniChart names={topNull.names} values={topNull.values} />
+            <MissingnessMiniChart names={topNullFull.names} values={topNullFull.values} />
           </FigureCard>
         </div>
       </Section>

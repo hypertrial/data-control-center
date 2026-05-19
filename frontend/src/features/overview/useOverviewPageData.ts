@@ -2,6 +2,11 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import type { QualityIssue } from '@/api/types'
+import {
+  computeCompletenessStats,
+  rankColumnsByNullPct,
+  type CompletenessStats,
+} from '@/features/overview/completenessStats'
 import { useDatasetProfile } from '@/hooks/useDatasetProfile'
 import { useUiStore } from '@/store/uiStore'
 
@@ -23,6 +28,8 @@ export function useOverviewPageData() {
     enabled: !!activeId,
   })
 
+  const hasHistoryTrend = (histQ.data?.length ?? 0) >= 2
+
   const trend = useMemo(() => {
     const h = histQ.data
     if (!h || h.length < 2) return null
@@ -32,13 +39,19 @@ export function useOverviewPageData() {
     return a - b
   }, [histQ.data])
 
-  const topNull = useMemo(() => {
+  const completenessStats = useMemo((): CompletenessStats | null => {
+    if (!q.data) return null
+    return computeCompletenessStats(q.data)
+  }, [q.data])
+
+  const topNullCompact = useMemo(() => {
     const cols = q.data?.column_profiles ?? []
-    const sorted = [...cols].sort((a, b) => b.null_pct - a.null_pct).slice(0, 8)
-    return {
-      names: sorted.map((c) => c.name),
-      values: sorted.map((c) => c.null_pct),
-    }
+    return rankColumnsByNullPct(cols, 5)
+  }, [q.data])
+
+  const topNullFull = useMemo(() => {
+    const cols = q.data?.column_profiles ?? []
+    return rankColumnsByNullPct(cols, 8)
   }, [q.data])
 
   const topIssues = useMemo((): QualityIssue[] => {
@@ -47,5 +60,16 @@ export function useOverviewPageData() {
     return issues.slice(0, 5)
   }, [q.data])
 
-  return { activeId, q, histQ, trend, topNull, topIssues }
+  return {
+    activeId,
+    q,
+    histQ,
+    trend,
+    hasHistoryTrend,
+    profileUpdatedAt: profile.dataUpdatedAt,
+    completenessStats,
+    topNullCompact,
+    topNullFull,
+    topIssues,
+  }
 }

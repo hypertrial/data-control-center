@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { OverviewPage } from '@/features/overview/OverviewPage'
 import { useUiStore } from '@/store/uiStore'
-import { mkProfile } from '@/test/profileFixtures'
+import { mkColumn, mkProfile } from '@/test/profileFixtures'
 
 const h = vi.hoisted(() => ({ fetchDatasetProfile: vi.fn(), getProfileHistory: vi.fn() }))
 const chartFns = vi.hoisted(() => ({
@@ -63,7 +63,9 @@ describe('OverviewPage', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Profile snapshot' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'Quality focus' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Column mix' })).toBeInTheDocument()
-    expect(screen.getByText(/100 B/)).toBeInTheDocument()
+    expect(screen.getByText('Profile summary')).toBeInTheDocument()
+    expect(screen.getByText('Hello')).toBeInTheDocument()
+    expect(screen.getByText(/cells populated/i)).toBeInTheDocument()
   })
 
   it('renders structure summary (entity + row grain)', async () => {
@@ -155,7 +157,30 @@ describe('OverviewPage', () => {
     )
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     wrap(<OverviewPage />)
-    await waitFor(() => expect(screen.getByText(/duplicate rows in the profiler sample/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Duplicate rows \(sample\)/i)).toBeInTheDocument())
+  })
+
+  it('shows no prior snapshot when profile history has one entry', async () => {
+    h.getProfileHistory.mockResolvedValue([{ quality_score: 80 }])
+    h.fetchDatasetProfile.mockResolvedValue(mkProfile())
+    useUiStore.setState({ activeDatasetId: 'ds_001' })
+    wrap(<OverviewPage />)
+    await waitFor(() => expect(screen.getByText('No prior snapshot')).toBeInTheDocument())
+  })
+
+  it('navigates to flagged columns from completeness panel', async () => {
+    const user = userEvent.setup()
+    h.fetchDatasetProfile.mockResolvedValue(
+      mkProfile({
+        column_profiles: [mkColumn({ name: 'amount', null_pct: 50, quality_flags: ['high_missingness'] })],
+      }),
+    )
+    useUiStore.setState({ activeDatasetId: 'ds_001', columnQualityFilter: 'all', columnSearch: 'x' })
+    wrap(<OverviewPage />)
+    await waitFor(() => expect(screen.getByRole('button', { name: /View flagged columns/i })).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /View flagged columns/i }))
+    expect(useUiStore.getState().columnQualityFilter).toBe('critical_only')
+    expect(useUiStore.getState().columnSearch).toBe('')
   })
 
   it('labels duplicate rows as full-table when profiler scope is full', async () => {
@@ -193,7 +218,7 @@ describe('OverviewPage', () => {
 
     await waitFor(() => expect(screen.getByText(/No column metadata/i)).toBeInTheDocument())
     expect(screen.getByText(/No quality issues detected/i)).toBeInTheDocument()
-    expect(screen.getByText(/No column stats/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/No column stats/i).length).toBeGreaterThanOrEqual(1)
 
     await user.click(screen.getByRole('button', { name: /What changed/i }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()

@@ -81,12 +81,43 @@ export function QualityScoreSummary({
   )
 }
 
+export function ColumnTypeHint({
+  numeric,
+  categorical,
+  datetime,
+}: {
+  numeric: number
+  categorical: number
+  datetime: number
+}) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <span className="inline-flex items-center gap-1" title="Numeric">
+        <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--accent))]" aria-hidden />
+        {numeric} num
+      </span>
+      <span className="text-white/20">·</span>
+      <span className="inline-flex items-center gap-1" title="Categorical">
+        <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--accent-orange))]" aria-hidden />
+        {categorical} cat
+      </span>
+      <span className="text-white/20">·</span>
+      <span className="inline-flex items-center gap-1" title="Datetime">
+        <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--accent-cyan))]" aria-hidden />
+        {datetime} dt
+      </span>
+    </span>
+  )
+}
+
 export function QualityHero({
   score,
   trend,
+  hasHistoryTrend = true,
 }: {
   score: number | null | undefined
   trend?: number | null
+  hasHistoryTrend?: boolean
 }) {
   if (score == null) {
     return <HeroMetric label="Quality score" value="—" hint="Run refresh after first profile" />
@@ -123,6 +154,8 @@ export function QualityHero({
             >
               {trend > 0 ? '▲' : '▼'} {Math.abs(trend).toFixed(1)}
             </span>
+          ) : !hasHistoryTrend ? (
+            <span className="text-xs text-[hsl(var(--fg-muted))]">No prior snapshot</span>
           ) : null}
         </div>
         <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
