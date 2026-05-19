@@ -32,7 +32,8 @@ async def lifespan(app: FastAPI):
     settings = app.state.settings
     workspace = Workspace(settings)
     registry = DatasetRegistry(workspace, settings)
-    jobs = JobService(workspace)
+    api_token = generate_local_api_token(settings)
+    jobs = JobService(workspace, redact_secrets=(api_token,) if api_token else ())
 
     app.state.settings = settings
     app.state.workspace = workspace

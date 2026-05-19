@@ -5,18 +5,38 @@ from __future__ import annotations
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Callable
 
 from app.errors import CODES
+from app.services.job_errors import sanitized_job_error_detail
 from app.services.workspace import Workspace
 from app.telemetry import emit
 
 JobFn = Callable[[str], dict]
 
 
+def _redact_path_fragments(workspace_path: Path) -> tuple[str, ...]:
+    resolved = workspace_path.resolve()
+    parent = resolved.parent
+    return (
+        str(resolved),
+        str(workspace_path),
+        str(parent),
+    )
+
+
 class JobService:
-    def __init__(self, workspace: Workspace, max_workers: int = 2) -> None:
+    def __init__(
+        self,
+        workspace: Workspace,
+        max_workers: int = 2,
+        *,
+        redact_secrets: tuple[str, ...] = (),
+    ) -> None:
         self._workspace = workspace
+        self._redact_paths = _redact_path_fragments(workspace.path)
+        self._redact_secrets = redact_secrets
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="dcc-job")
         self._lock = threading.Lock()
 
@@ -57,12 +77,17 @@ class JobService:
                     emit("job.complete", job_id=job_id, kind=kind, status="canceled")
                     return
 
+                error_message = sanitized_job_error_detail(
+                    exc,
+                    redact_paths=self._redact_paths,
+                    redact_secrets=self._redact_secrets,
+                )
                 self._workspace.job_update(
                     job_id,
                     status="failed",
                     progress=1.0,
                     error_code=CODES.JOB_FAILED,
-                    error_message="Job failed.",
+                    error_message=error_message,
                     finished=True,
                 )
                 emit(
@@ -71,6 +96,7 @@ class JobService:
                     kind=kind,
                     status="failed",
                     error_type=type(exc).__name__,
+                    error_message_summary=error_message,
                 )
 
         self._executor.submit(_run)
