@@ -9,7 +9,11 @@ versioning once formal releases begin.
 
 ### Added
 
+- Frontend API type conformance tests (`types.test.ts` + `src/api/__fixtures__/`).
+
 ### Changed
+
+- Frontend coverage baseline raised to 88%; `types.ts` included in coverage.
 
 ## [0.1.0] - 2026-05-19
 
