@@ -7,7 +7,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install dev backend frontend clean-local check build-ui serve
+.PHONY: help install dev backend frontend clean-local check check-ci build-ui serve
 
 help:
 	@echo "Data Control Center (run from repo root)"
@@ -19,6 +19,7 @@ help:
 	@echo "  make build-ui  Build frontend to frontend/dist"
 	@echo "  make serve     Build UI then run API on :8000 serving that dist"
 	@echo "  make check     Lint and test backend + frontend (parity with CI)"
+	@echo "  make check-ci  Same as check but runs 'npm ci' in frontend first"
 	@echo "  make clean-local"
 	@echo "                  Delete local app state and generated artifacts"
 
@@ -61,6 +62,10 @@ check:
 	cd frontend && npm test
 	cd frontend && npm run test:coverage
 	cd frontend && npm run build
+
+check-ci:
+	cd frontend && npm ci
+	$(MAKE) check
 
 clean-local:
 	@echo "Deleting local app state and generated artifacts..."

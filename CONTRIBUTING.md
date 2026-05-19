@@ -34,7 +34,11 @@ make check
 ```
 
 This runs the same backend and frontend checks as CI (ruff, pytest, lint, tests,
-coverage, and `npm run build`). Individual steps:
+coverage, and `npm run build`). **`make check`** uses your current `frontend/node_modules`
+(from `npm install`). After lockfile or dependency changes, run **`make check-ci`** to
+reinstall with **`npm ci`** first (matches the GitHub Actions frontend job).
+
+Individual steps:
 
 ```bash
 cd backend && uv run ruff check app tests

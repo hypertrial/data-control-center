@@ -11,6 +11,7 @@ versioning once formal releases begin.
 
 - Frontend API type conformance tests (`types.test.ts` + `src/api/__fixtures__/`).
 - Versioned workspace schema migrations with implicit baseline stamping and pre-migration backups (`DCC_WORKSPACE_BACKUP_BEFORE_MIGRATE`).
+- `make check-ci` for clean-room CI-parity validation (`npm ci` then `make check`).
 
 ### Changed
 

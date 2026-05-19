@@ -21,7 +21,7 @@ Run commands from the repository root unless noted.
 - Start only frontend: `make frontend`
 - Build frontend production bundle: `make build-ui`
 - Single-server mode (API serves built UI): `make serve`
-- Full validation (CI parity): `make check`
+- Full validation (CI parity): `make check` (use `make check-ci` after lockfile changes; runs `npm ci` first)
 - Delete local app state and generated artifacts: `make clean-local`
 
 Use Node 22 from `.nvmrc` or Node 24+. Use Python 3.11+ with `uv`.
