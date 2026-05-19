@@ -72,6 +72,33 @@ def test_downgrade_refused(tmp_path: Path) -> None:
         Workspace(settings)
 
 
+def test_upgrade_from_v1_creates_backup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services.workspace_migrations.registry import Migration
+
+    noop = Migration(2, "noop", lambda _con: None)
+    monkeypatch.setattr(
+        "app.services.workspace_migrations.registry.MIGRATIONS",
+        (MIGRATIONS[0], noop),
+    )
+
+    settings = _settings(tmp_path, workspace_backup_before_migrate=True)
+    ws = Workspace(settings)
+    ws.close()
+
+    con = duckdb.connect(str(settings.workspace_db_path))
+    try:
+        con.execute("DELETE FROM schema_version")
+        con.execute("INSERT INTO schema_version (version, description) VALUES (1, 'baseline')")
+    finally:
+        con.close()
+
+    Workspace(settings)
+    backup = settings.workspace_db_path.with_suffix(
+        settings.workspace_db_path.suffix + ".pre-migrate-v2"
+    )
+    assert backup.is_file()
+
+
 def test_failed_migration_does_not_bump_version(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path, workspace_backup_before_migrate=False)
     ws = Workspace(settings)

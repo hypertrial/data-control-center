@@ -7,7 +7,10 @@ from typing import Any
 
 from app.config import Settings
 from app.models.api import AgentAskRequest, AgentAskResponse, QueryResult
-from app.services.agent.context import build_dataset_context
+from app.services.agent.context import (
+    _pragma_column_summaries,
+    build_dataset_context,
+)
 from app.services.agent.ollama_client import (
     _ollama_error_body,
     ollama_chat,
@@ -29,9 +32,32 @@ from app.services.agent.prompts import (
     _sql_retry_prompt,
     _system_prompt,
 )
-from app.services.agent.context import _pragma_column_summaries
 from app.services.agent.workflow import _run_ask_workflow
 from app.services.registry import DatasetRegistry
+
+__all__ = [
+    "OLLAMA_SQL_DRAFT_FORMAT",
+    "OLLAMA_SUMMARY_FORMAT",
+    "_build_user_block",
+    "_default_answer",
+    "_empty_result_retry_prompt",
+    "_load_json_object",
+    "_ollama_error_body",
+    "_pragma_column_summaries",
+    "_result_preview_for_summary",
+    "_run_ask_workflow",
+    "_should_retry_empty_result",
+    "_sql_retry_prompt",
+    "_system_prompt",
+    "build_dataset_context",
+    "ollama_chat",
+    "ollama_chat_stream",
+    "parse_sql_draft",
+    "parse_summary_answer",
+    "run_agent_ask",
+    "run_agent_ask_stream",
+]
+
 
 def run_agent_ask(
     registry: DatasetRegistry,
