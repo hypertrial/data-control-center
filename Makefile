@@ -70,8 +70,8 @@ check-ci:
 clean-local:
 	@echo "Deleting local app state and generated artifacts..."
 	rm -rf .coverage .dcc_uploads .pytest_cache
-	rm -f .dcc_workspace.duckdb .dcc_workspace.duckdb.wal .dcc_workspace.duckdb.tmp .dcc_workspace.duckdb.corrupt* .dcc_workspace.duckdb.wal.corrupt*
+	rm -f .dcc_workspace.duckdb .dcc_workspace.duckdb.wal .dcc_workspace.duckdb.tmp .dcc_workspace.duckdb.corrupt* .dcc_workspace.duckdb.wal.corrupt* .dcc_workspace.duckdb.pre-migrate-v*
 	rm -rf backend/.coverage backend/.pytest_cache backend/.ruff_cache backend/htmlcov
-	rm -f backend/.dcc_workspace.duckdb backend/.dcc_workspace.duckdb.wal backend/.dcc_workspace.duckdb.tmp backend/.dcc_workspace.duckdb.corrupt* backend/.dcc_workspace.duckdb.wal.corrupt*
+	rm -f backend/.dcc_workspace.duckdb backend/.dcc_workspace.duckdb.wal backend/.dcc_workspace.duckdb.tmp backend/.dcc_workspace.duckdb.corrupt* backend/.dcc_workspace.duckdb.wal.corrupt* backend/.dcc_workspace.duckdb.pre-migrate-v*
 	rm -rf frontend/coverage frontend/dist
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
