@@ -75,17 +75,43 @@ export function setLocalSessionTokenForTests(token: string): void {
   localSessionPromise = null
 }
 
-async function readApiError(r: Response): Promise<string> {
-  const text = await r.text()
-  if (!text) return r.statusText || 'Request failed'
+export class ApiRequestError extends Error {
+  readonly code: string
+  readonly details: Record<string, unknown> | null | undefined
+
+  constructor(message: string, code: string, details?: Record<string, unknown> | null) {
+    super(message)
+    this.name = 'ApiRequestError'
+    this.code = code
+    this.details = details
+  }
+}
+
+function parseApiErrorText(text: string): ApiError | null {
+  if (!text) return null
   try {
     const parsed = JSON.parse(text) as { error?: ApiError; detail?: string }
-    if (parsed?.error?.message) return parsed.error.message
-    if (typeof parsed?.detail === 'string') return parsed.detail
+    if (parsed?.error?.code && parsed?.error?.message) {
+      return parsed.error
+    }
+    if (typeof parsed?.detail === 'string') {
+      return { code: 'BAD_REQUEST', message: parsed.detail, details: null }
+    }
   } catch {
-    // fall through to raw text
+    return null
   }
-  return text
+  return null
+}
+
+export async function parseApiErrorFromResponse(r: Response): Promise<ApiError | null> {
+  return parseApiErrorText(await r.text())
+}
+
+async function readApiError(r: Response): Promise<string> {
+  const text = await r.text()
+  const structured = parseApiErrorText(text)
+  if (structured?.message) return structured.message
+  return text || r.statusText || 'Request failed'
 }
 
 async function handle<T>(res: Promise<Response>): Promise<T> {
@@ -94,6 +120,39 @@ async function handle<T>(res: Promise<Response>): Promise<T> {
     throw new Error(await readApiError(r))
   }
   return r.json() as Promise<T>
+}
+
+async function waitForJob(jobId: string): Promise<JobDetail> {
+  for (;;) {
+    const job = await handle<JobDetail>(apiFetch(`${API}/jobs/${encodeURIComponent(jobId)}`))
+    if (job.status === 'completed') return job
+    if (job.status === 'failed' || job.status === 'canceled') {
+      throw new ApiRequestError(
+        job.error_message ?? `Job ${job.status}`,
+        job.error_code ?? 'JOB_FAILED',
+        { job_id: jobId },
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+  }
+}
+
+async function fetchDatasetProfile(datasetId: string): Promise<DatasetProfile> {
+  const r = await apiFetch(`${API}/datasets/${datasetId}/profile`)
+  const text = await r.text()
+  if (r.ok) {
+    return JSON.parse(text) as DatasetProfile
+  }
+  const err = parseApiErrorText(text)
+  if (err?.code === 'PROFILE_NOT_READY' && err.details?.job_id) {
+    await waitForJob(String(err.details.job_id))
+    return fetchDatasetProfile(datasetId)
+  }
+  throw new ApiRequestError(
+    err?.message ?? r.statusText ?? 'Request failed',
+    err?.code ?? 'BAD_REQUEST',
+    err?.details,
+  )
 }
 
 export const api = {
@@ -114,6 +173,10 @@ export const api = {
 
   getProfile: (datasetId: string) =>
     handle<DatasetProfile>(apiFetch(`${API}/datasets/${datasetId}/profile`)),
+
+  fetchDatasetProfile,
+
+  waitForJob,
 
   deleteDataset: async (datasetId: string) => {
     const r = await apiFetch(`${API}/datasets/${encodeURIComponent(datasetId)}`, { method: 'DELETE' })

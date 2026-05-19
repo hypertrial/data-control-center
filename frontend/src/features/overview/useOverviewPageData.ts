@@ -2,16 +2,20 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import type { QualityIssue } from '@/api/types'
+import { useDatasetProfile } from '@/hooks/useDatasetProfile'
 import { useUiStore } from '@/store/uiStore'
 
 export function useOverviewPageData() {
   const activeId = useUiStore((s) => s.activeDatasetId)
 
-  const q = useQuery({
-    queryKey: ['profile', activeId],
-    queryFn: () => api.getProfile(activeId!),
-    enabled: !!activeId,
-  })
+  const profile = useDatasetProfile(activeId)
+  const q = {
+    data: profile.data,
+    isLoading: profile.isPendingProfile,
+    isError: profile.isError,
+    error: profile.error,
+    refetch: profile.refetch,
+  }
 
   const histQ = useQuery({
     queryKey: ['profile-history', activeId],

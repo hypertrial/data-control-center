@@ -19,7 +19,7 @@ vi.mock('@/api/client', () => ({
   api: {
     listDatasets: vi.fn(),
     uploadDatasets: vi.fn(),
-    getProfile: vi.fn(),
+    getProfile: vi.fn(), fetchDatasetProfile: vi.fn(),
     getQuality: vi.fn(),
     getSample: vi.fn(),
     runQuery: vi.fn(),
@@ -59,7 +59,7 @@ describe('App', () => {
         file_size_bytes: 1,
       },
     ])
-    vi.mocked(api.getProfile).mockResolvedValue(mkProfile())
+    vi.mocked(api.fetchDatasetProfile).mockResolvedValue(mkProfile())
     vi.mocked(api.getQuality).mockResolvedValue([])
     vi.mocked(api.getSample).mockResolvedValue({
       page: 1,

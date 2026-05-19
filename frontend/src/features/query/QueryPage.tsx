@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { RefObject } from 'react'
-import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
-import { vscodeDark } from '@uiw/codemirror-theme-vscode'
-import { sql } from '@codemirror/lang-sql'
-import { Prec } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
+import type { ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'sql-formatter'
-import { ChevronDown, ChevronRight, History, Copy } from 'lucide-react'
+import { History, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
-import type { ColumnProfile, DatasetSummary } from '@/api/types'
+import type { DatasetSummary } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { PageContainer } from '@/components/ui/section'
@@ -19,81 +14,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { quoteIdent, sqlSelectStarFromView } from '@/lib/sql'
 import { useUiStore } from '@/store/uiStore'
-import { cn } from '@/lib/utils'
+import { SchemaDatasetBlock } from '@/features/query/SchemaDatasetBlock'
+import { SqlEditor } from '@/features/query/SqlEditor'
 import { SqlResultsGrid } from '@/features/query/SqlResultsGrid'
-
-const HISTORY_KEY = 'dcc-sql-history'
-const HISTORY_CAP = 10
-
-function loadHistory(): string[] {
-  try {
-    const raw = localStorage.getItem(HISTORY_KEY)
-    if (!raw) return []
-    const v = JSON.parse(raw) as unknown
-    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []
-  } catch {
-    return []
-  }
-}
-
-function saveHistory(entries: string[]) {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, HISTORY_CAP)))
-}
-
-function SqlEditor({
-  value,
-  onChange,
-  onRun,
-  editorRef,
-}: {
-  value: string
-  onChange: (value: string) => void
-  onRun: () => void
-  editorRef: RefObject<ReactCodeMirrorRef | null>
-}) {
-  const runFromShortcut = useCallback((event: Pick<KeyboardEvent, 'defaultPrevented' | 'key' | 'metaKey' | 'ctrlKey' | 'preventDefault'>) => {
-    if (event.defaultPrevented) return false
-    if (event.key !== 'Enter') return false
-    if (!event.metaKey && !event.ctrlKey) return false
-    event.preventDefault()
-    onRun()
-    return true
-  }, [onRun])
-
-  const extensions = useMemo(
-    () => [
-      vscodeDark,
-      sql(),
-      // Highest precedence + DOM handler so Cmd+Enter works on Mac even when default uiw/CodeMirror keymaps win.
-      Prec.highest(
-        EditorView.domEventHandlers({
-          keydown: (event) => runFromShortcut(event),
-        }),
-      ),
-    ],
-    [runFromShortcut],
-  )
-
-  return (
-    <div
-      className="overflow-hidden rounded-xl border border-border-default"
-      onKeyDownCapture={(event) => {
-        runFromShortcut(event.nativeEvent)
-      }}
-    >
-      <CodeMirror
-        value={value}
-        height="200px"
-        theme="none"
-        extensions={extensions}
-        onChange={onChange}
-        ref={editorRef}
-        className="text-sm [&_.cm-editor]:rounded-lg"
-        basicSetup={{ lineNumbers: true, foldGutter: false }}
-      />
-    </div>
-  )
-}
+import { loadSqlHistory, saveSqlHistory, SQL_HISTORY_CAP } from '@/features/query/useSqlHistory'
 
 export function QueryPage() {
   const qc = useQueryClient()
@@ -102,7 +26,7 @@ export function QueryPage() {
 
   const [sqlText, setSqlText] = useState(() => 'SELECT 1;')
   const [maxRows, setMaxRows] = useState(1000)
-  const [history, setHistory] = useState<string[]>(() => loadHistory())
+  const [history, setHistory] = useState<string[]>(() => loadSqlHistory())
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [saveOpen, setSaveOpen] = useState(false)
   const [saveName, setSaveName] = useState('')
@@ -147,8 +71,8 @@ export function QueryPage() {
 
   const pushHistory = useCallback((sql: string) => {
     setHistory((prev) => {
-      const next = [sql, ...prev.filter((x) => x !== sql)].slice(0, HISTORY_CAP)
-      saveHistory(next)
+      const next = [sql, ...prev.filter((x) => x !== sql)].slice(0, SQL_HISTORY_CAP)
+      saveSqlHistory(next)
       return next
     })
   }, [])
@@ -367,62 +291,5 @@ export function QueryPage() {
         </DialogContent>
       </Dialog>
     </PageContainer>
-  )
-}
-
-function SchemaDatasetBlock({
-  summary,
-  expanded,
-  onToggle,
-  onInsert,
-}: {
-  summary: DatasetSummary
-  expanded: boolean
-  onToggle: () => void
-  onInsert: (s: string) => void
-}) {
-  const pq = useQuery({
-    queryKey: ['profile', summary.dataset_id],
-    queryFn: () => api.getProfile(summary.dataset_id),
-    enabled: expanded,
-  })
-
-  const cols: ColumnProfile[] = pq.data?.column_profiles ?? []
-  const viewIdent = quoteIdent(summary.view_name)
-
-  return (
-    <div className="rounded-lg border border-border-default bg-white/[0.03]">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center justify-between gap-2 px-2 py-2 text-left hover:bg-white/5"
-      >
-        <span className="truncate font-mono text-white/90">{summary.name}</span>
-        <span className="shrink-0 text-fg-muted">
-          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        </span>
-      </button>
-      {expanded && (
-        <ul className="max-h-48 overflow-auto border-t border-border-default px-2 py-1">
-          {pq.isLoading && <li className="py-1 text-[hsl(var(--muted))]">Loading…</li>}
-          {pq.isError && <li className="py-1 text-red-300">{(pq.error as Error).message}</li>}
-          {cols.map((c) => (
-            <li key={c.name}>
-              <button
-                type="button"
-                className={cn(
-                  'flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left font-mono hover:bg-white/10',
-                )}
-                onClick={() => onInsert(`${viewIdent}.${quoteIdent(c.name)} `)}
-                title="Insert at cursor"
-              >
-                <span className="truncate">{c.name}</span>
-                <span className="shrink-0 text-[10px] text-[hsl(var(--muted))]">{c.physical_type}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   )
 }

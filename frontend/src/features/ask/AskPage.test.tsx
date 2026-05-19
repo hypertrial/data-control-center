@@ -60,7 +60,7 @@ vi.mock('@/api/client', async (importOriginal) => {
       createAskConversation: h.createAskConversation,
       listAskTurns: h.listAskTurns,
       listDatasets: h.listDatasets,
-      getProfile: h.getProfile,
+      getProfile: h.getProfile, fetchDatasetProfile: h.getProfile,
       health: h.health,
     },
   }

@@ -20,7 +20,7 @@ const h = vi.hoisted(() => ({ getProfile: vi.fn(), listDatasets: vi.fn() }))
 
 vi.mock('@/api/client', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/api/client')>()
-  return { ...mod, api: { ...mod.api, getProfile: h.getProfile, listDatasets: h.listDatasets } }
+  return { ...mod, api: { ...mod.api, getProfile: h.getProfile, fetchDatasetProfile: h.getProfile, listDatasets: h.listDatasets } }
 })
 
 function wrap(ui: React.ReactElement) {

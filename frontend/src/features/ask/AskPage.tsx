@@ -8,6 +8,7 @@ import { AskThread } from '@/features/ask/AskThread'
 import { ConversationList } from '@/features/ask/ConversationList'
 import { SuggestedPrompts } from '@/features/ask/SuggestedPrompts'
 import { useAskStream } from '@/hooks/useAskStream'
+import { useDatasetProfile } from '@/hooks/useDatasetProfile'
 import { useOpenInSql } from '@/hooks/useOpenInSql'
 import { api } from '@/api/client'
 import { useUiStore } from '@/store/uiStore'
@@ -31,11 +32,7 @@ export function AskPage() {
     enabled: !!activeConversationId,
   })
 
-  const { data: profile } = useQuery({
-    queryKey: ['profile', activeDatasetId],
-    queryFn: () => api.getProfile(activeDatasetId!),
-    enabled: !!activeDatasetId,
-  })
+  const { data: profile } = useDatasetProfile(activeDatasetId)
 
   useEffect(() => {
     if (current?.error) toast.error(current.error)

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { PageContainer, Section } from '@/components/ui/section'
 import { CardSkeleton } from '@/components/ui/skeleton'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
+import { useDatasetProfile } from '@/hooks/useDatasetProfile'
 import { useOpenColumnDrawer } from '@/hooks/useOpenColumnDrawer'
 import { useUiStore } from '@/store/uiStore'
 import { cn } from '@/lib/utils'
@@ -155,11 +156,14 @@ export function QualityPage() {
     enabled: !!activeId,
   })
 
-  const profileQ = useQuery({
-    queryKey: ['profile', activeId],
-    queryFn: () => api.getProfile(activeId!),
-    enabled: !!activeId,
-  })
+  const profileHook = useDatasetProfile(activeId)
+  const profileQ = {
+    data: profileHook.data,
+    isLoading: profileHook.isPendingProfile,
+    isError: profileHook.isError,
+    error: profileHook.error,
+    refetch: profileHook.refetch,
+  }
 
   const allIssues = useMemo(() => q.data ?? [], [q.data])
   const filtered = sev === 'all' ? allIssues : allIssues.filter((i) => i.severity === sev)

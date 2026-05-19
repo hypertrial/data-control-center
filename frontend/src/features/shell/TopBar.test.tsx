@@ -23,7 +23,7 @@ vi.mock('@/api/client', async (importOriginal) => {
     api: {
       ...mod.api,
       listDatasets: h.listDatasets,
-      getProfile: h.getProfile,
+      getProfile: h.getProfile, fetchDatasetProfile: h.getProfile,
       getJob: h.getJob,
       refreshProfile: h.refreshProfile,
       cancelJob: h.cancelJob,

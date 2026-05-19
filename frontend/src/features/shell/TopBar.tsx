@@ -16,9 +16,9 @@ import {
   XCircle,
 } from 'lucide-react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
+import { useDatasetProfile } from '@/hooks/useDatasetProfile'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip } from '@/components/ui/tooltip'
@@ -58,7 +58,6 @@ function QualityMicroBar({ score }: { score: number | null | undefined }) {
 
 export function TopBar() {
   const location = useLocation()
-  const qc = useQueryClient()
   const activeId = useUiStore((s) => s.activeDatasetId)
   const setPalette = useUiStore((s) => s.setCommandPaletteOpen)
   const setShortcuts = useUiStore((s) => s.setShortcutSheetOpen)
@@ -66,39 +65,8 @@ export function TopBar() {
   const setCollapsed = useUiStore((s) => s.setSidebarCollapsed)
   const setMobileOpen = useUiStore((s) => s.setSidebarMobileOpen)
 
-  const [refreshJobId, setRefreshJobId] = useState<string | null>(null)
-
   const dsQ = useQuery({ queryKey: ['datasets'], queryFn: api.listDatasets })
-  const profileQ = useQuery({
-    queryKey: ['profile', activeId],
-    queryFn: () => api.getProfile(activeId!),
-    enabled: !!activeId,
-  })
-  const refreshJobQ = useQuery({
-    queryKey: ['job', refreshJobId],
-    queryFn: () => api.getJob(refreshJobId!),
-    enabled: !!refreshJobId,
-    refetchInterval: (q) => {
-      const s = q.state.data?.status
-      if (!s) return 1200
-      return s === 'queued' || s === 'running' ? 1200 : false
-    },
-  })
-
-  useEffect(() => {
-    const status = refreshJobQ.data?.status
-    if (!status) return
-    if (status === 'completed') {
-      void qc.invalidateQueries({ queryKey: ['datasets'] })
-      void qc.invalidateQueries({ queryKey: ['profile', activeId] })
-      void qc.invalidateQueries({ queryKey: ['quality', activeId] })
-      void qc.invalidateQueries({ queryKey: ['profile-history', activeId] })
-      queueMicrotask(() => setRefreshJobId(null))
-    }
-    if (status === 'failed' || status === 'canceled') {
-      queueMicrotask(() => setRefreshJobId(null))
-    }
-  }, [refreshJobQ.data?.status, qc, activeId])
+  const profileQ = useDatasetProfile(activeId)
 
   const summary = (dsQ.data ?? []).find((d) => d.dataset_id === activeId)
   const name = summary?.name ?? profileQ.data?.name ?? activeId
@@ -109,17 +77,10 @@ export function TopBar() {
   const qScore = profileQ.data?.quality_score ?? summary?.quality_score ?? null
   const updated = profileQ.dataUpdatedAt
 
-  const runningRefresh = refreshJobQ.data?.status === 'queued' || refreshJobQ.data?.status === 'running'
+  const runningRefresh = profileQ.runningRefresh
 
-  const onRefresh = () => {
-    if (!activeId || runningRefresh) return
-    void api.refreshProfile(activeId).then((job) => setRefreshJobId(job.job_id))
-  }
-
-  const onCancelRefresh = () => {
-    if (!refreshJobId) return
-    void api.cancelJob(refreshJobId)
-  }
+  const onRefresh = profileQ.refresh
+  const onCancelRefresh = profileQ.cancelRefresh
 
   return (
     <header className="shrink-0 border-b border-border-default bg-[hsl(var(--card))]/60 backdrop-blur-md">
@@ -251,7 +212,7 @@ export function TopBar() {
             variant="outline"
             size="sm"
             className="gap-1"
-            disabled={!activeId || profileQ.isFetching || runningRefresh}
+            disabled={!activeId || profileQ.isPendingProfile || runningRefresh}
             onClick={() => onRefresh()}
           >
             <RefreshCw className="h-3.5 w-3.5" />

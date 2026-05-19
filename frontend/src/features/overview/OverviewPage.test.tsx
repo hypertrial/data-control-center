@@ -26,7 +26,7 @@ vi.mock('echarts', () => ({
 
 vi.mock('@/api/client', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/api/client')>()
-  return { ...mod, api: { ...mod.api, getProfile: h.getProfile, getProfileHistory: h.getProfileHistory } }
+  return { ...mod, api: { ...mod.api, getProfile: h.getProfile, fetchDatasetProfile: h.getProfile, getProfileHistory: h.getProfileHistory } }
 })
 
 function wrap(ui: React.ReactElement) {

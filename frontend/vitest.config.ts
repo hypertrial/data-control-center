@@ -7,7 +7,7 @@ import path from 'node:path'
 const coverageExclude = ['src/main.tsx', 'src/vite-env.d.ts']
 
 // Current baseline (~85%). Raise toward 100% as UiUrlSync, hooks, and chart branches gain tests.
-const COVERAGE_BASELINE = 88
+const COVERAGE_BASELINE = 92
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -25,6 +25,7 @@ export default defineConfig({
         ...coverageExclude,
         '**/*.test.{ts,tsx}',
         'src/test/**',
+        '**/types.ts',
       ],
       all: true,
       thresholds: {

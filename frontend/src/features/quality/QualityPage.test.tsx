@@ -14,7 +14,7 @@ vi.mock('@/api/client', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/api/client')>()
   return {
     ...mod,
-    api: { ...mod.api, getQuality: h.getQuality, getProfile: h.getProfile },
+    api: { ...mod.api, getQuality: h.getQuality, getProfile: h.getProfile, fetchDatasetProfile: h.getProfile },
   }
 })
 

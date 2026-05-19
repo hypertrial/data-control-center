@@ -38,7 +38,7 @@ vi.mock('@/api/client', async (importOriginal) => {
       listDatasets: h.listDatasets,
       listSavedQueries: h.listSavedQueries,
       createSavedQuery: h.createSavedQuery,
-      getProfile: h.getProfile,
+      getProfile: h.getProfile, fetchDatasetProfile: h.getProfile,
     },
   }
 })

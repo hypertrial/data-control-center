@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-table'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
+import { useDatasetProfile } from '@/hooks/useDatasetProfile'
 import { useUiStore } from '@/store/uiStore'
 import { formatCount, formatEdaNumericString, formatPercent } from '@/lib/format'
 import { Badge } from '@/components/ui/badge'
@@ -39,11 +40,14 @@ export function useColumnsTable() {
 
   const [sorting, setSorting] = useState<SortingState>([{ id: 'missing', desc: true }])
 
-  const q = useQuery({
-    queryKey: ['profile', activeId],
-    queryFn: () => api.getProfile(activeId!),
-    enabled: !!activeId,
-  })
+  const profile = useDatasetProfile(activeId)
+  const q = {
+    data: profile.data,
+    isLoading: profile.isPendingProfile,
+    isError: profile.isError,
+    error: profile.error,
+    refetch: profile.refetch,
+  }
 
   const datasetsQ = useQuery({ queryKey: ['datasets'], queryFn: api.listDatasets })
   const activeViewName = useMemo(

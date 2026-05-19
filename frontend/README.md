@@ -35,10 +35,10 @@ If Vite logs **`http proxy error`** / **`socket hang up`** for several `/api/...
 - **`src/hooks/useDisposableEChart.ts`** — shared ECharts init / `setOption` / resize / dispose lifecycle ([`useDisposableEChart.test.tsx`](src/hooks/useDisposableEChart.test.tsx)).
 - **`src/store/uiStore.ts`** — Zustand UI state (active dataset, drawer, filters).
 
-TanStack Query keys commonly used: `['datasets']`, `['profile', datasetId]`, `['quality', datasetId]`. Expensive profile recomputes use **`api.refreshProfile`** before invalidating those keys.
+TanStack Query keys commonly used: `['datasets']`, `['profile', datasetId]`, `['quality', datasetId]`. Prefer **`useDatasetProfile`** (or **`api.fetchDatasetProfile`**) for profile loads; it handles **`PROFILE_NOT_READY`** by polling the job in **`details.job_id`**. Manual refresh uses **`api.refreshProfile`** and the hook’s job polling before invalidating profile-related keys.
 
 ## Tests & coverage
 
-Tests live next to sources as `*.test.ts(x)`. Coverage thresholds are defined in [`vitest.config.ts`](vitest.config.ts): **`COVERAGE_BASELINE`** is **88** for both **lines** and **statements** (with deliberate excludes); CI runs `npm run test:coverage`.
+Tests live next to sources as `*.test.ts(x)`. Coverage thresholds are defined in [`vitest.config.ts`](vitest.config.ts): **`COVERAGE_BASELINE`** is **92** for both **lines** and **statements** (with deliberate excludes such as `main.tsx` and `types.ts`); CI runs `npm run test:coverage`.
 
-[`src/api/types.ts`](src/api/types.ts) is covered by [`types.test.ts`](src/api/types.test.ts) using fixtures in [`src/api/__fixtures__/`](src/api/__fixtures__/); keep those fixtures aligned with backend models when API shapes change.
+[`src/api/types.ts`](src/api/types.ts) is validated by [`types.test.ts`](src/api/types.test.ts) using fixtures in [`src/api/__fixtures__/`](src/api/__fixtures__/); keep those fixtures aligned with backend models when API shapes change.

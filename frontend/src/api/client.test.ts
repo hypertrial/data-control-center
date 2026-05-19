@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   api,
   askAgentStream,
+  parseApiErrorFromResponse,
   resetLocalSessionTokenForTests,
   setLocalSessionTokenForTests,
 } from '@/api/client'
@@ -159,6 +160,113 @@ describe('api client', () => {
     vi.stubGlobal('fetch', fetchMock)
     await api.getProfile('ds_1')
     expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/profile', expect.any(Object))
+    expectToken(fetchMock.mock.calls[0]![1] as RequestInit)
+  })
+
+  it('parseApiErrorFromResponse reads structured and detail payloads', async () => {
+    const structured = await parseApiErrorFromResponse({
+      text: () =>
+        Promise.resolve(
+          JSON.stringify({ error: { code: 'X', message: 'msg', details: { job_id: 'j1' } } }),
+        ),
+    } as Response)
+    expect(structured).toEqual({ code: 'X', message: 'msg', details: { job_id: 'j1' } })
+
+    const detail = await parseApiErrorFromResponse({
+      text: () => Promise.resolve(JSON.stringify({ detail: 'plain detail' })),
+    } as Response)
+    expect(detail).toEqual({ code: 'BAD_REQUEST', message: 'plain detail', details: null })
+  })
+
+  it('fetchDatasetProfile polls job when profile is not ready', async () => {
+    vi.useFakeTimers()
+    const profile = { dataset_id: 'ds_1' }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({
+              error: {
+                code: 'PROFILE_NOT_READY',
+                message: 'Profiling',
+                details: { job_id: 'j1' },
+              },
+            }),
+          ),
+      } as Response)
+      .mockResolvedValueOnce(jsonOk({ job_id: 'j1', status: 'running', kind: 'profile_refresh' }))
+      .mockResolvedValueOnce(jsonOk({ job_id: 'j1', status: 'completed', kind: 'profile_refresh' }))
+      .mockResolvedValueOnce({
+        ok: true,
+        statusText: 'OK',
+        text: () => Promise.resolve(JSON.stringify(profile)),
+      } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const pending = api.fetchDatasetProfile('ds_1')
+    await vi.advanceTimersByTimeAsync(2400)
+    await expect(pending).resolves.toEqual(profile)
+    vi.useRealTimers()
+  })
+
+  it('fetchDatasetProfile throws ApiRequestError when job fails', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({
+              error: {
+                code: 'PROFILE_NOT_READY',
+                message: 'Profiling',
+                details: { job_id: 'j1' },
+              },
+            }),
+          ),
+      } as Response)
+      .mockResolvedValueOnce(
+        jsonOk({
+          job_id: 'j1',
+          status: 'failed',
+          kind: 'profile_refresh',
+          error_message: 'boom',
+          error_code: 'JOB_FAILED',
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const pending = api.fetchDatasetProfile('ds_1')
+    const assertion = expect(pending).rejects.toMatchObject({
+      name: 'ApiRequestError',
+      code: 'JOB_FAILED',
+      message: 'boom',
+    })
+    await vi.advanceTimersByTimeAsync(1200)
+    await assertion
+    vi.useRealTimers()
+  })
+
+  it('getJob GET', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk({ job_id: 'j1', status: 'queued' }))
+    vi.stubGlobal('fetch', fetchMock)
+    await api.getJob('j1')
+    expect(fetchMock).toHaveBeenCalledWith('/api/jobs/j1', expect.any(Object))
+    expectToken(fetchMock.mock.calls[0]![1] as RequestInit)
+  })
+
+  it('cancelJob POST', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk({ job_id: 'j1', status: 'canceled' }))
+    vi.stubGlobal('fetch', fetchMock)
+    await api.cancelJob('j1')
+    expect(fetchMock).toHaveBeenCalledWith('/api/jobs/j1/cancel', expect.objectContaining({ method: 'POST' }))
     expectToken(fetchMock.mock.calls[0]![1] as RequestInit)
   })
 
