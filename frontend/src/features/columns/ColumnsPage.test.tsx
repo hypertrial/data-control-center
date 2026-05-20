@@ -250,7 +250,7 @@ describe('ColumnsPage', () => {
     expect(screen.getAllByText('IQR').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('median').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('mean').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('σ').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('STDEV').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('0 -> 9').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('2 -> 7').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1)

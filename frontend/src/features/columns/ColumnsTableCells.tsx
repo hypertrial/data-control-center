@@ -136,7 +136,7 @@ export function DistributionCell({ row }: { row: ColumnProfile }) {
       ? { label: 'mean', value: formatMetricValue(row.mean_value) }
       : null,
     hasValue(row.std_value)
-      ? { label: 'σ', value: formatMetricValue(row.std_value) }
+      ? { label: 'STDEV', value: formatMetricValue(row.std_value) }
       : null,
   ].filter((metric): metric is { label: string; value: string } => metric != null)
   const hasStats = hasValue(row.mean_value) || hasValue(row.std_value)

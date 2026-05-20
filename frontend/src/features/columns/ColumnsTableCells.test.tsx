@@ -15,7 +15,7 @@ describe('DistributionCell', () => {
     expect(screen.getByText('4')).toBeInTheDocument()
     expect(screen.getByText('mean')).toBeInTheDocument()
     expect(screen.getByText('4.5')).toBeInTheDocument()
-    expect(screen.getByText('σ')).toBeInTheDocument()
+    expect(screen.getByText('STDEV')).toBeInTheDocument()
     expect(screen.getByText('2.872')).toBeInTheDocument()
   })
 
@@ -40,7 +40,7 @@ describe('DistributionCell', () => {
     expect(screen.getByText('0')).toBeInTheDocument()
     expect(screen.queryByText('IQR')).toBeNull()
     expect(screen.queryByText('median')).toBeNull()
-    expect(screen.queryByText('σ')).toBeNull()
+    expect(screen.queryByText('STDEV')).toBeNull()
     expect(screen.queryByText('—')).toBeNull()
   })
 
