@@ -15,3 +15,12 @@ Describe the change and the user-visible behavior.
 - [ ] I did not commit local datasets, workspace databases, upload folders, build
       output, coverage output, or cache files.
 - [ ] I considered whether this affects the local-only security model.
+
+## Release / publishing PR (optional)
+
+Use when preparing a versioned release (for example **1.0.0**):
+
+- [ ] [`CHANGELOG.md`](CHANGELOG.md) has a dated version section and empty `[Unreleased]`
+- [ ] Versions bumped in `backend/pyproject.toml` and `frontend/package.json`
+- [ ] `make check` green; `npm audit` / `pip-audit` reviewed per [CONTRIBUTING](CONTRIBUTING.md#release-checklist-maintainers)
+- [ ] No `.dcc_workspace.duckdb`, `.dcc_uploads/`, or coverage artifacts in the diff

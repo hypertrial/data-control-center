@@ -111,6 +111,27 @@ gitleaks detect --source . --redact
 
 (`gitleaks` is optional locally; CI runs it on `main`.)
 
+### Release checklist (maintainers)
+
+Before tagging a release (for example **`v1.0.0`**):
+
+1. Confirm **[`CHANGELOG.md`](CHANGELOG.md)** has a dated version section and an empty
+   **`[Unreleased]`** stub; bump versions in [`backend/pyproject.toml`](backend/pyproject.toml)
+   and [`frontend/package.json`](frontend/package.json).
+2. Run **`make check`** (or **`make check-ci`** after frontend lockfile changes).
+3. Run release hygiene audits:
+
+   ```bash
+   cd frontend && npm audit --audit-level=moderate
+   cd backend && uv run pip-audit
+   ```
+
+   Fix moderate-or-higher issues in the release PR when updates are available.
+4. On demo machines, run **`make clean-local`** so workspace DBs and uploads are not
+   bundled into screenshots or archives.
+5. Merge the release PR, then follow **[`docs/RELEASE.md`](docs/RELEASE.md)** to tag and
+   publish the GitHub Release.
+
 ## Project Map
 
 - `backend/app/api/`: FastAPI route modules.

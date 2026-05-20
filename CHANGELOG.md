@@ -2,10 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on Keep a Changelog, and this project adheres to semantic
-versioning once formal releases begin.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
+project follows [Semantic Versioning](https://semver.org/). **1.0.0** is the first tagged
+stable release. Maintainer tagging steps: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-05-20
+
+### Upgrade from 0.1.0
+
+1. Run **`make clean-local`** (or delete **`.dcc_workspace.duckdb`**) if you have an existing
+   workspace from 0.1.0—the layout and profile cache format changed.
+2. Re-open datasets so profiles rebuild (first **`GET /profile`** may return
+   **`PROFILE_NOT_READY`**; the UI polls jobs until ready).
+3. Custom Ask integrations must use **`POST /api/agent/ask/stream`** only (sync ask removed).
 
 ### Breaking
 
@@ -17,6 +28,8 @@ versioning once formal releases begin.
 ### Added
 
 - [`docs/user-guide.md`](docs/user-guide.md) for product usage (data ingestion, profiles/jobs, SQL, Ask, shortcuts).
+- [`docs/RELEASE.md`](docs/RELEASE.md) for maintainer release and tagging steps.
+- Root [`.env.example`](.env.example) with commented high-signal **`DCC_*`** variables.
 - Frontend API type conformance tests (`types.test.ts` + `src/api/__fixtures__/`).
 - `make check-ci` for clean-room CI-parity validation (`npm ci` then `make check`).
 - `useDatasetProfile` hook and `api.fetchDatasetProfile` for async first-open profiling (`PROFILE_NOT_READY` + job polling).
@@ -27,8 +40,13 @@ versioning once formal releases begin.
 
 - Frontend: removed the **Overview** tab; the app opens on **Columns** by default (`/` redirects to `/columns`).
 - Frontend: removed the **Quality** tab; the header still shows the quality score, column flags and filters live on **Columns**, `/quality` redirects to `/columns`, and the profile-diff dialog was removed from the UI (API unchanged).
+- Frontend **Columns**: default table sort is column name ascending; distribution stats label standard deviation as **STDEV** (not σ).
+- Frontend **Ask**: focused chat workspace with hero on empty threads, context bar, collapsible history, compact composer, and tighter turn layout.
+- Frontend **Ask** agent: **`DCC_AGENT_SUMMARIZE_WITH_LLM`** defaults to **`true`**; summarization prompts request direct answers with deterministic fallbacks when the second LLM call fails.
 - Frontend **Ask** composer: compact sticky bar, **Options** popover (model, row limit, dataset scope by name), always-on suggested prompts, real turn timing summary, conversation list polish.
 - Frontend **SQL** workspace: active-dataset chip, consolidated toolbar, run selection, resizable editor/results split, collapsible schema rail, snippet templates, run timer chip, and editor shortcuts (**⌘+Shift+F**, **⌘+S**).
+- Primary tab navigation uses route transitions; **Columns** and **Samples** tables use sticky headers.
+- Profiler histogram bins and column summary formatting improvements.
 - **`GET /api/datasets/{id}/profile`** no longer blocks on `build_profile`; returns **`PROFILE_NOT_READY`** with **`job_id`** when the cache is empty.
 - Upload/register queue profile refresh jobs; refresh endpoint dedupes active profile jobs.
 - Datasets API split into `datasets_upload`, `datasets_profile`, `datasets_inspect`, and `datasets_jobs` modules (URLs unchanged).
@@ -39,6 +57,7 @@ versioning once formal releases begin.
 - Frontend coverage baseline raised to **92%** (lines/statements); `types.ts` excluded from v8 coverage (still validated via `types.test.ts`).
 - Workspace startup drops a legacy **`schema_version`** table when the current **`dcc_*`** schema validates (avoids requiring **`make clean-local`** after the migration removal).
 - Documentation reorganized: slim root **`README.md`**, tightened **`docs/5-minute-tour.md`**, authoritative tier READMEs, expanded **`SECURITY.md`**, contributor-focused **`CONTRIBUTING.md`** / **`AGENTS.md`**.
+- Dependency: **`idna`** 3.15 (addresses CVE-2026-45409 in 3.14).
 
 ### Removed
 

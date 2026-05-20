@@ -12,3 +12,5 @@ User-facing guides for Data Control Center.
 
 **API and configuration:** [`backend/README.md`](../backend/README.md) and OpenAPI at
 `http://127.0.0.1:8000/docs` when the backend is running.
+
+**Releases (maintainers):** [`RELEASE.md`](RELEASE.md).

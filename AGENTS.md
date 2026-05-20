@@ -78,3 +78,6 @@ posture, workflows, or public API contracts change.
 - Commit messages should be specific, imperative, and based on the actual diff.
 - Before release or public-sharing work, run local cleanup with `make clean-local`
   and verify only intentional tracked changes remain.
+- Before tagging a release, follow the maintainer checklist in
+  [`CONTRIBUTING.md`](CONTRIBUTING.md#release-checklist-maintainers) and
+  [`docs/RELEASE.md`](docs/RELEASE.md).

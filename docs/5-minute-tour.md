@@ -21,9 +21,10 @@ Uploads are copied into the app-owned upload directory before registration.
 
 ## 2. Inspect the data
 
-Select each dataset and browse **Columns** and **Samples** (schema,
-profile summaries, and sample rows). The files are deliberately small so inspection is
-immediate.
+The app opens on **Columns** by default. Select each dataset and browse **Columns** and
+**Samples** (schema, profile summaries, and sample rows). Quality scores and column flags
+appear on **Columns**—there is no separate Quality tab. The files are deliberately small
+so inspection is immediate.
 
 ## 3. Run a query
 

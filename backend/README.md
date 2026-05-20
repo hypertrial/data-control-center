@@ -32,7 +32,10 @@ repo root, **`make backend`** uses the same flags.
 ## Configuration
 
 Settings are defined in [`app/config.py`](app/config.py). Every environment variable uses
-the **`DCC_`** prefix (e.g. `workspace_db_path` → **`DCC_WORKSPACE_DB_PATH`**).
+the **`DCC_`** prefix (e.g. `workspace_db_path` → **`DCC_WORKSPACE_DB_PATH`**). A
+commented starter list lives in [`.env.example`](../.env.example) at the repo root (copy
+to `.env` only if you want a local file; the backend reads **`DCC_*`** from the process
+environment).
 
 ### Local-only security
 

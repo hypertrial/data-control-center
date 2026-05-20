@@ -55,6 +55,8 @@ see [`backend/README.md`](../backend/README.md) for job deduplication behavior.
 
 **Quality score:** Shown in the header and dataset list when a cached profile exists (0–100). Column flags and filters on the **Columns** tab surface per-column quality issues.
 
+**Columns tab:** Opens by default (`/` redirects here). The table sorts by column name ascending on first load; click headers to sort by other metrics. Numeric columns show distribution stats (range, IQR, median, mean, **STDEV**) plus a compact sparkline rail.
+
 **Structure inference (v4):** Profiles detect composite row grain keys, discrete
 temporal axes, **entity identifiers** (separate from row grain), and ranked measure
 candidates. Older cached profiles are invalidated on read.

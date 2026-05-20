@@ -45,6 +45,20 @@ workspace file by hand—that removes app cache, Ask history, and upload copies 
 for breaking changes. Schema details:
 [`backend/README.md`](backend/README.md#workspace-database).
 
+### Upgrading to 1.0.0
+
+If you used **0.1.0**, read [**CHANGELOG — 1.0.0**](CHANGELOG.md#100---2026-05-20) before
+upgrading. In short:
+
+1. **`make clean-local`** (or delete **`.dcc_workspace.duckdb`**) so the workspace and
+   profile cache match the new schema.
+2. Re-open datasets; profiling is async on first load (**`PROFILE_NOT_READY`** + job polling).
+3. Custom Ask clients must call **`POST /api/agent/ask/stream`** only (sync ask removed).
+
+**1.0.0** also changes default UX: **Ask** runs a second Ollama summarization pass by default
+(set **`DCC_AGENT_SUMMARIZE_WITH_LLM=false`** for lower latency). **Columns** opens sorted by
+column name ascending; distribution stats show **STDEV** for standard deviation.
+
 ## API reference
 
 With the backend running: **`http://127.0.0.1:8000/docs`** (Swagger UI).
@@ -68,6 +82,7 @@ With the backend running: **`http://127.0.0.1:8000/docs`** (Swagger UI).
 | [`AGENTS.md`](AGENTS.md) | AI agents | Agent rules; links to CONTRIBUTING for commands |
 | [`SECURITY.md`](SECURITY.md) | Security | Threat model and vulnerability reporting |
 | [`CHANGELOG.md`](CHANGELOG.md) | Upgraders | Breaking changes and release notes |
+| [`docs/RELEASE.md`](docs/RELEASE.md) | Maintainers | Tagging and GitHub Release steps |
 | [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Community | Contributor Covenant |
 
 ## Known limitations (MVP)

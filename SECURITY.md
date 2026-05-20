@@ -2,8 +2,14 @@
 
 ## Supported Versions
 
-Until Data Control Center has formal releases, security fixes are handled on the
-`main` branch.
+| Version | Supported |
+| --- | --- |
+| 1.0.x | Yes |
+| 0.1.0 | Best-effort only; upgrade to 1.0.0 |
+| &lt; 0.1.0 | No |
+
+Security fixes land on **`main`** and are included in the next **1.0.x** patch release.
+See [`docs/RELEASE.md`](docs/RELEASE.md) for tagging steps.
 
 ## Reporting A Vulnerability
 
