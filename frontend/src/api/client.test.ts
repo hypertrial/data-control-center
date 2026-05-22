@@ -260,6 +260,69 @@ describe('api client', () => {
     vi.useRealTimers()
   })
 
+  it('fetchDatasetProfile throws JOB_POLL_TIMEOUT when job polling exceeds timeoutMs', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({
+              error: {
+                code: 'PROFILE_NOT_READY',
+                message: 'Profiling',
+                details: { job_id: 'j1' },
+              },
+            }),
+          ),
+      } as Response)
+      .mockResolvedValue(jsonOk({ job_id: 'j1', status: 'running', kind: 'profile_refresh' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const pending = api.fetchDatasetProfile('ds_1', { timeoutMs: 1500, pollIntervalMs: 500 })
+    const assertion = expect(pending).rejects.toMatchObject({
+      name: 'ApiRequestError',
+      code: 'JOB_POLL_TIMEOUT',
+    })
+    await vi.advanceTimersByTimeAsync(2000)
+    await assertion
+    vi.useRealTimers()
+  })
+
+  it('fetchDatasetProfile rejects with AbortError when signal is aborted', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({
+              error: {
+                code: 'PROFILE_NOT_READY',
+                message: 'Profiling',
+                details: { job_id: 'j1' },
+              },
+            }),
+          ),
+      } as Response)
+      .mockResolvedValueOnce(jsonOk({ job_id: 'j1', status: 'running', kind: 'profile_refresh' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const controller = new AbortController()
+    const pending = api.fetchDatasetProfile('ds_1', { signal: controller.signal })
+    const assertion = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    controller.abort()
+    await vi.advanceTimersByTimeAsync(1200)
+    await assertion
+    vi.useRealTimers()
+  })
+
   it('getJob GET', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonOk({ job_id: 'j1', status: 'queued' }))
     vi.stubGlobal('fetch', fetchMock)

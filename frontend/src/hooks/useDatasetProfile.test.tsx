@@ -36,7 +36,10 @@ describe('useDatasetProfile', () => {
   it('loads profile for dataset id', async () => {
     const { result } = renderHook(() => useDatasetProfile('ds_1'), { wrapper })
     await waitFor(() => expect(result.current.data).toBeDefined())
-    expect(h.fetchDatasetProfile).toHaveBeenCalledWith('ds_1')
+    expect(h.fetchDatasetProfile).toHaveBeenCalledWith(
+      'ds_1',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
   })
 
   it('refresh queues job', async () => {

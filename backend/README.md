@@ -80,7 +80,7 @@ Holds cached profiles (**`structure_version: "v6"`**), profile history, **`dcc_j
 saved SQL, and Ask tables. Implementation: [`app/services/workspace.py`](app/services/workspace.py),
 [`workspace_engine.py`](app/services/workspace_engine.py),
 [`workspace_schema.py`](app/services/workspace_schema.py),
-[`workspace_stores.py`](app/services/workspace_stores.py).
+[`workspace_stores/`](app/services/workspace_stores/).
 
 On open, an empty file gets **`create_workspace_schema`**; an existing file must match
 expected **`dcc_*`** tables. A legacy **`schema_version`** table is dropped automatically

@@ -125,8 +125,51 @@ async function handle<T>(res: Promise<Response>): Promise<T> {
   return r.json() as Promise<T>
 }
 
-async function waitForJob(jobId: string): Promise<JobDetail> {
+const DEFAULT_JOB_POLL_INTERVAL_MS = 1200
+const DEFAULT_JOB_POLL_TIMEOUT_MS = 600_000
+
+export type JobPollOptions = {
+  signal?: AbortSignal
+  timeoutMs?: number
+  pollIntervalMs?: number
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError')
+  }
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  throwIfAborted(signal)
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms)
+    if (!signal) return
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
+    if (signal.aborted) {
+      onAbort()
+      return
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+async function waitForJob(jobId: string, opts?: JobPollOptions): Promise<JobDetail> {
+  const timeoutMs = opts?.timeoutMs ?? DEFAULT_JOB_POLL_TIMEOUT_MS
+  const pollIntervalMs = opts?.pollIntervalMs ?? DEFAULT_JOB_POLL_INTERVAL_MS
+  const started = Date.now()
   for (;;) {
+    throwIfAborted(opts?.signal)
+    if (Date.now() - started > timeoutMs) {
+      throw new ApiRequestError(
+        `Job polling timed out after ${timeoutMs}ms`,
+        'JOB_POLL_TIMEOUT',
+        { job_id: jobId },
+      )
+    }
     const job = await handle<JobDetail>(apiFetch(`${API}/jobs/${encodeURIComponent(jobId)}`))
     if (job.status === 'completed') return job
     if (job.status === 'failed' || job.status === 'canceled') {
@@ -136,11 +179,12 @@ async function waitForJob(jobId: string): Promise<JobDetail> {
         { job_id: jobId },
       )
     }
-    await new Promise((resolve) => setTimeout(resolve, 1200))
+    await sleep(pollIntervalMs, opts?.signal)
   }
 }
 
-async function fetchDatasetProfile(datasetId: string): Promise<DatasetProfile> {
+async function fetchDatasetProfile(datasetId: string, opts?: JobPollOptions): Promise<DatasetProfile> {
+  throwIfAborted(opts?.signal)
   const r = await apiFetch(`${API}/datasets/${datasetId}/profile`)
   const text = await r.text()
   if (r.ok) {
@@ -148,8 +192,8 @@ async function fetchDatasetProfile(datasetId: string): Promise<DatasetProfile> {
   }
   const err = parseApiErrorText(text)
   if (err?.code === 'PROFILE_NOT_READY' && err.details?.job_id) {
-    await waitForJob(String(err.details.job_id))
-    return fetchDatasetProfile(datasetId)
+    await waitForJob(String(err.details.job_id), opts)
+    return fetchDatasetProfile(datasetId, opts)
   }
   throw new ApiRequestError(
     err?.message ?? r.statusText ?? 'Request failed',

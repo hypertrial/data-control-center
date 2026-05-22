@@ -9,7 +9,7 @@ export function useDatasetProfile(datasetId: string | null | undefined) {
 
   const profileQ = useQuery({
     queryKey: ['profile', datasetId],
-    queryFn: () => api.fetchDatasetProfile(datasetId!),
+    queryFn: ({ signal }) => api.fetchDatasetProfile(datasetId!, { signal }),
     enabled: !!datasetId,
   })
 

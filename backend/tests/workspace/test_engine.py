@@ -286,6 +286,41 @@ def test_update_saved_query_missing_returns_false(tmp_path: Path) -> None:
         ws.close()
 
 
+def test_update_saved_query_without_fields_is_noop(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    try:
+        sid = ws.saved_queries.insert_saved_query("n", "SELECT 1")
+        assert ws.saved_queries.update_saved_query(sid) is True
+        assert ws.saved_queries.get_saved_query(sid)["sql"] == "SELECT 1"
+    finally:
+        ws.close()
+
+
+def test_job_get_parses_invalid_result_json(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    try:
+        ws.jobs.job_insert("job_bad", "profile_refresh", "ds_x", "completed")
+        with ws._engine.lock_db() as con:
+            con.execute(
+                "UPDATE dcc_jobs SET result_json = ? WHERE job_id = ?",
+                ["not-json", "job_bad"],
+            )
+        row = ws.jobs.job_get("job_bad")
+        assert row is not None
+        assert row["result"] is None
+        with ws._engine.lock_db() as con:
+            con.execute(
+                "UPDATE dcc_jobs SET result_json = ? WHERE job_id = ?",
+                ['["list"]', "job_bad"],
+            )
+        row = ws.jobs.job_get("job_bad")
+        assert row["result"] is None
+    finally:
+        ws.close()
+
+
 def test_workspace_path_property(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     ws = Workspace(settings)

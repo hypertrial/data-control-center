@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { Suspense, lazy, type ReactNode } from 'react'
 import { QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { LayoutDashboard } from 'lucide-react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
@@ -10,11 +10,20 @@ import { Toaster } from '@/components/ui/toaster'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { DatasetSidebar } from '@/features/datasets/DatasetSidebar'
 import { DatasetDropzone } from '@/features/datasets/DatasetDropzone'
-import { AskPage } from '@/features/ask/AskPage'
-import { ChartsPage } from '@/features/charts/ChartsPage'
-import { ColumnsPage } from '@/features/columns/ColumnsPage'
-import { SamplesPage } from '@/features/samples/SamplesPage'
-import { QueryPage } from '@/features/query/QueryPage'
+
+const ColumnsPage = lazy(() =>
+  import('@/features/columns/ColumnsPage').then((m) => ({ default: m.ColumnsPage })),
+)
+const SamplesPage = lazy(() =>
+  import('@/features/samples/SamplesPage').then((m) => ({ default: m.SamplesPage })),
+)
+const ChartsPage = lazy(() =>
+  import('@/features/charts/ChartsPage').then((m) => ({ default: m.ChartsPage })),
+)
+const AskPage = lazy(() => import('@/features/ask/AskPage').then((m) => ({ default: m.AskPage })))
+const QueryPage = lazy(() =>
+  import('@/features/query/QueryPage').then((m) => ({ default: m.QueryPage })),
+)
 import { CommandPalette } from '@/features/shell/CommandPalette'
 import { ShortcutCheatsheet } from '@/features/shell/ShortcutCheatsheet'
 import { MainScrollRegion } from '@/features/shell/MainScrollRegion'
@@ -57,17 +66,28 @@ function EmptyWorkspaceHero() {
   )
 }
 
+function RouteLoadingFallback() {
+  return (
+    <div className="space-y-3 p-6">
+      <CardSkeleton />
+      <CardSkeleton />
+    </div>
+  )
+}
+
 function RoutedPages() {
   return (
-    <Routes>
-      <Route path="/" element={<Navigate to="/columns" replace />} />
-      <Route path="/columns" element={<ColumnsPage />} />
-      <Route path="/quality" element={<Navigate to="/columns" replace />} />
-      <Route path="/samples" element={<SamplesPage />} />
-      <Route path="/charts" element={<ChartsPage />} />
-      <Route path="/ask" element={<AskPage />} />
-      <Route path="/sql" element={<QueryPage />} />
-    </Routes>
+    <Suspense fallback={<RouteLoadingFallback />}>
+      <Routes>
+        <Route path="/" element={<Navigate to="/columns" replace />} />
+        <Route path="/columns" element={<ColumnsPage />} />
+        <Route path="/quality" element={<Navigate to="/columns" replace />} />
+        <Route path="/samples" element={<SamplesPage />} />
+        <Route path="/charts" element={<ChartsPage />} />
+        <Route path="/ask" element={<AskPage />} />
+        <Route path="/sql" element={<QueryPage />} />
+      </Routes>
+    </Suspense>
   )
 }
 

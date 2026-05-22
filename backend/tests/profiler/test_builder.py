@@ -1241,3 +1241,93 @@ def test_numeric_describe_strings_median_raises(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(pl.Series, "median", _boom)
     *_, med_v, _ = _numeric_describe_strings(s)
     assert med_v is None
+
+
+def test_merge_late_full_metrics_branches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services.profiler.builder import (
+        ColumnDerivationResult,
+        FullMetricsResult,
+        ProfileInputs,
+        StructureInferenceResult,
+        _merge_late_full_metrics,
+    )
+    from app.services.profiler.full_metrics import FullProfileMetrics
+    from app.models.api import MetricScope
+
+    path = tmp_path / "merge_metrics.parquet"
+    pl.DataFrame({"a": [1], "b": ["x"]}).write_parquet(path)
+    settings = Settings(
+        workspace_db_path=tmp_path / "workspace.duckdb",
+        allow_arbitrary_registration_paths=True,
+    )
+    ws = Workspace(settings)
+    reg = DatasetRegistry(ws, settings)
+    ds = reg.register_path(path)
+    try:
+        inputs = ProfileInputs(
+            names=["a", "b"],
+            dtypes={"a": "int64", "b": "str"},
+            stats={},
+            row_count=1,
+            col_count=2,
+            df_sample=pl.DataFrame({"a": [1], "b": ["x"]}),
+            profile_sample_rows=1,
+            sample_n=1,
+            metric_scope=MetricScope.full,
+            total_cells=2,
+        )
+        columns = ColumnDerivationResult(
+            col_profiles=[],
+            null_cells=0,
+            temporal_cols=[],
+            entity_candidates=[],
+            sample_dup_pct=None,
+            dup_pct=None,
+            dup_scope=None,
+            missing_cell_pct=None,
+            semantic_elapsed_ms=0,
+        )
+        structure = StructureInferenceResult(
+            temporal_cols=[],
+            primary_temporal=None,
+            primary_date=None,
+            measure_candidates=[],
+            measures=[],
+            entity_final=[],
+            entity_name_set=set(),
+            id_column_names=[],
+            grain_candidates=[],
+            grain_key_scope=MetricScope.full,
+            primary_grain=[],
+            key_candidates=[],
+            key_search_elapsed_ms=0,
+            measure_elapsed_ms=0,
+            top_value_columns=[],
+            primary_grain_conf=None,
+        )
+        assert _merge_late_full_metrics(inputs, ds, ws, settings, structure, FullMetricsResult(), columns).metrics is None
+
+        structure.top_value_columns = ["b"]
+        def _late_fail(*_a, **_k):
+            raise RuntimeError("late fail")
+
+        monkeypatch.setattr(
+            "app.services.profiler.builder.collect_full_profile_metrics",
+            _late_fail,
+        )
+        late_fail = _merge_late_full_metrics(
+            inputs, ds, ws, settings, structure, FullMetricsResult(), columns
+        )
+        assert late_fail.metrics is not None
+        assert "Full profile metrics were unavailable" in late_fail.warnings[0]
+
+        monkeypatch.setattr(
+            "app.services.profiler.builder.collect_full_profile_metrics",
+            lambda *a, **k: FullProfileMetrics(warnings=[]),
+        )
+        late_ok = _merge_late_full_metrics(
+            inputs, ds, ws, settings, structure, FullMetricsResult(), columns
+        )
+        assert late_ok.metrics is not None
+    finally:
+        ws.close()

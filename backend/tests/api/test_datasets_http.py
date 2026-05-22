@@ -560,11 +560,47 @@ def test_profile_refresh_fn_missing_dataset(tmp_path) -> None:
     raise AssertionError("job did not finish")
 
 
+def test_profile_refresh_fn_build_failure(tmp_path, monkeypatch) -> None:
+    from app.api.datasets_jobs import _profile_refresh_fn
+    from app.config import Settings
+    from app.services.jobs import JobService
+    from app.services.registry import DatasetRegistry
+    from app.services.workspace import Workspace
+
+    settings = Settings(
+        workspace_db_path=tmp_path / "w.duckdb",
+        allow_arbitrary_registration_paths=True,
+    )
+    ws = Workspace(settings)
+    reg = DatasetRegistry(ws, settings)
+    p = tmp_path / "x.csv"
+    p.write_text("id\n1\n")
+    ds = reg.register_path(p)
+
+    def boom(*a, **k):  # noqa: ANN002, ANN003
+        raise RuntimeError("prof fail")
+
+    monkeypatch.setattr("app.api.datasets_jobs.build_profile", boom)
+    jobs = JobService(ws)
+    fn = _profile_refresh_fn(ds.dataset_id, reg, ws, settings)
+    job_id = jobs.submit(kind="profile_refresh", dataset_id=ds.dataset_id, fn=fn)
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        row = ws.jobs.job_get(job_id)
+        if row and row["status"] in {"completed", "failed", "canceled"}:
+            assert row["status"] == "failed"
+            assert row["error_code"] == "JOB_FAILED"
+            return
+        time.sleep(0.02)
+    raise AssertionError("job did not finish")
+
+
 def test_refresh_profile_build_failure(client, tmp_path, monkeypatch):
     csv = tmp_path / "t.csv"
     csv.write_text("id\n1\n")
     reg = client.post("/api/datasets/register-file", json={"path": str(csv)})
     did = reg.json()["dataset_id"]
+    _wait_for_profile(client, did)
 
     def boom(*a, **k):  # noqa: ANN002, ANN003
         raise RuntimeError("prof fail")
