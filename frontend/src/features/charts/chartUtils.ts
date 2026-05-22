@@ -95,6 +95,11 @@ function uniqueNames(names: string[]): string[] {
   return [...new Set(names.filter(Boolean))]
 }
 
+/** Ascending locale order for column pickers in the Charts UI. */
+export function sortColumnNamesAsc(names: string[]): string[] {
+  return [...names].sort((a, b) => a.localeCompare(b))
+}
+
 export function getTemporalColumnNames(profile: DatasetProfile | undefined): string[] {
   if (!profile) return []
   const names = new Set<string>()

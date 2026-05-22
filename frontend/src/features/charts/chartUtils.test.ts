@@ -20,6 +20,7 @@ import {
   getTemporalColumnNames,
   normalizeChartSpec,
   queryResultToChartData,
+  sortColumnNamesAsc,
   validateChartSpec,
   type ChartSpec,
 } from '@/features/charts/chartUtils'
@@ -58,6 +59,11 @@ function baseSpec(overrides: Partial<ChartSpec> = {}): ChartSpec {
 }
 
 describe('chartUtils', () => {
+  it('sorts column names for chart pickers in ascending locale order', () => {
+    expect(sortColumnNamesAsc(['z', 'a', 'm'])).toEqual(['a', 'm', 'z'])
+    expect(sortColumnNamesAsc(['b', 'a'])).toEqual(['a', 'b'])
+  })
+
   it('selects histogram defaults from profile metadata', () => {
     const profile = mkProfile({
       name: 'Orders',

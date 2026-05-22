@@ -22,6 +22,7 @@ import {
   getTemporalColumnNames,
   getTemporalKind,
   isBucketableTemporalColumn,
+  sortColumnNamesAsc,
   queryResultToChartData,
   validateChartSpec,
   type ChartSpec,
@@ -40,11 +41,11 @@ export function useChartWorkspaceState(activeId: string, profile: DatasetProfile
   const runChart = useMutation({ mutationFn: api.runQuery })
   const { mutate: runChartQuery, reset: resetRunChart } = runChart
 
-  const temporalColumns = useMemo(() => getTemporalColumnNames(profile), [profile])
-  const numericColumns = useMemo(() => getNumericColumnNames(profile), [profile])
-  const categoryColumns = useMemo(() => getCategoryColumnNames(profile), [profile])
-  const splitColumns = useMemo(() => getSplitColumnNames(profile), [profile])
-  const filterColumns = useMemo(() => getFilterColumnNames(profile), [profile])
+  const temporalColumns = useMemo(() => sortColumnNamesAsc(getTemporalColumnNames(profile)), [profile])
+  const numericColumns = useMemo(() => sortColumnNamesAsc(getNumericColumnNames(profile)), [profile])
+  const categoryColumns = useMemo(() => sortColumnNamesAsc(getCategoryColumnNames(profile)), [profile])
+  const splitColumns = useMemo(() => sortColumnNamesAsc(getSplitColumnNames(profile)), [profile])
+  const filterColumns = useMemo(() => sortColumnNamesAsc(getFilterColumnNames(profile)), [profile])
 
   const validation = useMemo(() => validateChartSpec(spec, viewName, profile), [spec, viewName, profile])
   const generatedSql = useMemo(
