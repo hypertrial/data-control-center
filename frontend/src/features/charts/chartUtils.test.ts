@@ -2,12 +2,20 @@ import { describe, expect, it } from 'vitest'
 import type { QueryResult } from '@/api/types'
 import { mkColumn, mkProfile } from '@/test/profileFixtures'
 import {
+  buildBarChartOption,
+  buildBarChartSql,
+  buildChartOption,
   buildChartSql,
   buildHistogramChartOption,
   buildHistogramChartSql,
   buildLineChartOption,
   buildLineChartSql,
+  buildScatterChartOption,
+  buildScatterChartSql,
   createDefaultChartSpec,
+  getCategoryColumnNames,
+  getDefaultCategoryColumn,
+  getDefaultScatterColumns,
   getNumericColumnNames,
   getTemporalColumnNames,
   normalizeChartSpec,
@@ -18,7 +26,7 @@ import {
 
 function baseSpec(overrides: Partial<ChartSpec> = {}): ChartSpec {
   return {
-    version: 3,
+    version: 4,
     datasetId: 'ds_001',
     chartType: 'line',
     valueColumn: 'gross revenue',
@@ -44,6 +52,7 @@ function baseSpec(overrides: Partial<ChartSpec> = {}): ChartSpec {
     connectNulls: false,
     xAxisLabel: 'order date',
     yAxisLabel: '',
+    topN: 25,
     ...overrides,
   }
 }
@@ -78,10 +87,10 @@ describe('chartUtils', () => {
     expect(spec.valueColumnInteger).toBe(true)
     expect(spec.binCount).toBe(12)
     expect(spec.xColumn).toBe('order_date')
-    expect(spec.xColumnBucketable).toBe(true)
+    expect(spec.xColumnBucketable).toBe(false)
     expect(spec.yColumns).toEqual(['profit', 'revenue'])
     expect(spec.aggregation).toBe('avg')
-    expect(spec.bucket).toBe('month')
+    expect(spec.bucket).toBe('none')
     expect(spec.title).toBe('profit distribution')
   })
 
@@ -287,6 +296,286 @@ describe('chartUtils', () => {
       { axisValueLabel: '0 - 10', seriesName: 'East', value: 4 },
       { axisValueLabel: '0 - 10', seriesName: 'West', value: 2 },
     ])).toContain('0 - 10')
+  })
+
+  it('defaults to bar chart when categorical columns exist without numerics', () => {
+    const profile = mkProfile({
+      numeric_column_count: 0,
+      measure_candidates: [],
+      temporal_columns: [],
+      primary_temporal_column: null,
+      column_profiles: [
+        mkColumn({ name: 'region', semantic_type: 'categorical', cardinality: 4 }),
+        mkColumn({ name: 'status', semantic_type: 'categorical', cardinality: 2 }),
+      ],
+    })
+
+    expect(getCategoryColumnNames(profile)).toEqual(['region', 'status'])
+    expect(getDefaultCategoryColumn(profile)).toBe('region')
+
+    const spec = createDefaultChartSpec('ds_001', profile)
+    expect(spec.chartType).toBe('bar')
+    expect(spec.xColumn).toBe('region')
+    expect(spec.yColumns).toEqual([])
+    expect(spec.aggregation).toBe('count')
+    expect(spec.topN).toBe(25)
+    expect(spec.title).toBe('region by count')
+  })
+
+  it('provides scatter column defaults from numeric profile columns', () => {
+    const profile = mkProfile({
+      measure_candidates: [
+        { name: 'height', score: 0.9, confidence: 'high' },
+        { name: 'weight', score: 0.8, confidence: 'high' },
+      ],
+      temporal_columns: [],
+      primary_temporal_column: null,
+      column_profiles: [
+        mkColumn({ name: 'height', semantic_type: 'numeric' }),
+        mkColumn({ name: 'weight', semantic_type: 'numeric' }),
+      ],
+    })
+
+    expect(getDefaultScatterColumns(profile)).toEqual({ x: 'height', y: 'weight' })
+    const spec = createDefaultChartSpec('ds_001', profile)
+    expect(spec.chartType).toBe('histogram')
+  })
+
+  it('validates bar and scatter specs', () => {
+    const profile = mkProfile({
+      column_profiles: [
+        mkColumn({ name: 'region', semantic_type: 'categorical', cardinality: 4 }),
+        mkColumn({ name: 'revenue', semantic_type: 'numeric' }),
+        mkColumn({ name: 'profit', semantic_type: 'numeric' }),
+      ],
+    })
+
+    expect(validateChartSpec(baseSpec({ chartType: 'bar', xColumn: '' }), 'orders', profile).reason).toMatch(/category/i)
+    expect(
+      validateChartSpec(
+        baseSpec({ chartType: 'bar', xColumn: 'region', yColumns: [], aggregation: 'sum' }),
+        'orders',
+        profile,
+      ).reason,
+    ).toMatch(/Count aggregation|measure/i)
+    expect(
+      validateChartSpec(baseSpec({ chartType: 'bar', xColumn: 'region', yColumns: [], aggregation: 'count' }), 'orders', profile),
+    ).toEqual({ valid: true, reason: null })
+    expect(
+      validateChartSpec(baseSpec({ chartType: 'scatter', xColumn: 'revenue', yColumns: ['revenue'] }), 'orders', profile).reason,
+    ).toMatch(/different numeric/i)
+    expect(
+      validateChartSpec(baseSpec({ chartType: 'scatter', xColumn: 'revenue', yColumns: ['profit'], aggregation: 'none' }), 'orders', profile),
+    ).toEqual({ valid: true, reason: null })
+  })
+
+  it('builds bar SQL for count-only and aggregated measures with top N', () => {
+    const countSql = buildBarChartSql(
+      baseSpec({ chartType: 'bar', xColumn: 'region', yColumns: [], aggregation: 'count', topN: 10 }),
+      'orders',
+    )
+    expect(countSql.toLowerCase()).toContain('_dcc_bar_ranked')
+    expect(countSql.toLowerCase()).toContain('count(*)')
+    expect(countSql.toLowerCase()).toMatch(/limit\s+10/)
+    expect(countSql).toContain('group by 1')
+
+    const sumSql = buildBarChartSql(
+      baseSpec({ chartType: 'bar', xColumn: 'region', yColumns: ['gross revenue'], aggregation: 'sum', topN: 15 }),
+      'orders',
+    )
+    expect(sumSql).toContain('sum("gross revenue")')
+    expect(sumSql.toLowerCase()).toMatch(/limit\s+15/)
+    expect(buildChartSql(baseSpec({ chartType: 'bar', xColumn: 'region', yColumns: [], aggregation: 'count' }), 'orders')).toContain(
+      'count(*)',
+    )
+  })
+
+  it('builds scatter SQL without grouping and maps scatter rows', () => {
+    const sql = buildScatterChartSql(
+      baseSpec({ chartType: 'scatter', xColumn: 'gross revenue', yColumns: ['profit'], aggregation: 'none' }),
+      'orders',
+    )
+    expect(sql).toContain('"gross revenue" as x')
+    expect(sql.toLowerCase()).toContain('profit as y')
+    expect(sql).not.toContain('group by')
+    expect(sql).toContain('limit 5000')
+
+    const splitSql = buildScatterChartSql(
+      baseSpec({ chartType: 'scatter', xColumn: 'gross revenue', yColumns: ['profit'], splitBy: 'region', aggregation: 'none' }),
+      'orders',
+    )
+    expect(splitSql.toLowerCase()).toContain('cast(region as varchar) as split')
+
+    const result: QueryResult = {
+      columns: [{ name: 'x', type: null }, { name: 'y', type: null }],
+      rows: [
+        { x: 1, y: 2 },
+        { x: '3', y: '4' },
+      ],
+      row_count: 2,
+      truncated: false,
+      error: null,
+    }
+    const spec = baseSpec({ chartType: 'scatter', xColumn: 'gross revenue', yColumns: ['profit'], aggregation: 'none' })
+    expect(queryResultToChartData(result, spec)).toEqual([
+      { x: 1, values: { profit: 2 } },
+      { x: 3, values: { profit: 4 } },
+    ])
+
+    const option = buildScatterChartOption(spec, queryResultToChartData(result, spec))
+    expect(option.xAxis).toEqual(expect.objectContaining({ type: 'value' }))
+    expect(option.series).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'scatter', data: [[1, 2], [3, 4]] })]),
+    )
+  })
+
+  it('maps bar rows and renders category bar options', () => {
+    const spec = baseSpec({ chartType: 'bar', xColumn: 'region', yColumns: [], aggregation: 'count' })
+    const result: QueryResult = {
+      columns: [{ name: 'x', type: null }, { name: 'count', type: null }],
+      rows: [
+        { x: 'East', count: 4 },
+        { x: 'West', count: 2 },
+      ],
+      row_count: 2,
+      truncated: false,
+      error: null,
+    }
+    const data = queryResultToChartData(result, spec)
+    expect(data).toEqual([
+      { x: 'East', values: { Count: 4 } },
+      { x: 'West', values: { Count: 2 } },
+    ])
+    const option = buildBarChartOption(spec, data)
+    expect(option.xAxis).toEqual(expect.objectContaining({ type: 'category', data: ['East', 'West'] }))
+    expect(option.series).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'Count', type: 'bar', data: [4, 2] })]),
+    )
+  })
+
+  it('builds bar split SQL and grouped bar chart options', () => {
+    const spec = baseSpec({
+      chartType: 'bar',
+      xColumn: 'region',
+      yColumns: ['gross revenue'],
+      aggregation: 'avg',
+      splitBy: 'team',
+      topN: 5,
+    })
+    const sql = buildBarChartSql(spec, 'orders')
+    expect(sql.toLowerCase()).toContain('cast(team as varchar) as split')
+    expect(sql.toLowerCase()).toMatch(/limit\s+5/)
+
+    const result: QueryResult = {
+      columns: [{ name: 'x', type: null }, { name: 'split', type: null }, { name: 'value', type: null }],
+      rows: [
+        { x: 'East', split: 'A', value: 10 },
+        { x: 'East', split: 'B', value: 12 },
+      ],
+      row_count: 2,
+      truncated: false,
+      error: null,
+    }
+    const data = queryResultToChartData(result, spec)
+    expect(data).toEqual([{ x: 'East', values: { A: 10, B: 12 } }])
+    const option = buildBarChartOption(spec, data)
+    expect(option.legend).toBeDefined()
+    expect(option.series).toHaveLength(2)
+    expect(buildChartOption(spec, data).series).toHaveLength(2)
+  })
+
+  it('renders scatter split legend and adjusts point opacity by row count', () => {
+    const spec = baseSpec({
+      chartType: 'scatter',
+      xColumn: 'gross revenue',
+      yColumns: ['profit'],
+      splitBy: 'region',
+      aggregation: 'none',
+      showLegend: true,
+    })
+    const splitResult: QueryResult = {
+      columns: [{ name: 'x', type: null }, { name: 'y', type: null }, { name: 'split', type: null }],
+      rows: [{ x: 1, y: 2, split: 'East' }],
+      row_count: 1,
+      truncated: false,
+      error: null,
+    }
+    const splitData = queryResultToChartData(splitResult, spec)
+    const splitOption = buildScatterChartOption(spec, splitData)
+    expect(splitOption.legend).toBeDefined()
+
+    const dense = Array.from({ length: 250 }, (_, index) => ({
+      x: index,
+      values: { profit: index },
+    }))
+    expect((buildScatterChartOption(spec, dense).series as Array<{ itemStyle: { opacity: number } }>)[0]?.itemStyle.opacity).toBe(
+      0.55,
+    )
+
+    const veryDense = Array.from({ length: 900 }, (_, index) => ({
+      x: index,
+      values: { profit: index },
+    }))
+    expect(
+      (buildScatterChartOption(spec, veryDense).series as Array<{ itemStyle: { opacity: number } }>)[0]?.itemStyle.opacity,
+    ).toBe(0.35)
+  })
+
+  it('normalizes bar and scatter specs from saved JSON', () => {
+    const profile = mkProfile({
+      column_profiles: [
+        mkColumn({ name: 'region', semantic_type: 'categorical', cardinality: 4 }),
+        mkColumn({ name: 'revenue', semantic_type: 'numeric' }),
+        mkColumn({ name: 'profit', semantic_type: 'numeric' }),
+      ],
+    })
+    const bar = normalizeChartSpec(
+      { version: 4, chartType: 'bar', xColumn: 'region', yColumns: [], aggregation: 'count', topN: 40 },
+      'ds_001',
+      profile,
+    )
+    expect(bar.chartType).toBe('bar')
+    expect(bar.topN).toBe(40)
+    expect(bar.yColumns).toEqual([])
+
+    const scatter = normalizeChartSpec(
+      { version: 4, chartType: 'scatter', xColumn: 'revenue', yColumns: ['profit', 'revenue'], splitBy: 'region' },
+      'ds_001',
+      profile,
+    )
+    expect(scatter.aggregation).toBe('none')
+    expect(scatter.referenceLines).toEqual([])
+    expect(scatter.yColumns).toEqual(['profit'])
+  })
+
+  it('rejects invalid bar topN and non-category X columns', () => {
+    const profile = mkProfile({
+      column_profiles: [
+        mkColumn({ name: 'region', semantic_type: 'categorical', cardinality: 4 }),
+        mkColumn({ name: 'order_date', semantic_type: 'datetime' }),
+        mkColumn({ name: 'revenue', semantic_type: 'numeric' }),
+      ],
+    })
+    expect(
+      validateChartSpec(
+        baseSpec({ chartType: 'bar', xColumn: 'region', yColumns: [], aggregation: 'count', topN: 0 }),
+        'orders',
+        profile,
+      ).reason,
+    ).toMatch(/Top N/i)
+    expect(
+      validateChartSpec(baseSpec({ chartType: 'bar', xColumn: 'order_date', yColumns: [], aggregation: 'count' }), 'orders', profile)
+        .reason,
+    ).toMatch(/categorical/i)
+  })
+
+  it('normalizes v3 specs to v4 with topN', () => {
+    const profile = mkProfile({
+      column_profiles: [mkColumn({ name: 'revenue', semantic_type: 'numeric' })],
+    })
+    const spec = normalizeChartSpec({ version: 3, chartType: 'histogram', valueColumn: 'revenue' }, 'ds_001', profile)
+    expect(spec.version).toBe(4)
+    expect(spec.topN).toBe(25)
   })
 
   it('maps query rows into chart data and coerces numeric strings', () => {

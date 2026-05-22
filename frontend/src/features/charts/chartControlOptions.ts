@@ -1,6 +1,19 @@
 import { cn } from '@/lib/utils'
 import type { ChartAggregation, ChartBucket, ChartFilterOperator, ChartYAxisScale } from '@/features/charts/chartUtils'
 
+export const BAR_AGGREGATIONS: Array<{ value: ChartAggregation; label: string }> = [
+  { value: 'count', label: 'Count' },
+  { value: 'sum', label: 'Sum' },
+  { value: 'avg', label: 'Average' },
+  { value: 'min', label: 'Minimum' },
+  { value: 'max', label: 'Maximum' },
+  { value: 'median', label: 'Median' },
+  { value: 'stddev', label: 'Std dev' },
+  { value: 'p25', label: 'p25' },
+  { value: 'p75', label: 'p75' },
+  { value: 'count_distinct', label: 'Count distinct' },
+]
+
 export const AGGREGATIONS: Array<{ value: ChartAggregation; label: string }> = [
   { value: 'none', label: 'None' },
   { value: 'avg', label: 'Average' },

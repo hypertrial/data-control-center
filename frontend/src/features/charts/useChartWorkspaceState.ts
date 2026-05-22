@@ -17,6 +17,7 @@ import {
   getColumnSemanticType,
   getFilterColumnNames,
   getNumericColumnNames,
+  getCategoryColumnNames,
   getSplitColumnNames,
   getTemporalColumnNames,
   getTemporalKind,
@@ -41,10 +42,11 @@ export function useChartWorkspaceState(activeId: string, profile: DatasetProfile
 
   const temporalColumns = useMemo(() => getTemporalColumnNames(profile), [profile])
   const numericColumns = useMemo(() => getNumericColumnNames(profile), [profile])
+  const categoryColumns = useMemo(() => getCategoryColumnNames(profile), [profile])
   const splitColumns = useMemo(() => getSplitColumnNames(profile), [profile])
   const filterColumns = useMemo(() => getFilterColumnNames(profile), [profile])
 
-  const validation = useMemo(() => validateChartSpec(spec, viewName), [spec, viewName])
+  const validation = useMemo(() => validateChartSpec(spec, viewName, profile), [spec, viewName, profile])
   const generatedSql = useMemo(
     () => (validation.valid && viewName ? buildChartSql(spec, viewName) : ''),
     [spec, validation.valid, viewName],
@@ -132,6 +134,7 @@ export function useChartWorkspaceState(activeId: string, profile: DatasetProfile
     runChart,
     temporalColumns,
     numericColumns,
+    categoryColumns,
     splitColumns,
     filterColumns,
     validation,

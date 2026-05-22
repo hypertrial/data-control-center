@@ -4,8 +4,9 @@ import { chartAxisLabelStyle, chartPalette, chartTooltip, hslFromRootVar } from 
 import { formatAnalyticsSql, quoteIdent, quoteLiteral } from '@/lib/sql'
 
 export const CHART_MAX_ROWS = 5000
-export const CHART_SPEC_VERSION = 3
+export const CHART_SPEC_VERSION = 4
 export const DEFAULT_HISTOGRAM_BINS = 12
+export const DEFAULT_BAR_TOP_N = 25
 
 export type ChartAggregation =
   | 'none'
@@ -33,7 +34,7 @@ export type ChartFilterOperator =
   | 'is_null'
   | 'is_not_null'
 export type ChartYAxisScale = 'auto' | 'zero' | 'manual'
-export type ChartType = 'histogram' | 'line'
+export type ChartType = 'histogram' | 'line' | 'bar' | 'scatter'
 
 export type ChartFilter = {
   id: string
@@ -75,6 +76,7 @@ export type ChartSpec = {
   connectNulls: boolean
   xAxisLabel: string
   yAxisLabel: string
+  topN: number
 }
 
 export type ChartDataPoint = {
@@ -173,6 +175,39 @@ export function getSplitColumnNames(profile: DatasetProfile | undefined): string
     .map((c) => c.name)
 }
 
+export function getCategoryColumnNames(profile: DatasetProfile | undefined): string[] {
+  if (!profile) return []
+  return profile.column_profiles
+    .filter(
+      (c) =>
+        ['categorical', 'boolean_like', 'id_like'].includes(c.semantic_type) ||
+        (c.semantic_type === 'text' && (c.cardinality ?? 999) <= 50),
+    )
+    .map((c) => c.name)
+}
+
+export function isCategoryColumn(profile: DatasetProfile | undefined, column: string): boolean {
+  return column ? getCategoryColumnNames(profile).includes(column) : false
+}
+
+export function getDefaultCategoryColumn(profile: DatasetProfile | undefined): string {
+  const names = getCategoryColumnNames(profile)
+  const preferred = names.find((name) => {
+    const cardinality = getColumnCardinality(profile, name)
+    return cardinality != null && cardinality >= 2 && cardinality <= 50
+  })
+  return preferred ?? names[0] ?? ''
+}
+
+export function getDefaultScatterColumns(profile: DatasetProfile | undefined): { x: string; y: string } {
+  const numeric = getNumericColumnNames(profile)
+  return { x: numeric[0] ?? '', y: numeric[1] ?? numeric[0] ?? '' }
+}
+
+function isBarCountOnly(spec: ChartSpec): boolean {
+  return spec.aggregation === 'count' && !spec.yColumns[0]
+}
+
 export function getFilterColumnNames(profile: DatasetProfile | undefined): string[] {
   if (!profile) return []
   return profile.column_profiles.map((c) => c.name)
@@ -182,13 +217,44 @@ export function getColumnCardinality(profile: DatasetProfile | undefined, column
   return columnProfile(profile, column)?.cardinality ?? null
 }
 
-export function createDefaultChartSpec(datasetId: string, profile: DatasetProfile | undefined): ChartSpec {
-  const xColumn = getTemporalColumnNames(profile)[0] ?? ''
+function buildChartSpec(
+  datasetId: string,
+  profile: DatasetProfile | undefined,
+  chartType: ChartType,
+  partial: Partial<ChartSpec> = {},
+): ChartSpec {
+  const temporalX = getTemporalColumnNames(profile)[0] ?? ''
   const numericColumns = getNumericColumnNames(profile)
-  const yColumns = numericColumns.filter((name) => name !== xColumn).slice(0, 3)
+  const categoryColumn = getDefaultCategoryColumn(profile)
+  const scatterColumns = getDefaultScatterColumns(profile)
   const valueColumn = getDefaultHistogramColumn(profile, numericColumns)
-  const xColumnBucketable = isBucketableTemporalColumn(profile, xColumn)
-  const chartType: ChartType = valueColumn ? 'histogram' : 'line'
+  const lineX = temporalX
+  const lineYColumns = numericColumns.filter((name) => name !== lineX).slice(0, 3)
+  const lineBucketable = isBucketableTemporalColumn(profile, lineX)
+  const barMeasure = numericColumns[0] ?? ''
+  const barCountOnly = !barMeasure
+
+  const xColumn =
+    chartType === 'bar'
+      ? categoryColumn
+      : chartType === 'scatter'
+        ? scatterColumns.x
+        : chartType === 'histogram'
+          ? temporalX
+          : lineX
+  const yColumns =
+    chartType === 'scatter'
+      ? scatterColumns.y ? [scatterColumns.y] : []
+      : chartType === 'bar'
+        ? barCountOnly
+          ? []
+          : [barMeasure]
+        : chartType === 'histogram'
+          ? lineYColumns
+          : lineYColumns
+  const xColumnBucketable = chartType === 'line' ? lineBucketable : false
+  const xColumnTemporalKind = chartType === 'line' ? getTemporalKind(profile, lineX) : null
+
   return {
     version: CHART_SPEC_VERSION,
     datasetId,
@@ -198,27 +264,87 @@ export function createDefaultChartSpec(datasetId: string, profile: DatasetProfil
     binCount: DEFAULT_HISTOGRAM_BINS,
     xColumn,
     xColumnBucketable,
-    xColumnTemporalKind: getTemporalKind(profile, xColumn),
+    xColumnTemporalKind,
     yColumns,
-    aggregation: 'avg',
-    bucket: xColumnBucketable ? 'month' : 'none',
+    aggregation:
+      chartType === 'bar'
+        ? barCountOnly
+          ? 'count'
+          : 'sum'
+        : chartType === 'scatter'
+          ? 'none'
+          : 'avg',
+    bucket: chartType === 'line' && lineBucketable ? 'month' : 'none',
     filters: [],
     splitBy: '',
-    yAxisScale: chartType === 'histogram' ? 'zero' : 'auto',
+    topN: DEFAULT_BAR_TOP_N,
+    yAxisScale: chartType === 'histogram' || chartType === 'bar' ? 'zero' : 'auto',
     yAxisMin: '',
     yAxisMax: '',
     referenceLines: [],
-    showDataZoom: true,
-    title: chartType === 'histogram'
-      ? valueColumn ? `${valueColumn} distribution` : 'Dataset distribution'
-      : profile?.name ? `${profile.name} trends` : 'Dataset trends',
+    showDataZoom: chartType !== 'scatter',
+    title:
+      chartType === 'histogram'
+        ? valueColumn
+          ? `${valueColumn} distribution`
+          : 'Dataset distribution'
+        : chartType === 'bar'
+          ? categoryColumn
+            ? barCountOnly
+              ? `${categoryColumn} by count`
+              : `${categoryColumn} by ${barMeasure}`
+            : 'Category comparison'
+          : chartType === 'scatter'
+            ? scatterColumns.x && scatterColumns.y
+              ? `${scatterColumns.y} vs ${scatterColumns.x}`
+              : 'Scatter plot'
+            : profile?.name
+              ? `${profile.name} trends`
+              : 'Dataset trends',
     showLegend: true,
     smooth: false,
     showPoints: false,
     connectNulls: false,
-    xAxisLabel: chartType === 'histogram' ? valueColumn : xColumn,
-    yAxisLabel: chartType === 'histogram' ? 'Count' : '',
+    xAxisLabel:
+      chartType === 'histogram'
+        ? valueColumn
+        : chartType === 'bar'
+          ? categoryColumn
+          : chartType === 'scatter'
+            ? scatterColumns.x
+            : lineX,
+    yAxisLabel:
+      chartType === 'histogram' || (chartType === 'bar' && barCountOnly)
+        ? 'Count'
+        : chartType === 'scatter'
+          ? scatterColumns.y
+          : '',
+    ...partial,
   }
+}
+
+export function createDefaultChartSpec(datasetId: string, profile: DatasetProfile | undefined): ChartSpec {
+  const numericColumns = getNumericColumnNames(profile)
+  const valueColumn = getDefaultHistogramColumn(profile, numericColumns)
+  const categoryColumn = getDefaultCategoryColumn(profile)
+  const temporalX = getTemporalColumnNames(profile)[0] ?? ''
+  const scatterColumns = getDefaultScatterColumns(profile)
+
+  let chartType: ChartType = 'line'
+  if (valueColumn) chartType = 'histogram'
+  else if (categoryColumn) chartType = 'bar'
+  else if (temporalX) chartType = 'line'
+  else if (scatterColumns.x && scatterColumns.y && scatterColumns.x !== scatterColumns.y) chartType = 'scatter'
+
+  return buildChartSpec(datasetId, profile, chartType)
+}
+
+function parseChartType(raw: Partial<ChartSpec>, rawVersion: number, base: ChartSpec): ChartType {
+  if (raw.chartType === 'histogram' || raw.chartType === 'line' || raw.chartType === 'bar' || raw.chartType === 'scatter') {
+    return raw.chartType
+  }
+  if (rawVersion < 3) return 'line'
+  return base.chartType
 }
 
 export function normalizeChartSpec(
@@ -229,25 +355,26 @@ export function normalizeChartSpec(
   const base = createDefaultChartSpec(datasetId, profile)
   if (!raw || typeof raw !== 'object') return base
   const rawVersion = typeof raw.version === 'number' ? raw.version : 2
-  const chartType: ChartType = raw.chartType === 'histogram'
-    ? 'histogram'
-    : raw.chartType === 'line' || rawVersion < CHART_SPEC_VERSION
-      ? 'line'
-      : base.chartType
-  const yColumns = uniqueNames(Array.isArray(raw.yColumns) ? raw.yColumns : base.yColumns)
+  const chartType = parseChartType(raw, rawVersion, base)
+  const normalizedBase = buildChartSpec(datasetId, profile, chartType)
+  const yColumns = uniqueNames(Array.isArray(raw.yColumns) ? raw.yColumns : normalizedBase.yColumns)
   const splitBy = typeof raw.splitBy === 'string' ? raw.splitBy : ''
-  const xColumn = typeof raw.xColumn === 'string' ? raw.xColumn : base.xColumn
+  const xColumn = typeof raw.xColumn === 'string' ? raw.xColumn : normalizedBase.xColumn
   const valueColumn = typeof raw.valueColumn === 'string'
     ? raw.valueColumn
     : chartType === 'histogram'
       ? getDefaultHistogramColumn(profile)
-      : base.valueColumn
+      : normalizedBase.valueColumn
   const binCount = Number(raw.binCount)
+  const topN = Number(raw.topN)
   const valueColumnInteger = typeof raw.valueColumnInteger === 'boolean'
     ? raw.valueColumnInteger
     : getColumnIsInteger(profile, valueColumn)
-  return {
-    ...base,
+  const limitedYColumns =
+    splitBy && yColumns.length > 1 && chartType !== 'histogram' ? yColumns.slice(0, 1) : yColumns
+
+  const spec: ChartSpec = {
+    ...normalizedBase,
     ...raw,
     version: CHART_SPEC_VERSION,
     datasetId,
@@ -255,43 +382,104 @@ export function normalizeChartSpec(
     valueColumn,
     valueColumnInteger,
     binCount: Number.isInteger(binCount) && binCount > 0 ? Math.min(binCount, 100) : DEFAULT_HISTOGRAM_BINS,
-    yColumns: splitBy && yColumns.length > 1 ? yColumns.slice(0, 1) : yColumns,
+    topN: Number.isInteger(topN) && topN > 0 ? Math.min(topN, 100) : DEFAULT_BAR_TOP_N,
+    yColumns: limitedYColumns,
     filters: Array.isArray(raw.filters) ? raw.filters : [],
     referenceLines: Array.isArray(raw.referenceLines) ? raw.referenceLines : [],
     splitBy,
-    xColumnBucketable: isBucketableTemporalColumn(profile, xColumn),
-    xColumnTemporalKind: getTemporalKind(profile, xColumn),
+    xColumn,
+    xColumnBucketable: chartType === 'line' ? isBucketableTemporalColumn(profile, xColumn) : false,
+    xColumnTemporalKind: chartType === 'line' ? getTemporalKind(profile, xColumn) : null,
   }
+
+  if (chartType === 'scatter') {
+    spec.aggregation = 'none'
+    spec.bucket = 'none'
+    spec.referenceLines = []
+    spec.smooth = false
+    spec.showPoints = false
+    spec.connectNulls = false
+    if (splitBy && spec.yColumns.length > 1) spec.yColumns = spec.yColumns.slice(0, 1)
+  }
+
+  if (chartType === 'bar' && spec.aggregation === 'count' && !spec.yColumns[0]) {
+    spec.yColumns = []
+  }
+
+  return spec
 }
 
-export function validateChartSpec(spec: ChartSpec, viewName: string | undefined): ChartValidation {
+function validateManualYScale(spec: ChartSpec): ChartValidation {
+  if (spec.yAxisScale !== 'manual') return { valid: true, reason: null }
+  const min = Number(spec.yAxisMin)
+  const max = Number(spec.yAxisMax)
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) {
+    return { valid: false, reason: 'Manual Y scale requires a numeric min smaller than max.' }
+  }
+  return { valid: true, reason: null }
+}
+
+export function validateChartSpec(
+  spec: ChartSpec,
+  viewName: string | undefined,
+  profile?: DatasetProfile,
+): ChartValidation {
   if (!spec.datasetId || !viewName) return { valid: false, reason: 'Select a dataset to build a chart.' }
+
   if (spec.chartType === 'histogram') {
     if (!spec.valueColumn) return { valid: false, reason: 'Choose a numeric variable for the histogram.' }
     if (!Number.isInteger(spec.binCount) || spec.binCount < 1 || spec.binCount > 100) {
       return { valid: false, reason: 'Histogram bins must be an integer from 1 to 100.' }
     }
-    if (spec.yAxisScale === 'manual') {
-      const min = Number(spec.yAxisMin)
-      const max = Number(spec.yAxisMax)
-      if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) {
-        return { valid: false, reason: 'Manual Y scale requires a numeric min smaller than max.' }
+    return validateManualYScale(spec)
+  }
+
+  if (spec.chartType === 'bar') {
+    if (!spec.xColumn) return { valid: false, reason: 'Choose a category column for the bar chart.' }
+    if (profile && !isCategoryColumn(profile, spec.xColumn)) {
+      return { valid: false, reason: 'Bar charts require a categorical column on the X axis.' }
+    }
+    if (!isBarCountOnly(spec) && !spec.yColumns[0]) {
+      return { valid: false, reason: 'Choose a numeric measure or use Count aggregation.' }
+    }
+    if (spec.aggregation === 'none') {
+      return { valid: false, reason: 'Choose an aggregation for the bar chart.' }
+    }
+    if (!Number.isInteger(spec.topN) || spec.topN < 1 || spec.topN > 100) {
+      return { valid: false, reason: 'Top N must be an integer from 1 to 100.' }
+    }
+    if (spec.splitBy && !isBarCountOnly(spec) && spec.yColumns.length !== 1) {
+      return { valid: false, reason: 'Split bar charts support exactly one measure.' }
+    }
+    return validateManualYScale(spec)
+  }
+
+  if (spec.chartType === 'scatter') {
+    if (!spec.xColumn || !spec.yColumns[0]) {
+      return { valid: false, reason: 'Choose numeric X and Y variables for the scatter plot.' }
+    }
+    if (spec.xColumn === spec.yColumns[0]) {
+      return { valid: false, reason: 'Scatter plots require two different numeric columns.' }
+    }
+    if (profile) {
+      const numeric = getNumericColumnNames(profile)
+      if (!numeric.includes(spec.xColumn) || !numeric.includes(spec.yColumns[0])) {
+        return { valid: false, reason: 'Scatter plots require numeric columns for X and Y.' }
       }
     }
-    return { valid: true, reason: null }
+    if (spec.splitBy && spec.yColumns.length !== 1) {
+      return { valid: false, reason: 'Split scatter plots support exactly one Y variable.' }
+    }
+    return validateManualYScale(spec)
   }
+
   if (!spec.xColumn) return { valid: false, reason: 'Choose a temporal column for the X axis.' }
   if (!spec.yColumns.length) return { valid: false, reason: 'Choose at least one numeric variable.' }
   if (spec.splitBy && spec.yColumns.length !== 1) {
     return { valid: false, reason: 'Split charts support exactly one Y variable.' }
   }
-  if (spec.yAxisScale === 'manual') {
-    const min = Number(spec.yAxisMin)
-    const max = Number(spec.yAxisMax)
-    if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) {
-      return { valid: false, reason: 'Manual Y scale requires a numeric min smaller than max.' }
-    }
-  }
+  const manual = validateManualYScale(spec)
+  if (!manual.valid) return manual
   for (const line of spec.referenceLines) {
     if (line.value.trim() && !Number.isFinite(Number(line.value))) {
       return { valid: false, reason: 'Reference line values must be numeric.' }
@@ -357,8 +545,10 @@ function filterCondition(filter: ChartFilter): string | null {
   }
 }
 
-function whereClause(spec: ChartSpec, requiredColumn = spec.xColumn): string {
-  const conditions = requiredColumn ? [`${quoteIdent(requiredColumn)} IS NOT NULL`] : []
+function whereClause(spec: ChartSpec, requiredColumn = spec.xColumn, extraRequired?: string): string {
+  const conditions: string[] = []
+  if (requiredColumn) conditions.push(`${quoteIdent(requiredColumn)} IS NOT NULL`)
+  if (extraRequired) conditions.push(`${quoteIdent(extraRequired)} IS NOT NULL`)
   if (spec.splitBy) conditions.push(`${quoteIdent(spec.splitBy)} IS NOT NULL`)
   for (const filter of spec.filters) {
     const condition = filterCondition(filter)
@@ -518,8 +708,87 @@ function buildIntegerHistogramChartSql(spec: ChartSpec, viewName: string): strin
   )
 }
 
+export function buildBarChartSql(spec: ChartSpec, viewName: string): string {
+  const view = quoteIdent(viewName)
+  const category = quoteIdent(spec.xColumn)
+  const xAlias = quoteIdent('x')
+  const topN = Math.min(Math.max(Math.trunc(spec.topN || DEFAULT_BAR_TOP_N), 1), 100)
+  const countOnly = isBarCountOnly(spec)
+  const measureColumn = spec.yColumns[0]
+  const extraRequired = countOnly ? undefined : measureColumn
+  const where = whereClause(spec, spec.xColumn, extraRequired)
+  const splitSelect = spec.splitBy ? `, CAST(${quoteIdent(spec.splitBy)} AS VARCHAR) AS ${quoteIdent('split')}` : ''
+  const splitGroup = spec.splitBy ? ', 2' : ''
+  const splitOrder = spec.splitBy ? `, ${quoteIdent('split')}` : ''
+
+  const rankMeasure = countOnly
+    ? 'count(*)'
+    : aggregationExpression(spec.aggregation as Exclude<ChartAggregation, 'none'>, measureColumn)
+
+  const rankedCte = `WITH _dcc_bar_ranked AS (
+  SELECT CAST(${category} AS VARCHAR) AS ${xAlias}, ${rankMeasure} AS ${quoteIdent('sort_value')}
+  FROM ${view}
+  WHERE ${where}
+  GROUP BY 1
+  ORDER BY ${quoteIdent('sort_value')} DESC
+  LIMIT ${topN}
+)`
+
+  const detailMeasure = countOnly
+    ? `count(*) AS ${quoteIdent('count')}`
+    : spec.splitBy
+      ? `${aggregationExpression(spec.aggregation as Exclude<ChartAggregation, 'none'>, measureColumn)} AS ${quoteIdent('value')}`
+      : `${aggregationExpression(spec.aggregation as Exclude<ChartAggregation, 'none'>, measureColumn)} AS ${quoteIdent(measureColumn)}`
+
+  if (spec.splitBy) {
+    return formatAnalyticsSql(
+      `${rankedCte}
+SELECT CAST(${category} AS VARCHAR) AS ${xAlias}${splitSelect}, ${detailMeasure}
+FROM ${view}
+INNER JOIN _dcc_bar_ranked ON CAST(${category} AS VARCHAR) = _dcc_bar_ranked.${xAlias}
+WHERE ${where}
+GROUP BY 1${splitGroup}
+ORDER BY _dcc_bar_ranked.${quoteIdent('sort_value')} DESC, ${xAlias}${splitOrder};`,
+    )
+  }
+
+  return formatAnalyticsSql(
+    `${rankedCte}
+SELECT CAST(${category} AS VARCHAR) AS ${xAlias}, ${detailMeasure}
+FROM ${view}
+INNER JOIN _dcc_bar_ranked ON CAST(${category} AS VARCHAR) = _dcc_bar_ranked.${xAlias}
+WHERE ${where}
+GROUP BY 1
+ORDER BY _dcc_bar_ranked.${quoteIdent('sort_value')} DESC;`,
+  )
+}
+
+export function buildScatterChartSql(spec: ChartSpec, viewName: string): string {
+  const view = quoteIdent(viewName)
+  const xCol = quoteIdent(spec.xColumn)
+  const yCol = quoteIdent(spec.yColumns[0] ?? '')
+  const xAlias = quoteIdent('x')
+  const yAlias = quoteIdent('y')
+  const where = whereClause(spec, spec.xColumn, spec.yColumns[0])
+  const splitSelect = spec.splitBy ? `, CAST(${quoteIdent(spec.splitBy)} AS VARCHAR) AS ${quoteIdent('split')}` : ''
+  const splitOrder = spec.splitBy ? `, ${quoteIdent('split')}` : ''
+
+  return formatAnalyticsSql(
+    `SELECT ${xCol} AS ${xAlias}, ${yCol} AS ${yAlias}${splitSelect} FROM ${view} WHERE ${where} ORDER BY ${xAlias}${splitOrder} LIMIT ${CHART_MAX_ROWS};`,
+  )
+}
+
 export function buildChartSql(spec: ChartSpec, viewName: string): string {
-  return spec.chartType === 'histogram' ? buildHistogramChartSql(spec, viewName) : buildLineChartSql(spec, viewName)
+  switch (spec.chartType) {
+    case 'histogram':
+      return buildHistogramChartSql(spec, viewName)
+    case 'bar':
+      return buildBarChartSql(spec, viewName)
+    case 'scatter':
+      return buildScatterChartSql(spec, viewName)
+    default:
+      return buildLineChartSql(spec, viewName)
+  }
 }
 
 function toNumberOrNull(value: unknown): number | null {
@@ -578,10 +847,64 @@ function queryResultToHistogramData(result: QueryResult | undefined, spec: Chart
   })
 }
 
+function barValueFromRow(row: Record<string, unknown>, spec: ChartSpec, yColumns: string[]): number | null {
+  if (isBarCountOnly(spec)) return toNumberOrNull(row.count)
+  return toNumberOrNull(row.value ?? row[yColumns[0] ?? 'value'])
+}
+
+function queryResultToBarData(result: QueryResult | undefined, spec: ChartSpec): ChartDataPoint[] {
+  if (!result?.rows.length || result.error) return []
+  const yColumns = spec.yColumns
+  const seriesKey = isBarCountOnly(spec) ? 'Count' : yColumns[0] ?? 'value'
+
+  if (spec.splitBy) {
+    const byX = new Map<string | number, Record<string, number | null>>()
+    for (const row of result.rows) {
+      const x = normalizeX(row.x)
+      const split = String(row.split ?? '(blank)')
+      const values = byX.get(x) ?? {}
+      values[split] = barValueFromRow(row, spec, yColumns)
+      byX.set(x, values)
+    }
+    return [...byX.entries()].map(([x, values]) => ({ x, values }))
+  }
+
+  return result.rows.map((row) => ({
+    x: normalizeX(row.x),
+    values: { [seriesKey]: barValueFromRow(row, spec, yColumns) },
+  }))
+}
+
+function queryResultToScatterData(result: QueryResult | undefined, spec: ChartSpec): ChartDataPoint[] {
+  if (!result?.rows.length || result.error) return []
+  const yColumn = spec.yColumns[0] ?? 'y'
+
+  const points: ChartDataPoint[] = []
+  if (spec.splitBy) {
+    for (const row of result.rows) {
+      const x = toNumberOrNull(row.x)
+      if (x == null) continue
+      const split = String(row.split ?? '(blank)')
+      points.push({ x, values: { [split]: toNumberOrNull(row.y ?? row[yColumn]) } })
+    }
+    return points
+  }
+
+  for (const row of result.rows) {
+    const x = toNumberOrNull(row.x)
+    const y = toNumberOrNull(row.y ?? row[yColumn])
+    if (x == null || y == null) continue
+    points.push({ x, values: { [yColumn]: y } })
+  }
+  return points
+}
+
 export function queryResultToChartData(result: QueryResult | undefined, specOrColumns: ChartSpec | string[]): ChartDataPoint[] {
   if (!result?.rows.length || result.error) return []
   const spec = Array.isArray(specOrColumns) ? null : specOrColumns
   if (spec?.chartType === 'histogram') return queryResultToHistogramData(result, spec)
+  if (spec?.chartType === 'bar') return queryResultToBarData(result, spec)
+  if (spec?.chartType === 'scatter') return queryResultToScatterData(result, spec)
   const yColumns = Array.isArray(specOrColumns) ? specOrColumns : specOrColumns.yColumns
 
   if (spec?.splitBy) {
@@ -604,6 +927,9 @@ export function queryResultToChartData(result: QueryResult | undefined, specOrCo
 }
 
 function seriesNames(spec: ChartSpec, data: ChartDataPoint[]): string[] {
+  if (spec.chartType === 'bar' && isBarCountOnly(spec) && !spec.splitBy) return ['Count']
+  if (spec.chartType === 'bar' && !spec.splitBy) return spec.yColumns.length ? spec.yColumns : ['Count']
+  if (spec.chartType === 'scatter' && !spec.splitBy) return spec.yColumns.length ? spec.yColumns : ['y']
   if (!spec.splitBy) return spec.yColumns
   const names = new Set<string>()
   for (const point of data) {
@@ -789,6 +1115,157 @@ export function buildHistogramChartOption(spec: ChartSpec, data: ChartDataPoint[
   }
 }
 
+function categoryBarTooltipFormatter(params: unknown): string {
+  const items = Array.isArray(params) ? params : [params]
+  const first = items[0] as { axisValueLabel?: string; name?: string } | undefined
+  const label = first?.axisValueLabel ?? first?.name ?? ''
+  const rows = items
+    .map((item) => {
+      const param = item as { marker?: string; seriesName?: string; value?: unknown }
+      const value = typeof param.value === 'number' && Number.isFinite(param.value)
+        ? param.value.toLocaleString()
+        : String(param.value ?? '')
+      return `${param.marker ?? ''}${param.seriesName ?? ''}: ${value}`
+    })
+    .join('<br/>')
+  return label ? `${label}<br/>${rows}` : rows
+}
+
+export function buildBarChartOption(spec: ChartSpec, data: ChartDataPoint[]): EChartsCoreOption {
+  const names = seriesNames(spec, data)
+  return {
+    color: chartPalette(),
+    backgroundColor: 'transparent',
+    title: spec.title
+      ? {
+          text: spec.title,
+          left: 8,
+          top: 0,
+          textStyle: { color: hslFromRootVar('--fg'), fontSize: 14, fontWeight: 600 },
+        }
+      : undefined,
+    grid: { left: 16, right: 24, top: spec.title ? 58 : 34, bottom: spec.showDataZoom ? 72 : 42, containLabel: true },
+    legend: spec.showLegend && (spec.splitBy || names.length > 1)
+      ? {
+          type: 'scroll',
+          top: spec.title ? 28 : 0,
+          right: 8,
+          textStyle: { color: hslFromRootVar('--fg-muted'), fontSize: 11 },
+        }
+      : undefined,
+    tooltip: {
+      ...chartTooltip(),
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: categoryBarTooltipFormatter,
+    },
+    dataZoom: spec.showDataZoom
+      ? [
+          { type: 'inside', xAxisIndex: 0 },
+          { type: 'slider', xAxisIndex: 0, height: 18, bottom: 18 },
+        ]
+      : undefined,
+    xAxis: {
+      type: 'category',
+      name: spec.xAxisLabel,
+      nameLocation: 'middle',
+      nameGap: 36,
+      data: data.map((point) => point.x),
+      axisLabel: { ...chartAxisLabelStyle(), hideOverlap: true, rotate: data.length > 12 ? 35 : 0 },
+      axisLine: { lineStyle: { color: hslFromRootVar('--border-triple') } },
+    },
+    yAxis: {
+      type: 'value',
+      name: spec.yAxisLabel,
+      nameLocation: 'middle',
+      nameGap: 44,
+      ...yAxisBounds(spec),
+      axisLabel: chartAxisLabelStyle(),
+      splitLine: { lineStyle: { color: hslFromRootVar('--border-triple', 0.4) } },
+    },
+    series: names.map((name) => ({
+      name,
+      type: 'bar',
+      data: data.map((point) => point.values[name] ?? 0),
+      barGap: spec.splitBy ? '10%' : '0%',
+      barCategoryGap: spec.splitBy ? '20%' : '0%',
+      emphasis: { focus: 'series' },
+    })),
+  }
+}
+
+export function buildScatterChartOption(spec: ChartSpec, data: ChartDataPoint[]): EChartsCoreOption {
+  const names = seriesNames(spec, data)
+  const pointOpacity = data.length > 800 ? 0.35 : data.length > 200 ? 0.55 : 0.85
+  return {
+    color: chartPalette(),
+    backgroundColor: 'transparent',
+    title: spec.title
+      ? {
+          text: spec.title,
+          left: 8,
+          top: 0,
+          textStyle: { color: hslFromRootVar('--fg'), fontSize: 14, fontWeight: 600 },
+        }
+      : undefined,
+    grid: { left: 16, right: 24, top: spec.title ? 58 : 34, bottom: 42, containLabel: true },
+    legend: spec.showLegend && spec.splitBy
+      ? {
+          type: 'scroll',
+          top: spec.title ? 28 : 0,
+          right: 8,
+          textStyle: { color: hslFromRootVar('--fg-muted'), fontSize: 11 },
+        }
+      : undefined,
+    tooltip: {
+      ...chartTooltip(),
+      trigger: 'item',
+      valueFormatter: (value: unknown) =>
+        typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : String(value ?? ''),
+    },
+    dataZoom: spec.showDataZoom ? [{ type: 'inside', xAxisIndex: 0, yAxisIndex: 0 }] : undefined,
+    xAxis: {
+      type: 'value',
+      name: spec.xAxisLabel,
+      nameLocation: 'middle',
+      nameGap: 28,
+      scale: true,
+      axisLabel: chartAxisLabelStyle(),
+      axisLine: { lineStyle: { color: hslFromRootVar('--border-triple') } },
+      splitLine: { lineStyle: { color: hslFromRootVar('--border-triple', 0.4) } },
+    },
+    yAxis: {
+      type: 'value',
+      name: spec.yAxisLabel,
+      nameLocation: 'middle',
+      nameGap: 44,
+      scale: true,
+      ...yAxisBounds(spec),
+      axisLabel: chartAxisLabelStyle(),
+      splitLine: { lineStyle: { color: hslFromRootVar('--border-triple', 0.4) } },
+    },
+    series: names.map((name) => ({
+      name,
+      type: 'scatter',
+      symbolSize: 7,
+      itemStyle: { opacity: pointOpacity },
+      emphasis: { focus: 'series' },
+      data: data
+        .filter((point) => point.values[name] != null)
+        .map((point) => [point.x, point.values[name]] as [number, number]),
+    })),
+  }
+}
+
 export function buildChartOption(spec: ChartSpec, data: ChartDataPoint[]): EChartsCoreOption {
-  return spec.chartType === 'histogram' ? buildHistogramChartOption(spec, data) : buildLineChartOption(spec, data)
+  switch (spec.chartType) {
+    case 'histogram':
+      return buildHistogramChartOption(spec, data)
+    case 'bar':
+      return buildBarChartOption(spec, data)
+    case 'scatter':
+      return buildScatterChartOption(spec, data)
+    default:
+      return buildLineChartOption(spec, data)
+  }
 }

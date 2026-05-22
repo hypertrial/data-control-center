@@ -37,7 +37,10 @@ export function ChartSplitControls({
             const splitBy = e.target.value
             patchSpec({
               splitBy,
-              yColumns: spec.chartType === 'line' && splitBy ? spec.yColumns.slice(0, 1) : spec.yColumns,
+              yColumns:
+                splitBy && (spec.chartType === 'line' || spec.chartType === 'bar' || spec.chartType === 'scatter')
+                  ? spec.yColumns.slice(0, 1)
+                  : spec.yColumns,
             })
           }}
         >

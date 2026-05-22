@@ -1,7 +1,12 @@
 import { nativeSelectClassName } from '@/features/charts/chartControlOptions'
 import { ControlGroup, Field } from '@/features/charts/chartPageUi'
 import type { ChartWorkspaceState } from '@/features/charts/useChartWorkspaceState'
-import type { ChartType } from '@/features/charts/chartUtils'
+import {
+  DEFAULT_BAR_TOP_N,
+  getDefaultCategoryColumn,
+  getDefaultScatterColumns,
+  type ChartType,
+} from '@/features/charts/chartUtils'
 
 type Props = Pick<
   ChartWorkspaceState,
@@ -10,6 +15,7 @@ type Props = Pick<
   | 'patchSpec'
   | 'temporalColumns'
   | 'numericColumns'
+  | 'categoryColumns'
   | 'isBucketableTemporalColumn'
   | 'getTemporalKind'
   | 'getColumnIsInteger'
@@ -21,6 +27,7 @@ export function ChartTypeControls({
   patchSpec,
   temporalColumns,
   numericColumns,
+  categoryColumns,
   isBucketableTemporalColumn,
   getTemporalKind,
   getColumnIsInteger,
@@ -48,6 +55,63 @@ export function ChartTypeControls({
               return
             }
 
+            if (chartType === 'bar') {
+              const xColumn = spec.xColumn && categoryColumns.includes(spec.xColumn)
+                ? spec.xColumn
+                : getDefaultCategoryColumn(profile)
+              const measure = spec.yColumns[0] || numericColumns[0] || ''
+              const countOnly = !measure
+              patchSpec({
+                chartType,
+                xColumn,
+                yColumns: countOnly ? [] : [measure],
+                aggregation: countOnly ? 'count' : spec.aggregation === 'count' ? 'count' : 'sum',
+                topN: spec.topN || DEFAULT_BAR_TOP_N,
+                bucket: 'none',
+                xColumnBucketable: false,
+                xColumnTemporalKind: null,
+                xAxisLabel: xColumn,
+                yAxisLabel: countOnly ? 'Count' : measure,
+                yAxisScale: 'zero',
+                title: xColumn
+                  ? countOnly
+                    ? `${xColumn} by count`
+                    : `${xColumn} by ${measure}`
+                  : 'Category comparison',
+                referenceLines: [],
+              })
+              return
+            }
+
+            if (chartType === 'scatter') {
+              const defaults = getDefaultScatterColumns(profile)
+              const xColumn = numericColumns.includes(spec.xColumn) ? spec.xColumn : defaults.x
+              const yColumn =
+                numericColumns.includes(spec.yColumns[0] ?? '') && spec.yColumns[0] !== xColumn
+                  ? spec.yColumns[0]!
+                  : defaults.y !== xColumn
+                    ? defaults.y
+                    : numericColumns.find((name) => name !== xColumn) ?? ''
+              patchSpec({
+                chartType,
+                xColumn,
+                yColumns: yColumn ? [yColumn] : [],
+                aggregation: 'none',
+                bucket: 'none',
+                xColumnBucketable: false,
+                xColumnTemporalKind: null,
+                xAxisLabel: xColumn,
+                yAxisLabel: yColumn,
+                yAxisScale: 'auto',
+                title: xColumn && yColumn ? `${yColumn} vs ${xColumn}` : 'Scatter plot',
+                referenceLines: [],
+                smooth: false,
+                showPoints: false,
+                connectNulls: false,
+              })
+              return
+            }
+
             const xColumn = spec.xColumn || temporalColumns[0] || ''
             const xColumnBucketable = isBucketableTemporalColumn(profile, xColumn)
             const nextYColumns = spec.yColumns.length
@@ -71,6 +135,8 @@ export function ChartTypeControls({
           }}
         >
           <option value="histogram">Histogram</option>
+          <option value="bar">Bar</option>
+          <option value="scatter">Scatter</option>
           <option value="line">Line</option>
         </select>
       </Field>

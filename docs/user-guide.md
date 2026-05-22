@@ -89,27 +89,36 @@ the UI keeps the sampled value and labels it using profile metadata.
 
 ## Charts tab
 
-Use **Charts** to build customizable histograms and line charts for the active dataset
-without writing SQL by hand. The tab uses the existing local read-only query path, so
-chart queries stay inside the same workspace guardrails as the SQL tab.
+Use **Charts** to build customizable histograms, bar charts, scatter plots, and line charts
+for the active dataset without writing SQL by hand. The tab uses the existing local
+read-only query path, so chart queries stay inside the same workspace guardrails as the
+SQL tab.
 
-- **Defaults:** The builder defaults to a histogram when numeric columns are available.
-  It picks a likely numeric measure, preferring columns with profile histogram metadata,
-  and starts with 12 bins. If no numeric column is available, it falls back to the line
-  chart setup when temporal chart inputs exist.
+- **Defaults:** The builder defaults to a histogram when numeric columns are available
+  (preferring columns with profile histogram metadata, 12 bins). Without numerics, it
+  defaults to a bar chart when categorical columns exist, then to line when temporal
+  columns exist.
 - **Histogram variables and split:** Choose one numeric **Value column** and a bin count.
   Use **Split by** to render grouped histogram bars across categorical, boolean-like, or
   identifier-like values. High-cardinality split columns show a density warning.
-- **Line variables and split:** Switch **Chart type** to **Line** to choose one X column
-  and one or more numeric Y variables. Use **Split by** to render one selected Y variable
-  across categorical, boolean-like, or identifier-like values.
+- **Bar variables and split:** Switch **Chart type** to **Bar** to compare categories on
+  the X axis. Use **Count** aggregation for row counts without a measure, or pick a numeric
+  **Measure** with **Sum**, **Average**, and other aggregations. **Top N** limits the
+  highest categories shown. **Split by** renders grouped bars per category.
+- **Scatter variables and split:** Switch **Chart type** to **Scatter** to plot one numeric
+  column against another (up to the chart row limit). Optional **Split by** colors points
+  by a categorical series.
+- **Line variables and split:** Switch **Chart type** to **Line** to choose one temporal X
+  column and one or more numeric Y variables. Use **Split by** to render one selected Y
+  variable across categorical, boolean-like, or identifier-like values.
 - **Filters:** Add structured column/operator/value filters before charting. Filters support
   equality, comparisons, text contains/starts-with, comma-separated **in**, and null checks.
-- **Line aggregation:** Use **Average**, **Sum**, **Minimum**, **Maximum**, **Median**, **Std dev**,
-  **p25**, **p75**, **Count**, or **Count distinct** with optional time buckets such as day,
-  month, quarter, or year. Choose **None** to plot raw rows ordered by X.
+- **Line aggregation:** On line charts, use **Average**, **Sum**, **Minimum**, **Maximum**,
+  **Median**, **Std dev**, **p25**, **p75**, **Count**, or **Count distinct** with optional
+  time buckets such as day, month, quarter, or year. Choose **None** to plot raw rows
+  ordered by X.
 - **Scale and display:** Customize title, axis labels, Y scale, manual Y min/max, reference
-  lines for line charts, legend, smoothing, point markers, zoom slider, and whether line
+  lines (line charts only), legend, smoothing, point markers, zoom slider, and whether line
   segments connect across null values. Continuous datetime buckets use a time axis;
   discrete periods such as **year** group directly by their value.
 - **Run behavior:** Valid chart configurations run automatically. Data-setting changes such as

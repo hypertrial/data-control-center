@@ -37,7 +37,7 @@ function ChartsWorkspace({
             Charts
           </h2>
           <p className="mt-1 text-sm text-fg-muted">
-            Build live histograms and line charts from the active dataset.
+            Build live histograms, bar charts, scatter plots, and line charts from the active dataset.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

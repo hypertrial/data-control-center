@@ -151,6 +151,53 @@ describe('ChartsPage', () => {
     expect(screen.queryByLabelText('Aggregation')).not.toBeInTheDocument()
   })
 
+  it('switches to bar chart controls and runs grouped SQL', async () => {
+    const user = userEvent.setup()
+    h.runQuery.mockResolvedValue({
+      columns: [{ name: 'x', type: null }, { name: 'count', type: null }],
+      rows: [{ x: 'East', count: 3 }],
+      row_count: 1,
+      truncated: false,
+      error: null,
+    })
+
+    wrap(<ChartsPage />)
+    await user.selectOptions(await screen.findByLabelText('Chart type'), 'bar')
+
+    expect(screen.getByLabelText('Category')).toHaveValue('region')
+    expect(screen.getByLabelText('Top N')).toHaveValue(25)
+    expect(screen.queryByLabelText('Bucket')).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Aggregation'), 'count')
+
+    await waitFor(() => expect(h.runQuery.mock.calls.at(-1)?.[0].sql.toLowerCase()).toContain('count(*)'))
+    expect(h.runQuery.mock.calls.at(-1)?.[0].sql.toLowerCase()).toContain('group by 1')
+  })
+
+  it('switches to scatter chart controls and runs row-level SQL', async () => {
+    const user = userEvent.setup()
+    h.runQuery.mockResolvedValue({
+      columns: [{ name: 'x', type: null }, { name: 'y', type: null }],
+      rows: [{ x: 1, y: 2 }],
+      row_count: 1,
+      truncated: false,
+      error: null,
+    })
+
+    wrap(<ChartsPage />)
+    await user.selectOptions(await screen.findByLabelText('Chart type'), 'scatter')
+
+    expect(screen.getByLabelText('X variable')).toHaveValue('revenue')
+    expect(screen.getByLabelText('Y variable')).toHaveValue('profit')
+    expect(screen.queryByLabelText('Aggregation')).not.toBeInTheDocument()
+
+    await waitFor(() => expect(h.runQuery).toHaveBeenCalled())
+    const sql = h.runQuery.mock.calls.at(-1)?.[0].sql.toLowerCase() ?? ''
+    expect(sql).toContain('revenue as x')
+    expect(sql).toContain('profit as y')
+    expect(sql).not.toContain('group by')
+  })
+
   it('automatically runs the chart query for a valid chart', async () => {
     wrap(<ChartsPage />)
 
