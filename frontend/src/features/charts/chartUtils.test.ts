@@ -384,6 +384,7 @@ describe('chartUtils', () => {
     expect(countSql.toLowerCase()).toContain('count(*)')
     expect(countSql.toLowerCase()).toMatch(/limit\s+10/)
     expect(countSql).toContain('group by 1')
+    expect(countSql.toLowerCase()).toContain('max(_dcc_bar_ranked.sort_value)')
 
     const sumSql = buildBarChartSql(
       baseSpec({ chartType: 'bar', xColumn: 'region', yColumns: ['gross revenue'], aggregation: 'sum', topN: 15 }),
@@ -391,6 +392,7 @@ describe('chartUtils', () => {
     )
     expect(sumSql).toContain('sum("gross revenue")')
     expect(sumSql.toLowerCase()).toMatch(/limit\s+15/)
+    expect(sumSql.toLowerCase()).toContain('max(_dcc_bar_ranked.sort_value)')
     expect(buildChartSql(baseSpec({ chartType: 'bar', xColumn: 'region', yColumns: [], aggregation: 'count' }), 'orders')).toContain(
       'count(*)',
     )
@@ -471,6 +473,7 @@ describe('chartUtils', () => {
     const sql = buildBarChartSql(spec, 'orders')
     expect(sql.toLowerCase()).toContain('cast(team as varchar) as split')
     expect(sql.toLowerCase()).toMatch(/limit\s+5/)
+    expect(sql.toLowerCase()).toContain('max(_dcc_bar_ranked.sort_value)')
 
     const result: QueryResult = {
       columns: [{ name: 'x', type: null }, { name: 'split', type: null }, { name: 'value', type: null }],

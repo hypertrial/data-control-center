@@ -753,7 +753,7 @@ FROM ${view}
 INNER JOIN _dcc_bar_ranked ON CAST(${category} AS VARCHAR) = _dcc_bar_ranked.${xAlias}
 WHERE ${where}
 GROUP BY 1${splitGroup}
-ORDER BY _dcc_bar_ranked.${quoteIdent('sort_value')} DESC, ${xAlias}${splitOrder};`,
+ORDER BY max(_dcc_bar_ranked.${quoteIdent('sort_value')}) DESC, ${xAlias}${splitOrder};`,
     )
   }
 
@@ -764,7 +764,7 @@ FROM ${view}
 INNER JOIN _dcc_bar_ranked ON CAST(${category} AS VARCHAR) = _dcc_bar_ranked.${xAlias}
 WHERE ${where}
 GROUP BY 1
-ORDER BY _dcc_bar_ranked.${quoteIdent('sort_value')} DESC;`,
+ORDER BY max(_dcc_bar_ranked.${quoteIdent('sort_value')}) DESC;`,
   )
 }
 
