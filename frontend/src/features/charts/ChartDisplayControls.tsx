@@ -20,10 +20,14 @@ export function ChartDisplayControls({ spec, patchSpec }: Props) {
       </div>
       <div className="grid grid-cols-2 gap-2">
         <ToggleField label="Legend" checked={spec.showLegend} onChange={(showLegend) => patchSpec({ showLegend })} />
-        <ToggleField label="Smooth" checked={spec.smooth} onChange={(smooth) => patchSpec({ smooth })} />
-        <ToggleField label="Points" checked={spec.showPoints} onChange={(showPoints) => patchSpec({ showPoints })} />
-        <ToggleField label="Connect nulls" checked={spec.connectNulls} onChange={(connectNulls) => patchSpec({ connectNulls })} />
         <ToggleField label="Zoom slider" checked={spec.showDataZoom} onChange={(showDataZoom) => patchSpec({ showDataZoom })} />
+        {spec.chartType === 'line' ? (
+          <>
+            <ToggleField label="Smooth" checked={spec.smooth} onChange={(smooth) => patchSpec({ smooth })} />
+            <ToggleField label="Points" checked={spec.showPoints} onChange={(showPoints) => patchSpec({ showPoints })} />
+            <ToggleField label="Connect nulls" checked={spec.connectNulls} onChange={(connectNulls) => patchSpec({ connectNulls })} />
+          </>
+        ) : null}
       </div>
     </ControlGroup>
   )

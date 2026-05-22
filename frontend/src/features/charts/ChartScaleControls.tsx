@@ -33,7 +33,13 @@ export function ChartSplitControls({
         <select
           className={nativeSelectClassName()}
           value={spec.splitBy}
-          onChange={(e) => patchSpec({ splitBy: e.target.value, yColumns: e.target.value ? spec.yColumns.slice(0, 1) : spec.yColumns })}
+          onChange={(e) => {
+            const splitBy = e.target.value
+            patchSpec({
+              splitBy,
+              yColumns: spec.chartType === 'line' && splitBy ? spec.yColumns.slice(0, 1) : spec.yColumns,
+            })
+          }}
         >
           <option value="">None</option>
           {splitColumns.map((column) => (
@@ -78,51 +84,53 @@ export function ChartScaleControls({ spec, patchSpec }: Pick<ChartWorkspaceState
           </Field>
         </div>
       ) : null}
-      <div className="space-y-2">
-        {spec.referenceLines.map((line) => (
-          <div key={line.id} className="grid grid-cols-[1fr_5rem_auto] gap-1">
-            <Input
-              className="h-8"
-              value={line.label}
-              placeholder="Label"
-              onChange={(e) =>
-                patchSpec({
-                  referenceLines: spec.referenceLines.map((item) => (item.id === line.id ? { ...item, label: e.target.value } : item)),
-                })
-              }
-            />
-            <Input
-              className="h-8"
-              value={line.value}
-              placeholder="Value"
-              onChange={(e) =>
-                patchSpec({
-                  referenceLines: spec.referenceLines.map((item) => (item.id === line.id ? { ...item, value: e.target.value } : item)),
-                })
-              }
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
-              aria-label="Remove reference line"
-              onClick={() => patchSpec({ referenceLines: spec.referenceLines.filter((item) => item.id !== line.id) })}
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        ))}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="w-full gap-1"
-          onClick={() => patchSpec({ referenceLines: [...spec.referenceLines, { id: crypto.randomUUID(), label: 'Reference', value: '' }] })}
-        >
-          <Plus className="h-3.5 w-3.5" /> Add reference line
-        </Button>
-      </div>
+      {spec.chartType === 'line' ? (
+        <div className="space-y-2">
+          {spec.referenceLines.map((line) => (
+            <div key={line.id} className="grid grid-cols-[1fr_5rem_auto] gap-1">
+              <Input
+                className="h-8"
+                value={line.label}
+                placeholder="Label"
+                onChange={(e) =>
+                  patchSpec({
+                    referenceLines: spec.referenceLines.map((item) => (item.id === line.id ? { ...item, label: e.target.value } : item)),
+                  })
+                }
+              />
+              <Input
+                className="h-8"
+                value={line.value}
+                placeholder="Value"
+                onChange={(e) =>
+                  patchSpec({
+                    referenceLines: spec.referenceLines.map((item) => (item.id === line.id ? { ...item, value: e.target.value } : item)),
+                  })
+                }
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                aria-label="Remove reference line"
+                onClick={() => patchSpec({ referenceLines: spec.referenceLines.filter((item) => item.id !== line.id) })}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full gap-1"
+            onClick={() => patchSpec({ referenceLines: [...spec.referenceLines, { id: crypto.randomUUID(), label: 'Reference', value: '' }] })}
+          >
+            <Plus className="h-3.5 w-3.5" /> Add reference line
+          </Button>
+        </div>
+      ) : null}
     </ControlGroup>
   )
 }

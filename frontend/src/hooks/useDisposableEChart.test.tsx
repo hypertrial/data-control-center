@@ -4,8 +4,9 @@ import { useRef } from 'react'
 import { useDisposableEChart } from '@/hooks/useDisposableEChart'
 
 const disposeMock = vi.fn()
+const setOptionMock = vi.fn()
 const initMock = vi.fn(() => ({
-  setOption: vi.fn(),
+  setOption: setOptionMock,
   resize: vi.fn(),
   dispose: disposeMock,
 }))
@@ -17,13 +18,15 @@ vi.mock('echarts', () => ({
 
 function Harness({
   enabled,
+  marker = 0,
   register,
 }: {
   enabled?: boolean
+  marker?: number
   register?: Parameters<typeof useDisposableEChart>[4]
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  useDisposableEChart(ref, enabled ?? true, () => ({ series: [] }), [], register)
+  useDisposableEChart(ref, enabled ?? true, () => ({ series: [{ data: [marker] }] }), [marker], register)
   return <div ref={ref} data-testid="chart-root" />
 }
 
@@ -31,6 +34,7 @@ describe('useDisposableEChart', () => {
   beforeEach(() => {
     initMock.mockClear()
     disposeMock.mockClear()
+    setOptionMock.mockClear()
     vi.stubGlobal(
       'matchMedia',
       vi.fn(() => ({
@@ -88,5 +92,21 @@ describe('useDisposableEChart', () => {
     vi.spyOn(window, 'addEventListener').mockImplementation(() => {})
     render(<Harness enabled={false} />)
     expect(initMock).not.toHaveBeenCalled()
+  })
+
+  it('updates options without recreating the chart when deps change', () => {
+    vi.spyOn(window, 'addEventListener').mockImplementation(() => {})
+    vi.spyOn(window, 'removeEventListener').mockImplementation(() => {})
+
+    const { rerender } = render(<Harness marker={1} />)
+    expect(initMock).toHaveBeenCalledTimes(1)
+    expect(setOptionMock).toHaveBeenCalledTimes(1)
+
+    rerender(<Harness marker={2} />)
+
+    expect(initMock).toHaveBeenCalledTimes(1)
+    expect(disposeMock).not.toHaveBeenCalled()
+    expect(setOptionMock).toHaveBeenCalledTimes(2)
+    expect(setOptionMock).toHaveBeenLastCalledWith(expect.objectContaining({ series: [{ data: [2] }] }))
   })
 })

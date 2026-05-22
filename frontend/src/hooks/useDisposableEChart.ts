@@ -1,5 +1,5 @@
 import type { DependencyList, RefObject } from 'react'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import * as echarts from 'echarts'
 import type { EChartsCoreOption } from 'echarts'
 
@@ -16,12 +16,17 @@ export function useDisposableEChart(
   deps: DependencyList,
   register?: EChartsRegister,
 ): void {
+  const chartRef = useRef<echarts.ECharts | null>(null)
+  const skipNextOptionUpdateRef = useRef(false)
+
   useEffect(() => {
     if (!enabled || !containerRef.current) return
     const el = containerRef.current
     const chart = echarts.init(el)
+    chartRef.current = chart
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     chart.setOption({ animation: !reduce, ...buildOption() })
+    skipNextOptionUpdateRef.current = true
     let extraCleanup: void | (() => void)
     if (register) {
       const out = register(chart)
@@ -33,8 +38,23 @@ export function useDisposableEChart(
       extraCleanup?.()
       window.removeEventListener('resize', onResize)
       chart.dispose()
+      chartRef.current = null
+      skipNextOptionUpdateRef.current = false
     }
-    // Callers pass `deps`; omitting unstable callbacks avoids tearing charts down every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional deps boundary for chart lifecycle
+    // Keep the ECharts instance stable; option updates are handled below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- register/buildOption changes should not recreate the chart
+  }, [enabled, containerRef])
+
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!enabled || !chart) return
+    if (skipNextOptionUpdateRef.current) {
+      skipNextOptionUpdateRef.current = false
+      return
+    }
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    chart.setOption({ animation: !reduce, ...buildOption() })
+    // Callers pass `deps`; omitting unstable callbacks avoids unnecessary option writes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional deps boundary for chart updates
   }, [enabled, containerRef, ...deps])
 }

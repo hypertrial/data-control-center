@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { LineChart, Play, RotateCcw, Terminal } from 'lucide-react'
+import { BarChart3, RotateCcw, Terminal } from 'lucide-react'
 import { api } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
@@ -13,7 +13,7 @@ import { ChartExportControls } from '@/features/charts/ChartExportControls'
 import { ChartFilterControls } from '@/features/charts/ChartFilterControls'
 import { ChartPreview } from '@/features/charts/ChartPreview'
 import { ChartScaleControls, ChartSplitControls } from '@/features/charts/ChartScaleControls'
-import { SavedChartsControls } from '@/features/charts/SavedChartsControls'
+import { ChartTypeControls } from '@/features/charts/ChartTypeControls'
 import { useChartWorkspaceState } from '@/features/charts/useChartWorkspaceState'
 import { useUiStore } from '@/store/uiStore'
 
@@ -33,11 +33,11 @@ function ChartsWorkspace({
       <div className="flex flex-none flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 text-lg font-semibold tracking-tight text-fg">
-            <LineChart className="h-4 w-4 text-fg-muted" aria-hidden />
+            <BarChart3 className="h-4 w-4 text-fg-muted" aria-hidden />
             Charts
           </h2>
           <p className="mt-1 text-sm text-fg-muted">
-            Build and save customizable line charts from the active dataset.
+            Build live histograms and line charts from the active dataset.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -57,23 +57,13 @@ function ChartsWorkspace({
               SQL
             </Button>
           </Tooltip>
-          <Button
-            size="sm"
-            className="gap-1"
-            loading={ws.runChart.isPending}
-            disabled={!ws.validation.valid || ws.runChart.isPending}
-            onClick={ws.execute}
-          >
-            <Play className="h-3.5 w-3.5" aria-hidden />
-            Run chart
-          </Button>
         </div>
       </div>
 
       <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[22rem_minmax(0,1fr)] 2xl:grid-cols-[24rem_minmax(0,1fr)]">
         <aside className="min-h-0 overflow-hidden rounded-lg border border-border-default bg-black/20 p-2.5">
           <div className="grid max-h-full gap-2 overflow-y-auto pr-1">
-            <SavedChartsControls {...ws} />
+            <ChartTypeControls {...ws} />
             <ChartDataControls {...ws} />
             <ChartFilterControls {...ws} />
             <ChartSplitControls {...ws} />

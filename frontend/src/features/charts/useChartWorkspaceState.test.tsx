@@ -1,21 +1,16 @@
 import { act, renderHook } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChartWorkspaceState } from '@/features/charts/useChartWorkspaceState'
 import { mkColumn, mkProfile } from '@/test/profileFixtures'
 
 const h = vi.hoisted(() => ({
-  listSavedCharts: vi.fn(),
   runQuery: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => ({
   api: {
-    listSavedCharts: h.listSavedCharts,
     runQuery: h.runQuery,
-    createSavedChart: vi.fn(),
-    patchSavedChart: vi.fn(),
-    deleteSavedChart: vi.fn(),
   },
 }))
 
@@ -50,21 +45,37 @@ function renderWorkspace() {
 
 describe('useChartWorkspaceState', () => {
   beforeEach(() => {
-    h.listSavedCharts.mockResolvedValue([])
+    vi.clearAllMocks()
     h.runQuery.mockResolvedValue({ columns: [], rows: [], row_count: 0, truncated: false, error: null })
+    vi.useFakeTimers()
   })
 
-  it('auto-runs when spec changes after first run', async () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('auto-runs the initial valid chart after a debounce', async () => {
     const { result } = renderWorkspace()
 
     await act(async () => {
-      result.current.executeSql('SELECT 1 AS x')
+      await vi.advanceTimersByTimeAsync(450)
+    })
+
+    expect(h.runQuery).toHaveBeenCalledTimes(1)
+    expect(h.runQuery.mock.calls[0]?.[0].sql).toContain('least(12, max_v - min_v + 1)')
+    expect(result.current.settingsChanged).toBe(false)
+  })
+
+  it('auto-runs when generated SQL changes', async () => {
+    const { result } = renderWorkspace()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(450)
     })
     expect(h.runQuery).toHaveBeenCalledTimes(1)
 
-    vi.useFakeTimers()
     act(() => {
-      result.current.patchSpec({ aggregation: 'sum' })
+      result.current.patchSpec({ binCount: 20 })
     })
 
     await act(async () => {
@@ -72,65 +83,53 @@ describe('useChartWorkspaceState', () => {
     })
 
     expect(h.runQuery).toHaveBeenCalledTimes(2)
-    vi.useRealTimers()
+    expect(h.runQuery.mock.calls[1]?.[0].sql).toContain('least(20, max_v - min_v + 1)')
   })
 
-  it('loadSaved resets run state and mutation', () => {
-    h.listSavedCharts.mockResolvedValue([
-      {
-        chart_id: 'c1',
-        dataset_id: 'ds_1',
-        name: 'Saved',
-        spec_json: JSON.stringify({
-          datasetId: 'ds_1',
-          title: 'Saved chart',
-          xColumn: 'order_date',
-          yColumns: ['revenue'],
-        }),
-        created_at: '',
-        updated_at: '',
-      },
-    ])
-
-    const { result, qc } = renderWorkspace()
-    qc.setQueryData(['saved-charts', 'ds_1'], [
-      {
-        chart_id: 'c1',
-        dataset_id: 'ds_1',
-        name: 'Saved',
-        spec_json: JSON.stringify({
-          datasetId: 'ds_1',
-          title: 'Saved chart',
-          xColumn: 'order_date',
-          yColumns: ['revenue'],
-        }),
-        created_at: '',
-        updated_at: '',
-      },
-    ])
-
-    act(() => {
-      result.current.executeSql('SELECT 1')
-    })
-    expect(result.current.hasRun).toBe(true)
-
-    act(() => {
-      result.current.loadSaved('c1')
-    })
-
-    expect(result.current.hasRun).toBe(false)
-    expect(result.current.selectedSavedChartId).toBe('c1')
-  })
-
-  it('resetWorkspace clears saved selection and run state', () => {
+  it('does not auto-run invalid specs', async () => {
     const { result } = renderWorkspace()
 
     act(() => {
-      result.current.execute()
+      result.current.patchSpec({ valueColumn: '' })
+    })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(450)
+    })
+
+    expect(h.runQuery).not.toHaveBeenCalled()
+  })
+
+  it('resetWorkspace clears query state and lets the default chart auto-run again', async () => {
+    const { result } = renderWorkspace()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(450)
+    })
+    expect(h.runQuery).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      result.current.patchSpec({ binCount: 20 })
       result.current.resetWorkspace()
     })
 
-    expect(result.current.hasRun).toBe(false)
-    expect(result.current.selectedSavedChartId).toBe('')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(450)
+    })
+
+    expect(h.runQuery).toHaveBeenCalledTimes(2)
+    expect(h.runQuery.mock.calls[1]?.[0].sql).toContain('least(12, max_v - min_v + 1)')
+  })
+
+  it('retries the current generated SQL on demand', async () => {
+    const { result } = renderWorkspace()
+
+    await act(async () => {
+      result.current.execute()
+      result.current.execute()
+    })
+
+    expect(h.runQuery).toHaveBeenCalledTimes(2)
+    expect(h.runQuery.mock.calls[1]?.[0].sql).toBe(h.runQuery.mock.calls[0]?.[0].sql)
   })
 })

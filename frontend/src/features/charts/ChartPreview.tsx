@@ -7,7 +7,6 @@ type Props = Pick<
   ChartWorkspaceState,
   | 'validation'
   | 'runError'
-  | 'hasRun'
   | 'runChart'
   | 'chartData'
   | 'chartRef'
@@ -18,7 +17,6 @@ type Props = Pick<
 export function ChartPreview({
   validation,
   runError,
-  hasRun,
   runChart,
   chartData,
   chartRef,
@@ -50,13 +48,13 @@ export function ChartPreview({
         <div className="p-4">
           <QueryErrorBanner message={runError} onRetry={execute} />
         </div>
-      ) : !hasRun ? (
-        <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-fg-muted">
-          Configure the chart and run it to preview results. Data-setting changes rerun automatically after the first run.
-        </div>
       ) : runChart.isPending ? (
         <div className="flex flex-1 items-center justify-center p-6 text-sm text-fg-muted">
           Running chart query…
+        </div>
+      ) : !runChart.data ? (
+        <div className="flex flex-1 items-center justify-center p-6 text-sm text-fg-muted">
+          Preparing chart query…
         </div>
       ) : chartData.length === 0 ? (
         <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-fg-muted">

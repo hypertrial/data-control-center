@@ -23,10 +23,6 @@ const h = vi.hoisted(() => ({
   listDatasets: vi.fn(),
   fetchDatasetProfile: vi.fn(),
   runQuery: vi.fn(),
-  listSavedCharts: vi.fn(),
-  createSavedChart: vi.fn(),
-  patchSavedChart: vi.fn(),
-  deleteSavedChart: vi.fn(),
 }))
 
 vi.mock('@/api/client', async (importOriginal) => {
@@ -38,10 +34,6 @@ vi.mock('@/api/client', async (importOriginal) => {
       listDatasets: h.listDatasets,
       fetchDatasetProfile: h.fetchDatasetProfile,
       runQuery: h.runQuery,
-      listSavedCharts: h.listSavedCharts,
-      createSavedChart: h.createSavedChart,
-      patchSavedChart: h.patchSavedChart,
-      deleteSavedChart: h.deleteSavedChart,
     },
   }
 })
@@ -93,27 +85,9 @@ describe('ChartsPage', () => {
   beforeEach(() => {
     h.listDatasets.mockResolvedValue([dsRow])
     h.fetchDatasetProfile.mockResolvedValue(chartableProfile())
-    h.listSavedCharts.mockResolvedValue([])
-    h.createSavedChart.mockResolvedValue({
-      chart_id: 'ch_1',
-      dataset_id: 'ds_001',
-      name: 'Chart',
-      spec_json: '{}',
-      created_at: 'c',
-      updated_at: 'u',
-    })
-    h.patchSavedChart.mockResolvedValue({
-      chart_id: 'ch_1',
-      dataset_id: 'ds_001',
-      name: 'Chart',
-      spec_json: '{}',
-      created_at: 'c',
-      updated_at: 'u',
-    })
-    h.deleteSavedChart.mockResolvedValue(undefined)
     h.runQuery.mockResolvedValue({
-      columns: [{ name: 'x', type: null }, { name: 'revenue', type: null }, { name: 'profit', type: null }],
-      rows: [{ x: '2026-01-01', revenue: 10, profit: 4 }],
+      columns: [{ name: 'bin_index', type: null }, { name: 'lower_bound', type: null }, { name: 'upper_bound', type: null }, { name: 'count', type: null }],
+      rows: [{ bin_index: 0, lower_bound: 0, upper_bound: 10, count: 4 }],
       row_count: 1,
       truncated: false,
       error: null,
@@ -145,138 +119,111 @@ describe('ChartsPage', () => {
     wrap(<ChartsPage />)
 
     expect(await screen.findByText(/Choose at least one numeric variable/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Run chart/i })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /Run chart/i })).not.toBeInTheDocument()
   })
 
-  it('preselects temporal and numeric defaults from the profile', async () => {
+  it('preselects histogram defaults from the profile', async () => {
     wrap(<ChartsPage />)
 
-    await waitFor(() => expect(screen.getByLabelText('X axis')).toHaveValue('order_date'))
-    expect(screen.getByLabelText('revenue')).toBeChecked()
-    expect(screen.getByLabelText('profit')).toBeChecked()
-    expect(screen.getByDisplayValue('Orders trends')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText('Chart type')).toHaveValue('histogram'))
+    expect(screen.getByLabelText('Value column')).toHaveValue('revenue')
+    expect(screen.getByLabelText('Bins')).toHaveValue(12)
+    expect(screen.queryByLabelText('X axis')).not.toBeInTheDocument()
+    expect(screen.queryByText('Y variables')).not.toBeInTheDocument()
+    expect(screen.getByDisplayValue('revenue distribution')).toBeInTheDocument()
+    expect(screen.queryByText('Saved Charts')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Run chart/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Save$/i })).not.toBeInTheDocument()
+    expect(screen.getByText('Chart').compareDocumentPosition(screen.getByText('Data'))).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
-  it('runs the chart query only after clicking Run chart', async () => {
+  it('switches between histogram and line controls', async () => {
     const user = userEvent.setup()
     wrap(<ChartsPage />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /Run chart/i })).toBeEnabled())
-    expect(h.runQuery).not.toHaveBeenCalled()
+    await user.selectOptions(await screen.findByLabelText('Chart type'), 'line')
+    expect(screen.getByLabelText('X axis')).toHaveValue('order_date')
+    expect(screen.getByLabelText('revenue')).toBeChecked()
+    expect(screen.getByDisplayValue('Orders trends')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /Run chart/i }))
+    await user.selectOptions(screen.getByLabelText('Chart type'), 'histogram')
+    expect(screen.getByLabelText('Value column')).toHaveValue('revenue')
+    expect(screen.queryByLabelText('Aggregation')).not.toBeInTheDocument()
+  })
+
+  it('automatically runs the chart query for a valid chart', async () => {
+    wrap(<ChartsPage />)
+
+    await screen.findByLabelText('Chart type')
+    expect(h.runQuery).not.toHaveBeenCalled()
 
     await waitFor(() => expect(h.runQuery).toHaveBeenCalledTimes(1))
     expect(h.runQuery.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
         max_rows: 5000,
-        sql: expect.stringContaining('avg(revenue) as revenue'),
+        sql: expect.stringContaining('least(12, max_v - min_v + 1)'),
       }),
     )
+    expect(h.runQuery.mock.calls[0]?.[0].sql.toLowerCase()).toContain('cast(min(revenue) as bigint) as min_v')
   })
 
   it('shows a truncation warning from the query result', async () => {
-    const user = userEvent.setup()
     h.runQuery.mockResolvedValue({
-      columns: [{ name: 'x', type: null }, { name: 'revenue', type: null }],
-      rows: [{ x: '2026-01-01', revenue: 10 }],
+      columns: [{ name: 'bin_index', type: null }, { name: 'lower_bound', type: null }, { name: 'upper_bound', type: null }, { name: 'count', type: null }],
+      rows: [{ bin_index: 0, lower_bound: 0, upper_bound: 10, count: 10 }],
       row_count: 5000,
       truncated: true,
       error: null,
     })
 
     wrap(<ChartsPage />)
-    await user.click(await screen.findByRole('button', { name: /Run chart/i }))
+    await screen.findByLabelText('Chart type')
 
     expect(await screen.findByText(/Truncated at 5,000 rows/i)).toBeInTheDocument()
   })
 
-  it('auto-runs after data settings change once the chart has run', async () => {
+  it('auto-runs after SQL-affecting data settings change', async () => {
     const user = userEvent.setup()
     wrap(<ChartsPage />)
 
-    await user.click(await screen.findByRole('button', { name: /Run chart/i }))
+    await screen.findByLabelText('Chart type')
     await waitFor(() => expect(h.runQuery).toHaveBeenCalledTimes(1))
 
-    await user.selectOptions(screen.getByLabelText('Aggregation'), 'sum')
+    await user.clear(screen.getByLabelText('Bins'))
+    await user.type(screen.getByLabelText('Bins'), '20')
 
     await waitFor(() => expect(h.runQuery).toHaveBeenCalledTimes(2))
-    expect(h.runQuery.mock.calls[1]?.[0].sql).toContain('sum(revenue) as revenue')
+    expect(h.runQuery.mock.calls[1]?.[0].sql).toContain('least(20, max_v - min_v + 1)')
   })
 
-  it('saves the current chart spec', async () => {
+  it('does not rerun SQL for display-only changes', async () => {
     const user = userEvent.setup()
-    vi.spyOn(window, 'prompt').mockReturnValue('My chart')
     wrap(<ChartsPage />)
 
-    await user.click(await screen.findByRole('button', { name: /^Save$/i }))
+    await screen.findByLabelText('Chart type')
+    await waitFor(() => expect(h.runQuery).toHaveBeenCalledTimes(1))
 
-    await waitFor(() => expect(h.createSavedChart).toHaveBeenCalled())
-    expect(h.createSavedChart.mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({ dataset_id: 'ds_001', name: 'My chart' }),
-    )
+    await user.clear(screen.getByLabelText('Title'))
+    await user.type(screen.getByLabelText('Title'), 'Custom title')
+    await new Promise((resolve) => window.setTimeout(resolve, 550))
+
+    expect(h.runQuery).toHaveBeenCalledTimes(1)
   })
 
-  it('loads saved charts and exercises management, scale, filter, split, and export controls', async () => {
+  it('exercises scale, filter, split, and export controls with live query results', async () => {
     const user = userEvent.setup()
     const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined)
-    vi.spyOn(window, 'prompt')
-      .mockReturnValueOnce('Renamed chart')
-      .mockReturnValueOnce('Copied chart')
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    h.listSavedCharts.mockResolvedValue([
-      {
-        chart_id: 'ch_1',
-        dataset_id: 'ds_001',
-        name: 'Saved ratings',
-        spec_json: JSON.stringify({
-          version: 2,
-          chartType: 'line',
-          xColumn: 'order_date',
-          yColumns: ['revenue'],
-          aggregation: 'avg',
-          bucket: 'month',
-          splitBy: 'region',
-          filters: [{ id: 'f_saved', column: 'region', operator: 'eq', value: 'East' }],
-          yAxisScale: 'manual',
-          yAxisMin: '0',
-          yAxisMax: '100',
-          referenceLines: [{ id: 'r_saved', label: 'Target', value: '50' }],
-          title: 'Saved ratings',
-        }),
-        created_at: 'c',
-        updated_at: 'u',
-      },
-    ])
     h.runQuery.mockResolvedValue({
-      columns: [{ name: 'x', type: null }, { name: 'split', type: null }, { name: 'value', type: null }],
-      rows: [{ x: '2026-01-01', split: 'East', value: 10 }],
+      columns: [{ name: 'bin_index', type: null }, { name: 'lower_bound', type: null }, { name: 'upper_bound', type: null }, { name: 'count', type: null }],
+      rows: [{ bin_index: 0, lower_bound: 0, upper_bound: 10, count: 10 }],
       row_count: 1,
       truncated: false,
       error: null,
     })
 
     wrap(<ChartsPage />)
-    await screen.findByText('Saved Charts')
-    await screen.findByRole('option', { name: 'Saved ratings' })
-
-    await user.selectOptions(screen.getAllByRole('combobox')[0]!, 'ch_1')
-    expect(await screen.findAllByDisplayValue('Saved ratings')).toHaveLength(2)
-    expect(await screen.findByText(/region has about 30 values/i)).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Update' }))
-    await waitFor(() => expect(h.patchSavedChart).toHaveBeenCalled())
-    expect(h.patchSavedChart.mock.calls[0]?.[0]).toBe('ch_1')
-    expect(h.patchSavedChart.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ spec_json: expect.any(String) }))
-
-    await user.click(screen.getByRole('button', { name: 'Rename' }))
-    expect(h.patchSavedChart.mock.calls[1]?.[1]).toEqual({ name: 'Renamed chart' })
-
-    await user.click(screen.getByRole('button', { name: 'Duplicate' }))
-    expect(h.createSavedChart.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ name: 'Copied chart' }))
-
-    await user.click(screen.getByRole('button', { name: /Delete/i }))
-    expect(h.deleteSavedChart).toHaveBeenCalledWith('ch_1', expect.anything())
+    await screen.findByLabelText('Chart type')
+    await waitFor(() => expect(screen.getByTestId('charts-preview')).toBeInTheDocument())
 
     await user.click(screen.getByRole('button', { name: /Add filter/i }))
     const operatorSelect = screen
@@ -287,6 +234,10 @@ describe('ChartsPage', () => {
     expect(screen.getAllByPlaceholderText('Value').some((input) => (input as HTMLInputElement).disabled)).toBe(true)
     await user.click(screen.getAllByRole('button', { name: /Remove filter/i })[1]!)
 
+    await user.selectOptions(screen.getByLabelText('Split by'), 'region')
+    expect(await screen.findByText(/region has about 30 values/i)).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Chart type'), 'line')
     await user.selectOptions(screen.getByLabelText('Y scale'), 'auto')
     await user.selectOptions(screen.getByLabelText('Y scale'), 'manual')
     await user.clear(screen.getByLabelText('Y min'))
@@ -296,9 +247,6 @@ describe('ChartsPage', () => {
     await user.click(screen.getByRole('button', { name: /Add reference line/i }))
     await user.click(screen.getAllByRole('button', { name: /Remove reference line/i })[1]!)
 
-    await user.click(screen.getByRole('button', { name: /Run chart/i }))
-    await waitFor(() => expect(screen.getByTestId('charts-preview')).toBeInTheDocument())
-
     await user.click(screen.getByRole('button', { name: /PNG/i }))
     await user.click(screen.getByRole('button', { name: /CSV/i }))
     await user.click(screen.getByRole('button', { name: /Spec/i }))
@@ -306,6 +254,6 @@ describe('ChartsPage', () => {
     expect(write).toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', { name: /Reset/i }))
-    expect(screen.getByDisplayValue('Unsaved chart')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('revenue distribution')).toBeInTheDocument()
   })
 })
