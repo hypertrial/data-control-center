@@ -129,6 +129,23 @@ describe('chartUtils', () => {
     )
   })
 
+  it('maps y-axis scale modes to explicit ECharts axis options', () => {
+    const data = [{ x: '2026-01-01T00:00:00Z', values: { 'gross revenue': 48, profit: 46 } }]
+
+    expect(buildLineChartOption(baseSpec({ yAxisScale: 'auto' }), data).yAxis).toEqual(
+      expect.objectContaining({ scale: true }),
+    )
+    expect(buildLineChartOption(baseSpec({ yAxisScale: 'auto' }), data).yAxis).not.toEqual(
+      expect.objectContaining({ min: 0 }),
+    )
+    expect(buildLineChartOption(baseSpec({ yAxisScale: 'zero' }), data).yAxis).toEqual(
+      expect.objectContaining({ min: 0, scale: false }),
+    )
+    expect(
+      buildLineChartOption(baseSpec({ yAxisScale: 'manual', yAxisMin: '40', yAxisMax: '50' }), data).yAxis,
+    ).toEqual(expect.objectContaining({ min: 40, max: 50, scale: true }))
+  })
+
   it('builds filtered SQL with escaped literals and richer aggregations', () => {
     const sql = buildLineChartSql(
       baseSpec({

@@ -384,10 +384,10 @@ function seriesNames(spec: ChartSpec, data: ChartDataPoint[]): string[] {
   return [...names]
 }
 
-function yAxisBounds(spec: ChartSpec): Record<string, number> {
-  if (spec.yAxisScale === 'zero') return { min: 0 }
-  if (spec.yAxisScale === 'manual') return { min: Number(spec.yAxisMin), max: Number(spec.yAxisMax) }
-  return {}
+function yAxisBounds(spec: ChartSpec): Record<string, number | boolean> {
+  if (spec.yAxisScale === 'zero') return { min: 0, scale: false }
+  if (spec.yAxisScale === 'manual') return { min: Number(spec.yAxisMin), max: Number(spec.yAxisMax), scale: true }
+  return { scale: true }
 }
 
 function referenceMarkLine(spec: ChartSpec) {
