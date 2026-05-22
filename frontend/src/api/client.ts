@@ -18,6 +18,9 @@ import type {
   QueryRequest,
   QueryResult,
   SampleResponse,
+  SavedChart,
+  SavedChartCreate,
+  SavedChartPatch,
   SavedQuery,
   SavedQueryCreate,
   SavedQueryPatch,
@@ -236,6 +239,34 @@ export const api = {
 
   deleteSavedQuery: async (savedId: string) => {
     const r = await apiFetch(`${API}/saved-queries/${encodeURIComponent(savedId)}`, { method: 'DELETE' })
+    if (!r.ok) throw new Error(await readApiError(r))
+  },
+
+  listSavedCharts: (datasetId: string) =>
+    handle<SavedChart[]>(
+      apiFetch(`${API}/saved-charts?dataset_id=${encodeURIComponent(datasetId)}`),
+    ),
+
+  createSavedChart: (body: SavedChartCreate) =>
+    handle<SavedChart>(
+      apiFetch(`${API}/saved-charts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    ),
+
+  patchSavedChart: (chartId: string, body: SavedChartPatch) =>
+    handle<SavedChart>(
+      apiFetch(`${API}/saved-charts/${encodeURIComponent(chartId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    ),
+
+  deleteSavedChart: async (chartId: string) => {
+    const r = await apiFetch(`${API}/saved-charts/${encodeURIComponent(chartId)}`, { method: 'DELETE' })
     if (!r.ok) throw new Error(await readApiError(r))
   },
 

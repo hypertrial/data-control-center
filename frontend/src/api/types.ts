@@ -229,6 +229,26 @@ export type SavedQueryPatch = {
   sql?: string | null
 }
 
+export type SavedChart = {
+  chart_id: string
+  dataset_id: string
+  name: string
+  spec_json: string
+  created_at: string
+  updated_at: string
+}
+
+export type SavedChartCreate = {
+  dataset_id: string
+  name: string
+  spec_json: string
+}
+
+export type SavedChartPatch = {
+  name?: string | null
+  spec_json?: string | null
+}
+
 export type AskConversation = {
   conversation_id: string
   title: string

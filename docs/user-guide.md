@@ -89,23 +89,32 @@ the UI keeps the sampled value and labels it using profile metadata.
 
 ## Charts tab
 
-Use **Charts** to build a multi-variable line chart for the active dataset without writing
+Use **Charts** to build customizable line charts for the active dataset without writing
 SQL by hand. The tab uses the existing local read-only query path, so chart queries stay
 inside the same workspace guardrails as the SQL tab.
 
+- **Saved charts:** Save, load, update, duplicate, rename, and delete chart configurations.
+  Saved charts are scoped to the active dataset and stored in the local workspace DB.
 - **Defaults:** The builder picks the primary temporal column for the X axis when profile
   inference finds one, then preselects likely numeric measures for Y series.
-- **Variables:** Choose one X column and one or more numeric Y variables. Each selected
-  Y variable renders as a separate line.
-- **Aggregation:** Use **Average**, **Sum**, **Minimum**, or **Maximum** with optional time
-  buckets such as day, month, quarter, or year. Choose **None** to plot raw rows ordered by X.
-  Buckets are available for continuous datetime columns; discrete periods such as **year**
-  group directly by their value.
-- **Display controls:** Customize title, axis labels, legend, smoothing, point markers,
-  and whether line segments connect across null values.
-- **Run chart:** Settings do not query automatically. Click **Run chart** when ready.
-  If the result is truncated at the chart row limit, the preview shows a truncation warning.
-- **SQL:** Use the **SQL** action to open the generated read-only query in the SQL tab.
+- **Variables and split:** Choose one X column and one or more numeric Y variables. Use
+  **Split by** to render one selected Y variable across categorical, boolean-like, or
+  identifier-like values. High-cardinality split columns show a density warning.
+- **Filters:** Add structured column/operator/value filters before charting. Filters support
+  equality, comparisons, text contains/starts-with, comma-separated **in**, and null checks.
+- **Aggregation:** Use **Average**, **Sum**, **Minimum**, **Maximum**, **Median**, **Std dev**,
+  **p25**, **p75**, **Count**, or **Count distinct** with optional time buckets such as day,
+  month, quarter, or year. Choose **None** to plot raw rows ordered by X.
+- **Scale and display:** Customize title, axis labels, Y scale, manual Y min/max, reference
+  lines, legend, smoothing, point markers, zoom slider, and whether line segments connect
+  across null values. Continuous datetime buckets use a time axis; discrete periods such as
+  **year** group directly by their value.
+- **Run behavior:** Click **Run chart** for the first preview. After that, data-setting changes
+  such as variables, filters, split, buckets, or aggregation rerun automatically after a short
+  debounce. Display-only changes update the preview without rerunning SQL. If the result is
+  truncated at the chart row limit, the preview shows a truncation warning.
+- **Export and SQL:** Copy chart PNG data, CSV rows, or the chart spec JSON. Use the **SQL**
+  action to open the generated read-only query in the SQL tab.
 
 ## Ask tab
 

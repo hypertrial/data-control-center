@@ -225,6 +225,25 @@ def test_saved_query_crud(tmp_path: Path) -> None:
         ws.close()
 
 
+def test_saved_chart_crud(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    try:
+        cid = ws.saved_charts.insert_saved_chart("ds_1", "c1", '{"version":2}')
+        row = ws.saved_charts.get_saved_chart(cid)
+        assert row and row["dataset_id"] == "ds_1" and row["name"] == "c1"
+        assert ws.saved_charts.list_saved_charts("ds_1")[0]["chart_id"] == cid
+        assert ws.saved_charts.list_saved_charts("ds_other") == []
+        assert ws.saved_charts.update_saved_chart(cid, name="c2", spec_json='{"version":3}')
+        row2 = ws.saved_charts.get_saved_chart(cid)
+        assert row2 and row2["name"] == "c2" and row2["spec_json"] == '{"version":3}'
+        assert ws.saved_charts.delete_saved_chart(cid)
+        assert ws.saved_charts.get_saved_chart(cid) is None
+        assert not ws.saved_charts.delete_saved_chart(cid)
+    finally:
+        ws.close()
+
+
 def test_get_profile_history_meta(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     ws = Workspace(settings)
@@ -319,6 +338,35 @@ def test_workspace_rejects_missing_source_label_column(tmp_path: Path) -> None:
     with pytest.raises(
         UnsupportedWorkspaceSchemaError,
         match="Unsupported workspace database schema",
+    ):
+        Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+
+
+def test_workspace_migrates_missing_saved_charts_table(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy_charts.duckdb"
+    _create_current_workspace_db(db_path)
+    con = duckdb.connect(str(db_path))
+    con.execute("DROP TABLE dcc_saved_charts")
+    con.close()
+
+    ws = Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+    try:
+        cid = ws.saved_charts.insert_saved_chart("ds_1", "c", "{}")
+        assert ws.saved_charts.get_saved_chart(cid)["name"] == "c"
+    finally:
+        ws.close()
+
+
+def test_workspace_rejects_malformed_saved_charts_table(tmp_path: Path) -> None:
+    db_path = tmp_path / "bad_charts.duckdb"
+    _create_current_workspace_db(db_path)
+    con = duckdb.connect(str(db_path))
+    con.execute("ALTER TABLE dcc_saved_charts DROP COLUMN spec_json")
+    con.close()
+
+    with pytest.raises(
+        UnsupportedWorkspaceSchemaError,
+        match="table dcc_saved_charts columns do not match",
     ):
         Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
 
@@ -796,6 +844,35 @@ def test_workspace_facade_delegates_to_engine_and_stores(
             calls["get_saved_query"] = saved_id
             return {"saved_id": saved_id}
 
+    class FakeSavedCharts:
+        def __init__(self, engine: object) -> None:
+            calls["saved_charts_engine"] = engine
+
+        def list_saved_charts(self, dataset_id: str) -> list[dict[str, Any]]:
+            calls["list_saved_charts"] = dataset_id
+            return [{"chart_id": "c1"}]
+
+        def insert_saved_chart(self, dataset_id: str, name: str, spec_json: str) -> str:
+            calls["insert_saved_chart"] = (dataset_id, name, spec_json)
+            return "chart-id"
+
+        def update_saved_chart(
+            self,
+            chart_id: str,
+            name: str | None = None,
+            spec_json: str | None = None,
+        ) -> bool:
+            calls["update_saved_chart"] = (chart_id, name, spec_json)
+            return True
+
+        def delete_saved_chart(self, chart_id: str) -> bool:
+            calls["delete_saved_chart"] = chart_id
+            return True
+
+        def get_saved_chart(self, chart_id: str) -> dict[str, Any] | None:
+            calls["get_saved_chart"] = chart_id
+            return {"chart_id": chart_id}
+
     class FakeJobs:
         def __init__(self, engine: object) -> None:
             calls["jobs_engine"] = engine
@@ -829,6 +906,7 @@ def test_workspace_facade_delegates_to_engine_and_stores(
     monkeypatch.setattr("app.services.workspace.WorkspaceSchema", FakeSchema)
     monkeypatch.setattr("app.services.workspace.ProfileStore", FakeProfiles)
     monkeypatch.setattr("app.services.workspace.SavedQueryStore", FakeSavedQueries)
+    monkeypatch.setattr("app.services.workspace.SavedChartStore", FakeSavedCharts)
     monkeypatch.setattr("app.services.workspace.JobStore", FakeJobs)
 
     ws = Workspace(_settings(tmp_path))
@@ -837,6 +915,7 @@ def test_workspace_facade_delegates_to_engine_and_stores(
     assert calls["schema_init"] is lock_token
     assert calls["profiles_engine"] is ws._engine
     assert calls["saved_engine"] is ws._engine
+    assert calls["saved_charts_engine"] is ws._engine
     assert calls["jobs_engine"] is ws._engine
 
     assert ws.lock_db().__enter__() is lock_token
@@ -853,6 +932,11 @@ def test_workspace_facade_delegates_to_engine_and_stores(
     assert ws.saved_queries.update_saved_query("saved-id", name="renamed", sql="SELECT 2") is True
     assert ws.saved_queries.delete_saved_query("saved-id") is True
     assert ws.saved_queries.get_saved_query("saved-id") == {"saved_id": "saved-id"}
+    assert ws.saved_charts.list_saved_charts("ds_1") == [{"chart_id": "c1"}]
+    assert ws.saved_charts.insert_saved_chart("ds_1", "chart", "{}") == "chart-id"
+    assert ws.saved_charts.update_saved_chart("chart-id", name="renamed", spec_json="{}") is True
+    assert ws.saved_charts.delete_saved_chart("chart-id") is True
+    assert ws.saved_charts.get_saved_chart("chart-id") == {"chart_id": "chart-id"}
     assert ws.profiles.get_profile_history_meta("h1") == {"history_id": "h1"}
     assert ws.profiles.load_profile_cache("ds_1") == {"dataset_id": "ds_1"}
     ws.profiles.delete_profile_cache("ds_1")
@@ -878,6 +962,7 @@ def test_workspace_facade_delegates_to_engine_and_stores(
     assert calls["register_file_view"] == ("view_a", tmp_path / "a.csv", "csv")
     assert calls["save_profile_cache"] == ("ds_1", {"quality_score": 88})
     assert calls["update_saved_query"] == ("saved-id", "renamed", "SELECT 2")
+    assert calls["update_saved_chart"] == ("chart-id", "renamed", "{}")
     assert calls["job_insert"] == ("job-1", "profile", "ds_1", "queued")
     assert calls["job_update"] == (
         "job-1",

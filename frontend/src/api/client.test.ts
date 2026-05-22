@@ -396,6 +396,42 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries/sq_1', expect.objectContaining({ method: 'DELETE' }))
   })
 
+  it('saved charts CRUD', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonOk([]))
+      .mockResolvedValueOnce(
+        jsonOk({
+          chart_id: 'ch_1',
+          dataset_id: 'ds_1',
+          name: 'c',
+          spec_json: '{}',
+          created_at: 'c',
+          updated_at: 'u',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonOk({
+          chart_id: 'ch_1',
+          dataset_id: 'ds_1',
+          name: 'c2',
+          spec_json: '{}',
+          created_at: 'c',
+          updated_at: 'u2',
+        }),
+      )
+      .mockResolvedValueOnce({ ok: true, statusText: 'No Content', text: () => Promise.resolve('') } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    await api.listSavedCharts('ds_1')
+    await api.createSavedChart({ dataset_id: 'ds_1', name: 'c', spec_json: '{}' })
+    await api.patchSavedChart('ch_1', { name: 'c2' })
+    await api.deleteSavedChart('ch_1')
+    expect(fetchMock).toHaveBeenCalledWith('/api/saved-charts?dataset_id=ds_1', expect.any(Object))
+    expect(fetchMock).toHaveBeenCalledWith('/api/saved-charts', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenCalledWith('/api/saved-charts/ch_1', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock).toHaveBeenCalledWith('/api/saved-charts/ch_1', expect.objectContaining({ method: 'DELETE' }))
+  })
+
   it('ask conversations and turns API', async () => {
     const conv = {
       conversation_id: 'c1',

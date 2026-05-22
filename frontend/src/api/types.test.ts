@@ -13,6 +13,7 @@ import {
   profileDiffFixture,
   queryResultFixture,
   sampleResponseFixture,
+  savedChartFixture,
   savedQueryFixture,
 } from './__fixtures__/api-fixtures'
 import type {
@@ -41,6 +42,9 @@ import type {
   QueryResult,
   QueryResultColumn,
   SampleResponse,
+  SavedChart,
+  SavedChartCreate,
+  SavedChartPatch,
   SavedQuery,
   SavedQueryCreate,
   SavedQueryPatch,
@@ -130,6 +134,14 @@ describe('api types conformance', () => {
     const patch: SavedQueryPatch = { name: 'n2' }
     expect(create.sql).toBeTruthy()
     expect(patch.name).toBe('n2')
+  })
+
+  it('SavedChart variants', () => {
+    expectTypeOf(savedChartFixture).toEqualTypeOf<SavedChart>()
+    const create: SavedChartCreate = { dataset_id: 'ds_001', name: 'c', spec_json: '{}' }
+    const patch: SavedChartPatch = { name: 'c2' }
+    expect(create.spec_json).toBeTruthy()
+    expect(patch.name).toBe('c2')
   })
 
   it('Ask conversation and turn', () => {

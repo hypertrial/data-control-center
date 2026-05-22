@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { QueryResult } from '@/api/types'
 import { mkColumn, mkProfile } from '@/test/profileFixtures'
 import {
+  buildLineChartOption,
   buildLineChartSql,
   createDefaultChartSpec,
   getNumericColumnNames,
@@ -13,13 +14,22 @@ import {
 
 function baseSpec(overrides: Partial<ChartSpec> = {}): ChartSpec {
   return {
+    version: 2,
     datasetId: 'ds_001',
     chartType: 'line',
     xColumn: 'order date',
     xColumnBucketable: true,
+    xColumnTemporalKind: 'continuous_datetime',
     yColumns: ['gross revenue', 'profit'],
     aggregation: 'avg',
     bucket: 'month',
+    filters: [],
+    splitBy: '',
+    yAxisScale: 'auto',
+    yAxisMin: '',
+    yAxisMax: '',
+    referenceLines: [],
+    showDataZoom: true,
     title: 'Trends',
     showLegend: true,
     smooth: false,
@@ -103,6 +113,58 @@ describe('chartUtils', () => {
     expect(sql).toContain('profit')
     expect(sql).not.toContain('group by')
     expect(sql).not.toContain('date_trunc')
+  })
+
+  it('uses a time axis for raw continuous datetime charts', () => {
+    const option = buildLineChartOption(
+      baseSpec({ aggregation: 'none', bucket: 'none' }),
+      [{ x: '2026-01-01T00:00:00Z', values: { 'gross revenue': 10, profit: 4 } }],
+    )
+
+    expect(option.xAxis).toEqual(expect.objectContaining({ type: 'time', data: undefined }))
+    expect(option.series).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ data: [['2026-01-01T00:00:00Z', 10]] }),
+      ]),
+    )
+  })
+
+  it('builds filtered SQL with escaped literals and richer aggregations', () => {
+    const sql = buildLineChartSql(
+      baseSpec({
+        aggregation: 'median',
+        filters: [
+          { id: 'f1', column: 'region', operator: 'eq', value: "Bob's" },
+          { id: 'f2', column: 'team', operator: 'in', value: 'A, B' },
+        ],
+      }),
+      'orders',
+    )
+
+    expect(sql).toContain('median("gross revenue") as "gross revenue"')
+    expect(sql).toContain("region = 'Bob''s'")
+    expect(sql).toContain("team in ('A', 'B')")
+  })
+
+  it('builds split-by SQL and maps split rows into series values', () => {
+    const spec = baseSpec({ yColumns: ['rating'], splitBy: 'team', aggregation: 'avg' })
+    const sql = buildLineChartSql(spec, 'ratings')
+    expect(sql).toContain('team as split')
+    expect(sql).toContain('avg(rating) as value')
+    expect(sql).toContain('group by')
+    expect(sql).toContain('1,\n    2')
+
+    const result: QueryResult = {
+      columns: [{ name: 'x', type: null }, { name: 'split', type: null }, { name: 'value', type: null }],
+      rows: [
+        { x: 2025, split: 'A', value: 10 },
+        { x: 2025, split: 'B', value: '12' },
+      ],
+      row_count: 2,
+      truncated: false,
+      error: null,
+    }
+    expect(queryResultToChartData(result, spec)).toEqual([{ x: 2025, values: { A: 10, B: 12 } }])
   })
 
   it('maps query rows into chart data and coerces numeric strings', () => {

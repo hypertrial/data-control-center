@@ -16,7 +16,7 @@ vulnerability reporting.
 3. **New here?** Follow the [**5-minute tour**](docs/5-minute-tour.md) with
    [`examples/`](examples/) fixtures before using your own data.
 
-Explore **Columns**, **SQL**, and more. **Ask** is optional and needs
+Explore **Columns**, **Charts**, **SQL**, and more. **Ask** is optional and needs
 [Ollama](https://ollama.com); see [User guide — Ask](docs/user-guide.md#ask-tab).
 
 ## Platform notes

@@ -272,6 +272,26 @@ class SavedQueryPatch(BaseModel):
     sql: str | None = Field(default=None, min_length=1, max_length=500_000)
 
 
+class SavedChart(BaseModel):
+    chart_id: str
+    dataset_id: str
+    name: str
+    spec_json: str
+    created_at: str
+    updated_at: str
+
+
+class SavedChartCreate(BaseModel):
+    dataset_id: str = Field(..., min_length=1, max_length=200)
+    name: str = Field(..., min_length=1, max_length=200)
+    spec_json: str = Field(..., min_length=2, max_length=500_000)
+
+
+class SavedChartPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    spec_json: str | None = Field(default=None, min_length=2, max_length=500_000)
+
+
 class AgentAskRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=10_000)
     dataset_ids: list[str] | None = Field(default=None)

@@ -10,6 +10,8 @@ import { mkProfile } from '@/test/profileFixtures'
 vi.mock('echarts', () => ({
   init: vi.fn(() => ({
     setOption: vi.fn(),
+    dispatchAction: vi.fn(),
+    getDataURL: vi.fn(() => 'data:image/png;base64,test'),
     resize: vi.fn(),
     dispose: vi.fn(),
   })),
@@ -25,6 +27,10 @@ vi.mock('@/api/client', () => ({
     getProfileHistory: vi.fn(),
     getProfileDiff: vi.fn(),
     listSavedQueries: vi.fn(),
+    listSavedCharts: vi.fn(),
+    createSavedChart: vi.fn(),
+    patchSavedChart: vi.fn(),
+    deleteSavedChart: vi.fn(),
     listAskConversations: vi.fn(),
     listLlmModels: vi.fn(),
     health: vi.fn(),
@@ -76,6 +82,7 @@ describe('App', () => {
     })
     vi.mocked(api.getProfileHistory).mockResolvedValue([])
     vi.mocked(api.listSavedQueries).mockResolvedValue([])
+    vi.mocked(api.listSavedCharts).mockResolvedValue([])
     vi.mocked(api.listAskConversations).mockResolvedValue([])
     vi.mocked(api.listLlmModels).mockResolvedValue({
       default_model: 'qwen3:4b',

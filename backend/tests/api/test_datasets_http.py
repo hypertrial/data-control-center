@@ -6,7 +6,7 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
-from app.services.workspace_stores import JobStore, ProfileStore, SavedQueryStore
+from app.services.workspace_stores import JobStore, ProfileStore, SavedChartStore, SavedQueryStore
 
 
 def _wait_for_job(client, job_id: str, *, timeout: float = 2.0) -> dict:
@@ -637,6 +637,46 @@ def test_patch_saved_query_unknown_id(client) -> None:
     )
 
 
+def test_saved_charts_http(client) -> None:
+    assert client.get("/api/saved-charts?dataset_id=ds_1").json() == []
+    c = client.post(
+        "/api/saved-charts",
+        json={"dataset_id": "ds_1", "name": "c1", "spec_json": '{"version":2}'},
+    )
+    assert c.status_code == 200
+    cid = c.json()["chart_id"]
+    assert len(client.get("/api/saved-charts?dataset_id=ds_1").json()) == 1
+    assert client.get("/api/saved-charts?dataset_id=ds_other").json() == []
+    p = client.patch(f"/api/saved-charts/{cid}", json={"name": "c2"})
+    assert p.status_code == 200
+    p2 = client.patch(f"/api/saved-charts/{cid}", json={"spec_json": '{"version":3}'})
+    assert p2.status_code == 200
+    assert p2.json()["spec_json"] == '{"version":3}'
+    assert client.patch(f"/api/saved-charts/{cid}", json={}).status_code == 400
+    assert (
+        client.post(
+            "/api/saved-charts",
+            json={"dataset_id": "ds_1", "name": "bad", "spec_json": "[]"},
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            "/api/saved-charts",
+            json={"dataset_id": "ds_1", "name": "bad", "spec_json": "{bad"},
+        ).status_code
+        == 400
+    )
+    assert client.delete(f"/api/saved-charts/{cid}").status_code == 204
+    assert client.delete(f"/api/saved-charts/{cid}").status_code == 404
+
+
+def test_patch_saved_chart_unknown_id(client) -> None:
+    assert (
+        client.patch("/api/saved-charts/ch_missing", json={"name": "x"}).status_code == 404
+    )
+
+
 def test_agent_ask_stream_route(client, monkeypatch) -> None:
     def fake_stream(*_a, **_k):
         yield {"type": "meta", "data": {"model": "m"}}
@@ -695,6 +735,25 @@ def test_patch_saved_query_missing_after_update(client, monkeypatch) -> None:
     sid = c.json()["saved_id"]
     monkeypatch.setattr(SavedQueryStore, "get_saved_query", lambda self, x: None)
     assert client.patch(f"/api/saved-queries/{sid}", json={"name": "x"}).status_code == 404
+
+
+def test_create_saved_chart_get_fails(client, monkeypatch) -> None:
+    monkeypatch.setattr(SavedChartStore, "get_saved_chart", lambda self, cid: None)
+    r = client.post(
+        "/api/saved-charts",
+        json={"dataset_id": "ds", "name": "n", "spec_json": "{}"},
+    )
+    assert r.status_code == 500
+
+
+def test_patch_saved_chart_missing_after_update(client, monkeypatch) -> None:
+    c = client.post(
+        "/api/saved-charts",
+        json={"dataset_id": "ds", "name": "n", "spec_json": "{}"},
+    )
+    cid = c.json()["chart_id"]
+    monkeypatch.setattr(SavedChartStore, "get_saved_chart", lambda self, x: None)
+    assert client.patch(f"/api/saved-charts/{cid}", json={"name": "x"}).status_code == 404
 
 
 def test_profile_diff_history_from_other_dataset(client, tmp_path) -> None:

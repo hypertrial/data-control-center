@@ -66,6 +66,14 @@ EXPECTED_TABLES: dict[str, tuple[ColumnSpec, ...]] = {
         ("created_at", "TIMESTAMP", False, False),
         ("updated_at", "TIMESTAMP", False, False),
     ),
+    "dcc_saved_charts": (
+        ("chart_id", "VARCHAR", True, True),
+        ("dataset_id", "VARCHAR", True, False),
+        ("name", "VARCHAR", True, False),
+        ("spec_json", "VARCHAR", True, False),
+        ("created_at", "TIMESTAMP", False, False),
+        ("updated_at", "TIMESTAMP", False, False),
+    ),
     "dcc_ask_conversations": (
         ("conversation_id", "VARCHAR", True, True),
         ("title", "VARCHAR", True, False),
@@ -210,6 +218,7 @@ def create_workspace_schema(con: duckdb.DuckDBPyConnection) -> None:
         );
         """
     )
+    _create_saved_charts_table(con)
     con.execute(
         """
         CREATE TABLE dcc_ask_conversations (
@@ -246,6 +255,29 @@ def create_workspace_schema(con: duckdb.DuckDBPyConnection) -> None:
         ON dcc_ask_turns (conversation_id, seq);
         """
     )
+
+
+def _create_saved_charts_table(con: duckdb.DuckDBPyConnection) -> None:
+    con.execute(
+        """
+        CREATE TABLE dcc_saved_charts (
+          chart_id VARCHAR PRIMARY KEY,
+          dataset_id VARCHAR NOT NULL,
+          name VARCHAR NOT NULL,
+          spec_json VARCHAR NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+
+def _migrate_saved_charts_table(con: duckdb.DuckDBPyConnection) -> None:
+    existing = _existing_dcc_tables(con)
+    expected = set(EXPECTED_TABLES)
+    if existing == expected - {"dcc_saved_charts"}:
+        _create_saved_charts_table(con)
+        logger.info("Added saved charts table to workspace database")
 
 
 def _validate_schema(con: duckdb.DuckDBPyConnection) -> None:
@@ -297,6 +329,7 @@ class WorkspaceSchema:
         del settings  # reserved for future init options
         if _existing_dcc_tables(con):
             _drop_obsolete_indexes(con)
+            _migrate_saved_charts_table(con)
             _validate_schema(con)
         else:
             create_workspace_schema(con)

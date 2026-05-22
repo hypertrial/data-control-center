@@ -232,6 +232,106 @@ class SavedQueryStore:
         }
 
 
+class SavedChartStore:
+    def __init__(self, engine: WorkspaceEngine) -> None:
+        self._engine = engine
+
+    def list_saved_charts(self, dataset_id: str) -> list[dict[str, Any]]:
+        with self._engine.read_db() as con:
+            rows = con.execute(
+                """
+                SELECT chart_id, dataset_id, name, spec_json, created_at, updated_at
+                FROM dcc_saved_charts
+                WHERE dataset_id = ?
+                ORDER BY updated_at DESC
+                """,
+                [dataset_id],
+            ).fetchall()
+        return [self._row_to_dict(r) for r in rows]
+
+    def insert_saved_chart(self, dataset_id: str, name: str, spec_json: str) -> str:
+        cid = uuid.uuid4().hex
+        with self._engine.lock_db() as con:
+            con.execute(
+                """
+                INSERT INTO dcc_saved_charts (chart_id, dataset_id, name, spec_json)
+                VALUES (?, ?, ?, ?)
+                """,
+                [cid, dataset_id, name.strip(), spec_json],
+            )
+        return cid
+
+    def update_saved_chart(
+        self,
+        chart_id: str,
+        name: str | None = None,
+        spec_json: str | None = None,
+    ) -> bool:
+        with self._engine.lock_db() as con:
+            row = con.execute(
+                "SELECT chart_id FROM dcc_saved_charts WHERE chart_id = ?",
+                [chart_id],
+            ).fetchone()
+            if not row:
+                return False
+            if name is not None and spec_json is not None:
+                con.execute(
+                    """
+                    UPDATE dcc_saved_charts
+                    SET name = ?, spec_json = ?, updated_at = now()
+                    WHERE chart_id = ?
+                    """,
+                    [name.strip(), spec_json, chart_id],
+                )
+            elif name is not None:
+                con.execute(
+                    "UPDATE dcc_saved_charts SET name = ?, updated_at = now() WHERE chart_id = ?",
+                    [name.strip(), chart_id],
+                )
+            elif spec_json is not None:
+                con.execute(
+                    "UPDATE dcc_saved_charts SET spec_json = ?, updated_at = now() WHERE chart_id = ?",
+                    [spec_json, chart_id],
+                )
+        return True
+
+    def delete_saved_chart(self, chart_id: str) -> bool:
+        with self._engine.lock_db() as con:
+            row = con.execute(
+                "SELECT chart_id FROM dcc_saved_charts WHERE chart_id = ?",
+                [chart_id],
+            ).fetchone()
+            if not row:
+                return False
+            con.execute("DELETE FROM dcc_saved_charts WHERE chart_id = ?", [chart_id])
+        return True
+
+    def get_saved_chart(self, chart_id: str) -> dict[str, Any] | None:
+        with self._engine.read_db() as con:
+            row = con.execute(
+                """
+                SELECT chart_id, dataset_id, name, spec_json, created_at, updated_at
+                FROM dcc_saved_charts WHERE chart_id = ?
+                """,
+                [chart_id],
+            ).fetchone()
+        if not row:
+            return None
+        return self._row_to_dict(row)
+
+    @staticmethod
+    def _row_to_dict(row: tuple[Any, ...]) -> dict[str, Any]:
+        ca, ua = row[4], row[5]
+        return {
+            "chart_id": row[0],
+            "dataset_id": row[1],
+            "name": row[2],
+            "spec_json": row[3],
+            "created_at": ca.isoformat() if hasattr(ca, "isoformat") else str(ca),
+            "updated_at": ua.isoformat() if hasattr(ua, "isoformat") else str(ua),
+        }
+
+
 class JobStore:
     def __init__(self, engine: WorkspaceEngine) -> None:
         self._engine = engine

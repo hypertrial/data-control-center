@@ -18,6 +18,7 @@ from app.api.jobs import router as jobs_router
 from app.api.llm import router as llm_router
 from app.api.local_session import router as local_session_router
 from app.api.query import router as query_router
+from app.api.saved_charts import router as saved_charts_router
 from app.api.saved_queries import router as saved_queries_router
 from app.config import get_settings
 from app.errors import AppError, app_error_handler, http_error_handler, unhandled_error_handler
@@ -71,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(query_router)
     app.include_router(agent_router)
     app.include_router(ask_router)
+    app.include_router(saved_charts_router)
     app.include_router(saved_queries_router)
     app.include_router(jobs_router)
 
