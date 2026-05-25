@@ -69,6 +69,12 @@ Uploads use extension allow-listing, filename normalization, and validation befo
 registration. Path registration is gated by the security settings above.
 Implementation: [`app/services/registry.py`](app/services/registry.py) (`ensure_registration_allowed`).
 
+DuckDB import is also gated by **`DCC_ENABLE_PATH_REGISTRATION`** and the same allowed-root
+checks. **`POST /api/datasets/duckdb/inspect`** lists tables/views in a local **`.duckdb`**
+file, and **`POST /api/datasets/duckdb/import`** snapshots selected relations to app-owned
+Parquet files under **`.dcc_uploads/duckdb_imports/`** before registering them as normal
+datasets. Imports are snapshots, not live links to the source database.
+
 ### Workspace database
 
 | Variable | Default | Purpose |

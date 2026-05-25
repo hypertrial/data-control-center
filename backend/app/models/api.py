@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LlmHealth(BaseModel):
@@ -56,6 +56,33 @@ class RegisterFileRequest(BaseModel):
 class RegisterFolderRequest(BaseModel):
     path: str = Field(..., description="Absolute path to a folder")
     recursive: bool = False
+
+
+class DuckDbInspectRequest(BaseModel):
+    path: str = Field(..., description="Absolute path to a local DuckDB database")
+
+
+class DuckDbRelationRef(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_name: str = Field(..., alias="schema")
+    name: str
+    alias: str | None = Field(default=None, max_length=200)
+
+
+class DuckDbImportRequest(BaseModel):
+    path: str = Field(..., description="Absolute path to a local DuckDB database")
+    relations: list[DuckDbRelationRef] = Field(default_factory=list, min_length=1, max_length=100)
+
+
+class DuckDbRelationSummary(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_name: str = Field(..., alias="schema")
+    name: str
+    type: str
+    column_count: int
+    row_count: int | None = None
 
 
 class DatasetSummary(BaseModel):

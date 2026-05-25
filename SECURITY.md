@@ -65,3 +65,6 @@ override risk.
 Path-based registration, upload limits, and related **`DCC_*`** settings are documented in
 [`backend/README.md`](backend/README.md#configuration) (see **Local-only security** and
 **Uploads and path registration**). Implementation: [`backend/app/services/registry.py`](backend/app/services/registry.py).
+DuckDB relation import uses the same path-registration gate and snapshots selected source
+tables/views into app-owned upload copies; it does not grant SQL users permission to run
+`ATTACH` or read arbitrary filesystem paths.

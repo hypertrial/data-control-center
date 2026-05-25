@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { DatasetSummary } from '@/api/types'
+import type { DatasetSummary, DuckDbRelationRef, DuckDbRelationSummary } from '@/api/types'
 import { api } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +16,18 @@ import { formatBytes, formatCount, formatDatasetFormat, stripFileExtension } fro
 import { qualityScoreSeverity } from '@/lib/tokens'
 
 type SortMode = 'name' | 'rows' | 'quality'
+type DuckDbBusyState = 'inspect' | 'import' | null
+
+const DUCKDB_IMPORT_POLL_MS = 1200
+const DUCKDB_IMPORT_TIMEOUT_MS = 600_000
+
+function duckDbRelationKey(rel: Pick<DuckDbRelationSummary, 'schema' | 'name'>): string {
+  return `${rel.schema}\u0000${rel.name}`
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 export function DatasetSidebar() {
   const qc = useQueryClient()
@@ -33,6 +45,12 @@ export function DatasetSidebar() {
   const [sort, setSort] = useState<SortMode>('name')
   const [dropHighlight, setDropHighlight] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null)
+  const [duckDbOpen, setDuckDbOpen] = useState(false)
+  const [duckDbPath, setDuckDbPath] = useState('')
+  const [duckDbRelations, setDuckDbRelations] = useState<DuckDbRelationSummary[]>([])
+  const [duckDbSelected, setDuckDbSelected] = useState<Set<string>>(new Set())
+  const [duckDbAliases, setDuckDbAliases] = useState<Record<string, string>>({})
+  const [duckDbBusy, setDuckDbBusy] = useState<DuckDbBusyState>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
 
@@ -80,6 +98,86 @@ export function DatasetSidebar() {
     [qc, setActiveDatasetId],
   )
 
+  const inspectDuckDb = useCallback(async () => {
+    const path = duckDbPath.trim()
+    if (!path) {
+      toast.error('Enter the path to a local .duckdb file.')
+      return
+    }
+    setDuckDbBusy('inspect')
+    try {
+      const rows = await api.inspectDuckDb(path)
+      setDuckDbRelations(rows)
+      setDuckDbSelected(new Set())
+      setDuckDbAliases({})
+      toast.success(`Found ${rows.length} importable relation(s).`)
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setDuckDbBusy(null)
+    }
+  }, [duckDbPath])
+
+  const waitForDuckDbImport = useCallback(async (jobId: string): Promise<DatasetSummary[]> => {
+    const started = Date.now()
+    for (;;) {
+      if (Date.now() - started > DUCKDB_IMPORT_TIMEOUT_MS) {
+        throw new Error('DuckDB import timed out.')
+      }
+      const job = await api.getJob(jobId)
+      if (job.status === 'completed') {
+        const datasets = job.result?.datasets
+        return Array.isArray(datasets) ? (datasets as DatasetSummary[]) : []
+      }
+      if (job.status === 'failed' || job.status === 'canceled') {
+        throw new Error(job.error_message || `DuckDB import ${job.status}.`)
+      }
+      await sleep(DUCKDB_IMPORT_POLL_MS)
+    }
+  }, [])
+
+  const importDuckDb = useCallback(async () => {
+    const path = duckDbPath.trim()
+    if (!path) {
+      toast.error('Enter the path to a local .duckdb file.')
+      return
+    }
+    const relations: DuckDbRelationRef[] = duckDbRelations
+      .filter((rel) => duckDbSelected.has(duckDbRelationKey(rel)))
+      .map((rel) => {
+        const key = duckDbRelationKey(rel)
+        const alias = (duckDbAliases[key] || '').trim()
+        return { schema: rel.schema, name: rel.name, alias: alias || null }
+      })
+    if (!relations.length) {
+      toast.error('Select at least one DuckDB table or view.')
+      return
+    }
+    setDuckDbBusy('import')
+    try {
+      const job = await api.importDuckDbRelations(path, relations)
+      const imported = await waitForDuckDbImport(job.job_id)
+      await qc.invalidateQueries({ queryKey: ['datasets'] })
+      if (imported.length) {
+        setActiveDatasetId(imported[imported.length - 1]!.dataset_id)
+      }
+      setDuckDbOpen(false)
+      toast.success(`Imported ${imported.length} DuckDB relation(s).`)
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setDuckDbBusy(null)
+    }
+  }, [
+    duckDbAliases,
+    duckDbPath,
+    duckDbRelations,
+    duckDbSelected,
+    qc,
+    setActiveDatasetId,
+    waitForDuckDbImport,
+  ])
+
   const removeDataset = useCallback(
     async (datasetId: string, name: string) => {
       try {
@@ -109,6 +207,7 @@ export function DatasetSidebar() {
 
   const emptyWorkspace = !q.isLoading && list.length === 0
   const narrow = sidebarCollapsed
+  const selectedDuckDbCount = duckDbSelected.size
 
   useEffect(() => {
     const onResize = () => {
@@ -159,6 +258,10 @@ export function DatasetSidebar() {
               <Upload className="mx-auto h-6 w-6 text-fg-muted" aria-hidden />
               <p className="font-medium text-fg">No datasets in this workspace</p>
               <DatasetDropzone />
+              <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => setDuckDbOpen(true)}>
+                <Database className="mr-2 h-3.5 w-3.5" />
+                Import DuckDB
+              </Button>
             </div>
           ) : null}
 
@@ -203,6 +306,10 @@ export function DatasetSidebar() {
                 <FolderOpen className="mr-2 h-3.5 w-3.5" />
                 Folder
               </Button>
+              <Button type="button" variant="outline" size="sm" className="w-full" disabled={!!duckDbBusy} onClick={() => setDuckDbOpen(true)}>
+                <Database className="mr-2 h-3.5 w-3.5" />
+                Import DuckDB
+              </Button>
             </div>
           ) : null}
 
@@ -210,6 +317,9 @@ export function DatasetSidebar() {
             <div className="mt-2 flex flex-col items-center gap-2">
               <Button type="button" variant="outline" size="icon" disabled={busy} aria-label="Upload files" onClick={() => fileInputRef.current?.click()}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              </Button>
+              <Button type="button" variant="outline" size="icon" disabled={!!duckDbBusy} aria-label="Import DuckDB" onClick={() => setDuckDbOpen(true)}>
+                <Database className="h-4 w-4" />
               </Button>
               <input ref={fileInputRef} type="file" multiple accept={ACCEPT_ATTR} className="sr-only" aria-label="Upload data files" onChange={(e) => {
                 const files = e.target.files ? Array.from(e.target.files) : []
@@ -305,6 +415,110 @@ export function DatasetSidebar() {
           </div>
         </div>
       </aside>
+
+      <Dialog open={duckDbOpen} onOpenChange={(open) => !open && !duckDbBusy && setDuckDbOpen(false)}>
+        <DialogContent title="Import DuckDB" className="max-h-[85vh] max-w-3xl overflow-auto">
+          <div className="space-y-4">
+            <label className="block text-sm font-medium text-fg">
+              DuckDB file path
+              <Input
+                className="mt-2"
+                value={duckDbPath}
+                placeholder="/absolute/path/source.duckdb"
+                onChange={(e) => setDuckDbPath(e.target.value)}
+                disabled={!!duckDbBusy}
+              />
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" loading={duckDbBusy === 'inspect'} disabled={duckDbBusy === 'import'} onClick={() => void inspectDuckDb()}>
+                Inspect
+              </Button>
+              {duckDbRelations.length ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={!!duckDbBusy}
+                  onClick={() => {
+                    setDuckDbSelected((current) =>
+                      current.size === duckDbRelations.length
+                        ? new Set()
+                        : new Set(duckDbRelations.map(duckDbRelationKey)),
+                    )
+                  }}
+                >
+                  {selectedDuckDbCount === duckDbRelations.length ? 'Clear selection' : 'Select all'}
+                </Button>
+              ) : null}
+            </div>
+
+            {duckDbRelations.length ? (
+              <div className="overflow-hidden rounded-md border border-border-default">
+                <div className="max-h-[42vh] overflow-auto">
+                  <table className="w-full min-w-[620px] text-left text-xs">
+                    <thead className="sticky top-0 bg-surface-2 text-fg-muted">
+                      <tr>
+                        <th className="w-10 px-2 py-2"> </th>
+                        <th className="px-2 py-2 font-medium">Relation</th>
+                        <th className="px-2 py-2 font-medium">Type</th>
+                        <th className="px-2 py-2 font-medium">Rows</th>
+                        <th className="px-2 py-2 font-medium">Alias</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border-default">
+                      {duckDbRelations.map((rel) => {
+                        const key = duckDbRelationKey(rel)
+                        return (
+                          <tr key={key} className="bg-surface-1/60">
+                            <td className="px-2 py-2 align-middle">
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${rel.schema}.${rel.name}`}
+                                checked={duckDbSelected.has(key)}
+                                disabled={!!duckDbBusy}
+                                onChange={(e) => {
+                                  setDuckDbSelected((current) => {
+                                    const next = new Set(current)
+                                    if (e.target.checked) next.add(key)
+                                    else next.delete(key)
+                                    return next
+                                  })
+                                }}
+                              />
+                            </td>
+                            <td className="px-2 py-2 align-middle">
+                              <div className="font-medium text-fg">{rel.name}</div>
+                              <div className="text-[10px] text-fg-muted">{rel.schema} - {rel.column_count} column(s)</div>
+                            </td>
+                            <td className="px-2 py-2 align-middle uppercase text-fg-muted">{rel.type}</td>
+                            <td className="px-2 py-2 align-middle tabular-nums text-fg-muted">{formatCount(rel.row_count)}</td>
+                            <td className="px-2 py-2 align-middle">
+                              <Input
+                                aria-label={`Alias for ${rel.schema}.${rel.name}`}
+                                value={duckDbAliases[key] ?? ''}
+                                placeholder={`${rel.schema}__${rel.name}`}
+                                disabled={!!duckDbBusy}
+                                onChange={(e) =>
+                                  setDuckDbAliases((current) => ({ ...current, [key]: e.target.value }))
+                                }
+                              />
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={!!duckDbBusy} onClick={() => setDuckDbOpen(false)}>Cancel</Button>
+            <Button type="button" loading={duckDbBusy === 'import'} disabled={duckDbBusy === 'inspect'} onClick={() => void importDuckDb()}>
+              Import {selectedDuckDbCount || ''}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!confirmDelete} onOpenChange={(open) => !open && setConfirmDelete(null)}>
         <DialogContent title="Remove dataset" className="max-w-md">

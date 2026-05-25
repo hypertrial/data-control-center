@@ -171,6 +171,40 @@ describe('api client', () => {
     expect(init.body).toBeInstanceOf(FormData)
   })
 
+  it('inspectDuckDb POST JSON', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk([]))
+    vi.stubGlobal('fetch', fetchMock)
+    await api.inspectDuckDb('/tmp/source.duckdb')
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/datasets/duckdb/inspect',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const init = fetchMock.mock.calls[0]![1] as RequestInit
+    expectToken(init)
+    expect(init.body).toBe(JSON.stringify({ path: '/tmp/source.duckdb' }))
+  })
+
+  it('importDuckDbRelations POST JSON', async () => {
+    const body = { job_id: 'j1', status: 'queued' }
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk(body))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(
+      api.importDuckDbRelations('/tmp/source.duckdb', [{ schema: 'main', name: 'orders', alias: 'orders_copy' }]),
+    ).resolves.toEqual(body)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/datasets/duckdb/import',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const init = fetchMock.mock.calls[0]![1] as RequestInit
+    expectToken(init)
+    expect(init.body).toBe(
+      JSON.stringify({
+        path: '/tmp/source.duckdb',
+        relations: [{ schema: 'main', name: 'orders', alias: 'orders_copy' }],
+      }),
+    )
+  })
+
   it('parseApiErrorFromResponse reads structured and detail payloads', async () => {
     const structured = await parseApiErrorFromResponse({
       text: () =>

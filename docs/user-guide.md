@@ -66,6 +66,10 @@ until **`completed`**, then retry.
   if profiling times out on very large Parquet files.
 - **Path registration** (when enabled) avoids re-copying data you already have on disk—useful when
   you analyze the same large file repeatedly. See [`backend/README.md`](../backend/README.md#uploads-and-path-registration).
+- **DuckDB import** (when path registration is enabled) inspects a local **`.duckdb`**
+  file and snapshots selected tables/views into app-owned Parquet copies under
+  **`.dcc_uploads/`**. Imported datasets then behave like normal uploads; later changes
+  to the source DuckDB file do not change the imported snapshot.
 
 **Manual refresh:** Use **Refresh** in the dataset strip or
 **`POST /api/datasets/{dataset_id}/profile/refresh`**. The UI handles job polling;

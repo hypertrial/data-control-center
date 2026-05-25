@@ -41,6 +41,20 @@ export type DatasetSummary = {
   quality_score?: number | null
 }
 
+export type DuckDbRelationSummary = {
+  schema: string
+  name: string
+  type: 'table' | 'view'
+  column_count: number
+  row_count: number | null
+}
+
+export type DuckDbRelationRef = {
+  schema: string
+  name: string
+  alias?: string | null
+}
+
 export type SemanticType =
   | 'unknown'
   | 'id_like'

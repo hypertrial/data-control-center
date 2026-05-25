@@ -3,8 +3,9 @@
 https://github.com/user-attachments/assets/d62aa7bb-4696-470d-b354-0e66c0c7f76e
 
 **Local-first tool** for profiling, exploring, and querying local data files (CSV, TSV,
-Parquet, JSON, JSON Lines, NDJSON) from one interface. Built for a **single trusted
-workstation**—fast EDA and ad-hoc DuckDB SQL, not hosted BI or multi-tenant use.
+Parquet, JSON, JSON Lines, NDJSON) and selected tables/views snapshotted from local
+DuckDB files. Built for a **single trusted workstation**—fast EDA and ad-hoc DuckDB
+SQL, not hosted BI or multi-tenant use.
 This app is **local-only**; see [`SECURITY.md`](SECURITY.md) for the threat model and
 vulnerability reporting.
 

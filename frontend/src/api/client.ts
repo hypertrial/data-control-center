@@ -8,6 +8,8 @@ import type {
   AskTurn,
   DatasetProfile,
   DatasetSummary,
+  DuckDbRelationRef,
+  DuckDbRelationSummary,
   HealthResponse,
   JobCreateResponse,
   JobDetail,
@@ -239,6 +241,24 @@ export const api = {
       }),
     )
   },
+
+  inspectDuckDb: (path: string) =>
+    handle<DuckDbRelationSummary[]>(
+      apiFetch(`${API}/datasets/duckdb/inspect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      }),
+    ),
+
+  importDuckDbRelations: (path: string, relations: DuckDbRelationRef[]) =>
+    handle<JobCreateResponse>(
+      apiFetch(`${API}/datasets/duckdb/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, relations }),
+      }),
+    ),
 
   fetchDatasetProfile,
   fetchDatasetProfileOnce,

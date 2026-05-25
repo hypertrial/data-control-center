@@ -917,3 +917,78 @@ def test_sample_rows_raises_on_timeout_setup_failure(client, tmp_path, monkeypat
     res = client.get(f"/api/datasets/{did}/sample?page=1&page_size=5")
     assert res.status_code == 500
     assert res.json()["error"]["code"] == "INTERNAL_ERROR"
+
+
+def _make_duckdb_source(path: Path) -> None:
+    import duckdb
+
+    con = duckdb.connect(str(path))
+    try:
+        con.execute("CREATE TABLE orders (id INTEGER, amount DOUBLE)")
+        con.execute("INSERT INTO orders VALUES (1, 10.0), (2, 22.5)")
+        con.execute("CREATE VIEW large_orders AS SELECT * FROM orders WHERE amount > 20")
+    finally:
+        con.close()
+
+
+def test_duckdb_inspect_and_import_http(client, tmp_path) -> None:
+    source = tmp_path / "source.duckdb"
+    _make_duckdb_source(source)
+
+    inspect = client.post("/api/datasets/duckdb/inspect", json={"path": str(source)})
+    assert inspect.status_code == 200, inspect.text
+    names = {row["name"]: row for row in inspect.json()}
+    assert names["orders"]["schema"] == "main"
+    assert names["orders"]["type"] == "table"
+    assert names["orders"]["column_count"] == 2
+    assert names["orders"]["row_count"] == 2
+    assert names["large_orders"]["type"] == "view"
+
+    started = client.post(
+        "/api/datasets/duckdb/import",
+        json={"path": str(source), "relations": [{"schema": "main", "name": "orders"}]},
+    )
+    assert started.status_code == 200, started.text
+    job = _wait_for_job(client, started.json()["job_id"], timeout=5.0)
+    assert job["status"] == "completed", job
+    imported = job["result"]["datasets"]
+    assert len(imported) == 1
+    assert imported[0]["format"] == "parquet"
+    assert "source.duckdb" not in imported[0]["source_path"]
+
+    view_name = imported[0]["view_name"]
+    query = client.post("/api/query", json={"sql": f"SELECT SUM(amount) AS total FROM {view_name}"})
+    assert query.status_code == 200
+    assert query.json()["rows"][0]["total"] == 32.5
+
+
+def test_duckdb_import_disabled_by_path_registration(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("DCC_WORKSPACE_DB_PATH", str(tmp_path / "w.duckdb"))
+    monkeypatch.setenv("DCC_ENABLE_PATH_REGISTRATION", "false")
+    from app.main import create_app
+    from fastapi.testclient import TestClient
+
+    source = tmp_path / "source.duckdb"
+    _make_duckdb_source(source)
+    with TestClient(create_app()) as c:
+        inspect = c.post("/api/datasets/duckdb/inspect", json={"path": str(source)})
+        imp = c.post(
+            "/api/datasets/duckdb/import",
+            json={"path": str(source), "relations": [{"schema": "main", "name": "orders"}]},
+        )
+    assert inspect.status_code == 403
+    assert imp.status_code == 403
+
+
+def test_duckdb_import_job_failure_is_sanitized(client, tmp_path) -> None:
+    source = tmp_path / "source.duckdb"
+    _make_duckdb_source(source)
+    started = client.post(
+        "/api/datasets/duckdb/import",
+        json={"path": str(source), "relations": [{"schema": "main", "name": "missing"}]},
+    )
+    assert started.status_code == 200
+    job = _wait_for_job(client, started.json()["job_id"], timeout=5.0)
+    assert job["status"] == "failed"
+    assert "source.duckdb" not in job["error_message"]
+    assert "not available" in job["error_message"]
