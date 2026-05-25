@@ -2,10 +2,17 @@
 const UPLOAD_EXT = new Set(['.csv', '.tsv', '.parquet', '.json', '.jsonl', '.ndjson'])
 const DUCKDB_EXT = '.duckdb'
 
-export const ACCEPT_ATTR = '.csv,.tsv,.parquet,.json,.jsonl,.ndjson,.duckdb'
+/** Browser file inputs for tabular uploads only (no DuckDB — use Import DuckDB). */
+export const TABULAR_ACCEPT_ATTR = '.csv,.tsv,.parquet,.json,.jsonl,.ndjson'
+
+/** @deprecated Use TABULAR_ACCEPT_ATTR for inputs; DuckDB uses native pick. */
+export const ACCEPT_ATTR = TABULAR_ACCEPT_ATTR
 
 export const UNSUPPORTED_FILES_MESSAGE =
-  'No supported files (.csv, .tsv, .parquet, .json, .jsonl, .ndjson, .duckdb).'
+  'No supported files (.csv, .tsv, .parquet, .json, .jsonl, .ndjson).'
+
+export const DUCKDB_USE_IMPORT_MESSAGE =
+  'Use Import DuckDB to open a database file. Browser upload cannot access file paths on disk.'
 
 function extOf(name: string): string {
   const i = name.lastIndexOf('.')
@@ -44,4 +51,8 @@ export function partitionIncomingFiles(files: File[]): { dataFiles: File[]; duck
 export function hasIngestibleFiles(files: File[]): boolean {
   const { dataFiles, duckDbFiles } = partitionIncomingFiles(files)
   return dataFiles.length > 0 || duckDbFiles.length > 0
+}
+
+export function hasTabularIngestibleFiles(files: File[]): boolean {
+  return partitionIncomingFiles(files).dataFiles.length > 0
 }

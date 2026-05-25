@@ -10,9 +10,10 @@ import { Toaster } from '@/components/ui/toaster'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { DatasetSidebar } from '@/features/datasets/DatasetSidebar'
 import { DatasetDropzone } from '@/features/datasets/DatasetDropzone'
-import { DuckDbImportDialog } from '@/features/datasets/DuckDbImportDialog'
-import { useDatasetIngestion } from '@/features/datasets/useDatasetIngestion'
-import { useUiStore } from '@/store/uiStore'
+import {
+  DatasetIngestionProvider,
+  useDatasetIngestionContext,
+} from '@/features/datasets/DatasetIngestionProvider'
 
 const ColumnsPage = lazy(() =>
   import('@/features/columns/ColumnsPage').then((m) => ({ default: m.ColumnsPage })),
@@ -53,32 +54,22 @@ function ShortcutListener() {
 }
 
 function EmptyWorkspaceHero() {
-  const { setActiveDatasetId } = useUiStore()
-  const { busy, ingestFiles, duckDbSession, closeDuckDbSession, handleDuckDbImported } = useDatasetIngestion({
-    setActiveDatasetId,
-  })
+  const { busy, ingestFiles } = useDatasetIngestionContext()
 
   return (
-    <>
-      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 px-6 py-12 text-center">
-        <LayoutDashboard className="h-10 w-10 text-fg-muted" aria-hidden />
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-fg">Welcome to Data Control Center</h1>
-          <p className="mt-2 max-w-lg text-sm leading-relaxed text-fg-muted">
-            Drop CSV, Parquet, JSON, or DuckDB files below, or choose a folder. Press{' '}
-            <kbd className="rounded border border-border-default px-1 font-mono text-xs">⌘K</kbd> anytime to search datasets and jump between views.
-          </p>
-        </div>
-        <div className="w-full max-w-md">
-          <DatasetDropzone busy={busy} onFilesPicked={(files) => void ingestFiles(files)} />
-        </div>
+    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 px-6 py-12 text-center">
+      <LayoutDashboard className="h-10 w-10 text-fg-muted" aria-hidden />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">Welcome to Data Control Center</h1>
+        <p className="mt-2 max-w-lg text-sm leading-relaxed text-fg-muted">
+          Drop CSV, Parquet, or JSON files below, or use Import DuckDB in the sidebar for database files. Press{' '}
+          <kbd className="rounded border border-border-default px-1 font-mono text-xs">⌘K</kbd> anytime to search datasets and jump between views.
+        </p>
       </div>
-      <DuckDbImportDialog
-        session={duckDbSession}
-        onClose={closeDuckDbSession}
-        onImported={(imported) => void handleDuckDbImported(imported)}
-      />
-    </>
+      <div className="w-full max-w-md">
+        <DatasetDropzone busy={busy} onFilesPicked={(files) => void ingestFiles(files)} />
+      </div>
+    </div>
   )
 }
 
@@ -147,13 +138,15 @@ export default function App() {
       <TooltipProvider delayDuration={280}>
         <Toaster />
         <BrowserRouter>
-          <ShortcutListener />
-          <Shell>
-            <UiUrlSync />
-            <CommandPalette />
-            <ShortcutCheatsheet />
-            <MainBody />
-          </Shell>
+          <DatasetIngestionProvider>
+            <ShortcutListener />
+            <Shell>
+              <UiUrlSync />
+              <CommandPalette />
+              <ShortcutCheatsheet />
+              <MainBody />
+            </Shell>
+          </DatasetIngestionProvider>
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>

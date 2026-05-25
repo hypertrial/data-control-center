@@ -938,26 +938,63 @@ def _upload_duckdb_file(client, path: Path) -> str:
             files=[("file", (path.name, f.read(), "application/octet-stream"))],
         )
     assert r.status_code == 200, r.text
-    return r.json()["upload_id"]
+    return r.json()["source_id"]
+
+
+def test_duckdb_capabilities(client) -> None:
+    r = client.get("/api/datasets/duckdb/capabilities")
+    assert r.status_code == 200
+    body = r.json()
+    assert "local_open_enabled" in body
+    assert body["upload_soft_max_bytes"] > 0
+    assert "native_pick_enabled" in body
+
+
+def test_duckdb_pick_local(client, tmp_path, monkeypatch) -> None:
+    source = tmp_path / "picked.duckdb"
+    _make_duckdb_source(source)
+    monkeypatch.setattr(
+        "app.services.duckdb_native_pick.pick_local_duckdb_path",
+        lambda: source,
+    )
+    r = client.post("/api/datasets/duckdb/pick-local")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["source_kind"] == "local"
+    assert body["filename"] == "picked.duckdb"
 
 
 def test_duckdb_upload_inspect_and_import_http(client, tmp_path) -> None:
     source = tmp_path / "source.duckdb"
     _make_duckdb_source(source)
-    upload_id = _upload_duckdb_file(client, source)
+    source_id = _upload_duckdb_file(client, source)
 
-    inspect = client.post("/api/datasets/duckdb/inspect", json={"upload_id": upload_id})
+    inspect = client.post("/api/datasets/duckdb/inspect", json={"source_id": source_id})
     assert inspect.status_code == 200, inspect.text
     names = {row["name"]: row for row in inspect.json()}
     assert names["orders"]["schema"] == "main"
     assert names["orders"]["type"] == "table"
     assert names["orders"]["column_count"] == 2
-    assert names["orders"]["row_count"] == 2
-    assert names["large_orders"]["type"] == "view"
+    assert names["orders"]["row_count"] is None
+
+    inspect_counts = client.post(
+        "/api/datasets/duckdb/inspect",
+        json={"source_id": source_id, "include_row_counts": True},
+    )
+    names2 = {row["name"]: row for row in inspect_counts.json()}
+    assert names2["orders"]["row_count"] == 2
+    assert names2["large_orders"]["type"] == "view"
+
+    count_one = client.post(
+        "/api/datasets/duckdb/relation-count",
+        json={"source_id": source_id, "schema": "main", "name": "orders"},
+    )
+    assert count_one.status_code == 200
+    assert count_one.json()["row_count"] == 2
 
     started = client.post(
         "/api/datasets/duckdb/import",
-        json={"upload_id": upload_id, "relations": [{"schema": "main", "name": "orders"}]},
+        json={"source_id": source_id, "relations": [{"schema": "main", "name": "orders"}]},
     )
     assert started.status_code == 200, started.text
     job = _wait_for_job(client, started.json()["job_id"], timeout=5.0)
@@ -1088,13 +1125,26 @@ def test_duckdb_upload_write_failure_cleans_staging(tmp_path, monkeypatch) -> No
     assert list((tmp_path / "up" / "duckdb_sources").glob("*/fail.duckdb")) == []
 
 
+def test_duckdb_open_local_inspect_http(client, tmp_path) -> None:
+    source = tmp_path / "local.duckdb"
+    _make_duckdb_source(source)
+    opened = client.post("/api/datasets/duckdb/open-local", json={"path": str(source)})
+    assert opened.status_code == 200, opened.text
+    body = opened.json()
+    assert body["source_kind"] == "local"
+    source_id = body["source_id"]
+    inspect = client.post("/api/datasets/duckdb/inspect", json={"source_id": source_id})
+    assert inspect.status_code == 200
+    assert {row["name"] for row in inspect.json()} == {"orders", "large_orders"}
+
+
 def test_duckdb_import_job_failure_is_sanitized(client, tmp_path) -> None:
     source = tmp_path / "source.duckdb"
     _make_duckdb_source(source)
-    upload_id = _upload_duckdb_file(client, source)
+    source_id = _upload_duckdb_file(client, source)
     started = client.post(
         "/api/datasets/duckdb/import",
-        json={"upload_id": upload_id, "relations": [{"schema": "main", "name": "missing"}]},
+        json={"source_id": source_id, "relations": [{"schema": "main", "name": "missing"}]},
     )
     assert started.status_code == 200
     job = _wait_for_job(client, started.json()["job_id"], timeout=5.0)

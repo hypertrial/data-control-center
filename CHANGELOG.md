@@ -8,8 +8,17 @@ stable release. Maintainer tagging steps: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## [Unreleased]
 
+### Added
+
+- DuckDB **open-from-disk** for large local `.duckdb` files (`POST /api/datasets/duckdb/open-local`, **`pick-local`** native file picker), capabilities endpoint, searchable relation picker, and lazy per-relation row counts.
+
+### Fixed
+
+- DuckDB relation import now snapshots through a direct read-only connection to the source file so views that reference catalog-qualified names (e.g. `oddsfox.schema.table` in dbt-built databases) export correctly.
+
 ### Changed
 
+- DuckDB inspect/import APIs use **`source_id`** (replaces **`upload_id`**). Default inspect is metadata-only (no per-table `COUNT(*)`).
 - Raised default browser upload limits to **2 GiB** per file and per batch (`DCC_UPLOAD_MAX_BYTES_PER_FILE`, `DCC_UPLOAD_MAX_BATCH_BYTES`).
 - Upload and path registration now queue a single **`dataset_prepare`** background job per dataset (fast row count, then profile) instead of parallel **`dataset_count`** + **`profile_refresh`** jobs.
 - Large files (above **`DCC_PROFILE_HEAVY_SCAN_MAX_BYTES`**, default 256 MiB) use Parquet metadata / bounded counts and sample-scoped null metrics; profiles include a structure warning when metrics are sample-based.

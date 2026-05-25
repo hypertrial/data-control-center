@@ -1,74 +1,69 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { DatasetDropzone } from '@/features/datasets/DatasetDropzone'
 
-function wrap(ui: ReactElement) {
-  const qc = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
-  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
-}
+const toastMock = vi.hoisted(() => ({ error: vi.fn() }))
+
+vi.mock('sonner', () => ({ toast: toastMock }))
 
 describe('DatasetDropzone', () => {
-  it('uploads selected supported files', async () => {
+  it('forwards tabular files to ingestion handler', async () => {
     const user = userEvent.setup()
     const onFilesPicked = vi.fn()
-    const { container } = wrap(<DatasetDropzone onFilesPicked={onFilesPicked} />)
+    const { container } = render(<DatasetDropzone onFilesPicked={onFilesPicked} />)
     const input = container.querySelector('input[aria-label="Upload data files"]') as HTMLInputElement
-
-    await user.upload(input, new File(['id\n1'], 'x.csv', { type: 'text/csv' }))
-
-    await waitFor(() => expect(onFilesPicked).toHaveBeenCalled())
-    expect(onFilesPicked).toHaveBeenCalledWith([expect.objectContaining({ name: 'x.csv' })])
+    await user.upload(input, new File(['a'], 'a.csv'))
+    expect(onFilesPicked).toHaveBeenCalledWith([expect.objectContaining({ name: 'a.csv' })])
   })
 
-  it('forwards folder picks to onFolderPicked when provided', async () => {
+  it('forwards dropped files', () => {
     const onFilesPicked = vi.fn()
-    const onFolderPicked = vi.fn()
-    const { container } = wrap(
-      <DatasetDropzone onFilesPicked={onFilesPicked} onFolderPicked={onFolderPicked} />,
-    )
-    const folderInput = container.querySelector(
-      'input[aria-label="Upload folder of data files"]',
-    ) as HTMLInputElement
-    Object.defineProperty(folderInput, 'files', {
-      value: [new File(['a'], 'nested.csv')],
-      configurable: true,
-    })
-    fireEvent.change(folderInput)
-    expect(onFolderPicked).toHaveBeenCalledWith([expect.objectContaining({ name: 'nested.csv' })])
-    expect(onFilesPicked).not.toHaveBeenCalled()
-  })
-
-  it('forwards duckdb files to ingestion handler', async () => {
-    const user = userEvent.setup()
-    const onFilesPicked = vi.fn()
-    const { container } = wrap(<DatasetDropzone onFilesPicked={onFilesPicked} />)
-    const input = container.querySelector('input[aria-label="Upload data files"]') as HTMLInputElement
-    await user.upload(input, new File(['db'], 'source.duckdb'))
-    expect(onFilesPicked).toHaveBeenCalledWith([expect.objectContaining({ name: 'source.duckdb' })])
-  })
-
-  it('handles drops, drag leave, and unsupported files', async () => {
-    const onFilesPicked = vi.fn()
-    const { container } = wrap(<DatasetDropzone onFilesPicked={onFilesPicked} />)
-    const zone = screen.getByRole('button', { name: /Drop files here/i })
-    const file = new File(['id\n1'], 'x.csv', { type: 'text/csv' })
+    render(<DatasetDropzone onFilesPicked={onFilesPicked} />)
+    const zone = screen.getByRole('button', { name: /Drop files here/ })
+    const file = new File(['a'], 'a.csv', { type: 'text/csv' })
     const dt = new DataTransfer()
     dt.items.add(file)
-
     fireEvent.dragEnter(zone)
-    expect(zone.className).toContain('border-[hsl(var(--accent))]')
-    fireEvent.dragLeave(zone, { relatedTarget: document.body })
+    fireEvent.dragOver(zone)
     fireEvent.drop(zone, { dataTransfer: dt })
-    await waitFor(() => expect(onFilesPicked).toHaveBeenCalledWith([expect.objectContaining({ name: 'x.csv' })]))
+    expect(onFilesPicked).toHaveBeenCalledWith([expect.objectContaining({ name: 'a.csv' })])
+  })
 
-    const input = container.querySelector('input[aria-label="Upload data files"]') as HTMLInputElement
-    Object.defineProperty(input, 'files', { value: [new File(['x'], 'bad.exe')], configurable: true })
-    fireEvent.change(input)
-    expect(onFilesPicked).toHaveBeenLastCalledWith([expect.objectContaining({ name: 'bad.exe' })])
+  it('toasts when drop has no files', () => {
+    toastMock.error.mockClear()
+    render(<DatasetDropzone onFilesPicked={vi.fn()} />)
+    const zone = screen.getByRole('button', { name: /Drop files here/ })
+    fireEvent.drop(zone, { dataTransfer: new DataTransfer() })
+    expect(toastMock.error).toHaveBeenCalled()
+  })
+
+  it('forwards folder picks when onFolderPicked is set', async () => {
+    const user = userEvent.setup()
+    const onFolderPicked = vi.fn()
+    const { container } = render(
+      <DatasetDropzone onFilesPicked={vi.fn()} onFolderPicked={onFolderPicked} />,
+    )
+    const folderInput = container.querySelector('input[webkitdirectory]') as HTMLInputElement
+    await user.upload(folderInput, new File(['a'], 'a.csv'))
+    expect(onFolderPicked).toHaveBeenCalledWith([expect.objectContaining({ name: 'a.csv' })])
+  })
+
+  it('shows busy state', () => {
+    render(<DatasetDropzone busy onFilesPicked={vi.fn()} />)
+    expect(screen.getByText('Uploading…')).toBeInTheDocument()
+  })
+
+  it('clears drag highlight when pointer leaves the drop zone', () => {
+    render(<DatasetDropzone onFilesPicked={vi.fn()} />)
+    const zone = screen.getByRole('button', { name: /Drop files here/ })
+    fireEvent.dragEnter(zone)
+    fireEvent.dragLeave(zone, { relatedTarget: document.body })
+    expect(zone.className).not.toContain('border-[hsl(var(--accent))]')
+  })
+
+  it('shows busy spinner on folder button', () => {
+    render(<DatasetDropzone busy onFilesPicked={vi.fn()} onFolderPicked={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Choose folder' })).toBeDisabled()
   })
 })

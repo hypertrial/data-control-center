@@ -49,7 +49,7 @@ Defaults fail closed for local workstation use:
 | **`DCC_LOCAL_API_TOKEN`** | (generated) | Pin token for CLI scripts; else per-process token via **`GET /api/local-session`** |
 | **`DCC_ENABLE_PATH_REGISTRATION`** | `false` | Enable `/api/datasets/register-file` and `register-folder` |
 | **`DCC_ALLOW_ARBITRARY_REGISTRATION_PATHS`** | `false` | Allow paths outside allowed roots |
-| **`DCC_REGISTRATION_ALLOWED_ROOTS`** | `[]` | Extra filesystem roots for path registration |
+| **`DCC_REGISTRATION_ALLOWED_ROOTS`** | `[]` | Extra filesystem roots (JSON array, e.g. `'["/Volumes/Mac SSD"]'`). On macOS, the **`/Volumes/<Volume>`** that contains the backend cwd is always allowed for DuckDB local open/pick |
 | **`DCC_EXPOSE_ABSOLUTE_SOURCE_PATHS`** | `false` | Include absolute paths in API responses |
 
 Threat model: [`SECURITY.md`](../SECURITY.md).
@@ -69,11 +69,27 @@ Uploads use extension allow-listing, filename normalization, and validation befo
 registration. Path registration is gated by the security settings above.
 Implementation: [`app/services/registry.py`](app/services/registry.py) (`ensure_registration_allowed`).
 
-DuckDB import uses the normal browser upload path (not path registration). **`POST /api/datasets/duckdb/upload`**
-stages a **`.duckdb`** file under **`.dcc_uploads/duckdb_sources/{upload_id}/`**. **`POST /api/datasets/duckdb/inspect`**
-and **`POST /api/datasets/duckdb/import`** take **`upload_id`** (not filesystem paths) to list tables/views and snapshot
-selected relations to Parquet files under **`.dcc_uploads/duckdb_imports/`** before registering them as normal datasets.
-**`POST /api/datasets/upload`** rejects **`.duckdb`** files (use the DuckDB flow instead). Imports are snapshots, not live links.
+DuckDB import supports two source kinds (see **`GET /api/datasets/duckdb/capabilities`**):
+
+| Route | Purpose |
+| --- | --- |
+| **`POST /api/datasets/duckdb/upload`** | Stage a small **`.duckdb`** copy under **`.dcc_uploads/duckdb_sources/{source_id}/`** |
+| **`POST /api/datasets/duckdb/open-local`** | Register an on-disk **`.duckdb`** path (no copy; gated by **`DCC_ENABLE_DUCKDB_LOCAL_OPEN`**, allowed roots) |
+| **`POST /api/datasets/duckdb/pick-local`** | Native OS file picker → register path (macOS: **`osascript`**; Linux: Tk when available) |
+| **`POST /api/datasets/duckdb/inspect`** | List tables/views (`source_id`, optional **`include_row_counts`**) |
+| **`POST /api/datasets/duckdb/relation-count`** | Lazy **`COUNT(*)`** for one relation |
+| **`POST /api/datasets/duckdb/import`** | Snapshot selected relations to Parquet under **`.dcc_uploads/duckdb_imports/`** |
+
+**`POST /api/datasets/upload`** rejects **`.duckdb`** files (use the DuckDB routes). Imports are snapshots, not live links.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| **`DCC_ENABLE_DUCKDB_LOCAL_OPEN`** | `true` | Allow **`open-local`** |
+| **`DCC_ENABLE_DUCKDB_NATIVE_PICK`** | `true` | Allow **`pick-local`** (web UI routes all DuckDB imports through this when local open is enabled) |
+| **`DCC_DUCKDB_UPLOAD_SOFT_MAX_BYTES`** | `536870912` (512 MiB) | Soft limit for **`duckdb/upload`** fallback when native pick is off |
+| **`DCC_DUCKDB_INSPECT_INCLUDE_ROW_COUNTS`** | `false` | Default inspect omits per-table counts |
+| **`DCC_DUCKDB_LOCAL_OPEN_TTL_HOURS`** | `24` | TTL for local-open metadata under **`duckdb_sources/local/`** |
+| **`DCC_DUCKDB_IMPORT_TIMEOUT_SECONDS`** | `300` | Per-import **`COPY … TO Parquet`** timeout (large relations can take minutes) |
 
 ### Workspace database
 

@@ -1,8 +1,23 @@
 import { Loader2, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { ACCEPT_ATTR } from '@/features/datasets/uploadFiles'
+import { TABULAR_ACCEPT_ATTR } from '@/features/datasets/uploadFiles'
+
+const EMPTY_PICK_MESSAGE = 'No file was selected. Try drag-and-drop or choose files again.'
+
+function filesFromInput(files: FileList | null): File[] {
+  return files ? Array.from(files) : []
+}
+
+function pickFiles(files: File[], onFilesPicked: (files: File[]) => void) {
+  if (!files.length) {
+    toast.error(EMPTY_PICK_MESSAGE)
+    return
+  }
+  onFilesPicked(files)
+}
 
 type Props = {
   className?: string
@@ -22,20 +37,20 @@ export function DatasetDropzone({ className, busy = false, onFilesPicked, onFold
         ref={fileInputRef}
         type="file"
         multiple
-        accept={ACCEPT_ATTR}
+        accept={TABULAR_ACCEPT_ATTR}
         className="sr-only"
         aria-label="Upload data files"
         onChange={(e) => {
-          const files = e.target.files ? Array.from(e.target.files) : []
+          const files = filesFromInput(e.target.files)
           e.target.value = ''
-          onFilesPicked(files)
+          pickFiles(files, onFilesPicked)
         }}
       />
       <input
         ref={folderInputRef}
         type="file"
         multiple
-        accept={ACCEPT_ATTR}
+        accept={TABULAR_ACCEPT_ATTR}
         className="sr-only"
         aria-label="Upload folder of data files"
         {...({ webkitdirectory: '' } as object)}
@@ -66,21 +81,28 @@ export function DatasetDropzone({ className, busy = false, onFilesPicked, onFold
           e.preventDefault()
           e.stopPropagation()
           setDragOver(false)
-          const files = e.dataTransfer.files ? Array.from(e.dataTransfer.files) : []
-          onFilesPicked(files)
+          pickFiles(filesFromInput(e.dataTransfer.files), onFilesPicked)
         }}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => !busy && fileInputRef.current?.click()}
+        disabled={busy}
         className={cn(
-          'flex w-full cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-4 py-8 text-center text-xs transition',
+          'flex w-full flex-col items-center justify-center rounded-xl border border-dashed px-4 py-8 text-center text-xs transition',
+          busy ? 'cursor-wait opacity-70' : 'cursor-pointer',
           dragOver
             ? 'border-[hsl(var(--accent))] bg-white/10'
             : 'border-border-default bg-white/[0.03] hover:border-border-accent',
         )}
       >
-        <Upload className={cn('mb-2 h-8 w-8 text-fg-muted', dragOver && 'text-[hsl(var(--accent))]')} />
-        <span className="font-medium text-fg">Drop files here</span>
-        <span className="mt-1 text-fg-muted">or click to choose files</span>
-        <span className="mt-1 text-[10px] text-fg-muted">CSV, TSV, Parquet, JSON, JSONL, NDJSON, DuckDB</span>
+        {busy ? (
+          <Loader2 className="mb-2 h-8 w-8 animate-spin text-fg-muted" aria-hidden />
+        ) : (
+          <Upload className={cn('mb-2 h-8 w-8 text-fg-muted', dragOver && 'text-[hsl(var(--accent))]')} />
+        )}
+        <span className="font-medium text-fg">{busy ? 'Uploading…' : 'Drop files here'}</span>
+        <span className="mt-1 text-fg-muted">{busy ? 'Please wait' : 'or click to choose files'}</span>
+        <span className="mt-1 text-[10px] text-fg-muted">
+          CSV, TSV, Parquet, JSON, JSONL, NDJSON — use Import DuckDB for .duckdb files
+        </span>
       </button>
 
       {onFolderPicked ? (

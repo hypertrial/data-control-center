@@ -20,7 +20,7 @@ request/response shapes and **`DCC_*`** settings, see
 Evaluate the app without private data using the synthetic fixtures in
 [`examples/`](../examples/) and the [five-minute tour](5-minute-tour.md).
 
-**Upload (default):** In the web UI, drag-and-drop or select files (including **`.duckdb`**),
+**Upload (default):** In the web UI, drag-and-drop or select tabular files (CSV, TSV, Parquet, JSON),
 or use **Choose folder** to upload all supported files in a directory at once. The API stores copies under
 **`.dcc_uploads/`** (relative to the backend cwd unless overridden), validates them,
 then registers them. Upload limits are configured with **`DCC_UPLOAD_*`** variables (see
@@ -66,11 +66,16 @@ until **`completed`**, then retry.
   if profiling times out on very large Parquet files.
 - **Path registration** (when enabled) avoids re-copying data you already have on disk—useful when
   you analyze the same large file repeatedly. See [`backend/README.md`](../backend/README.md#uploads-and-path-registration).
-- **DuckDB import:** Upload a **`.duckdb`** file the same way as CSV or Parquet (drag-and-drop,
-  file picker, or folder pick). The app stages the database under **`.dcc_uploads/duckdb_sources/`**,
-  lists importable tables/views, and snapshots your selections into Parquet copies under
-  **`.dcc_uploads/duckdb_imports/`**. Imported datasets then behave like normal uploads; later
-  changes to the original DuckDB file do not change the imported snapshot.
+- **DuckDB import:** Use **Import DuckDB** in the sidebar (one system file dialog on the machine
+  running the backend). On macOS, files on the same **`/Volumes/…`** drive as the running app (for example an external SSD) are allowed automatically; for other locations set **`DCC_REGISTRATION_ALLOWED_ROOTS`** (JSON array in [`backend/README.md`](../backend/README.md#local-only-security)). The general Upload control and dropzone accept tabular formats only—dropping or
+  choosing a **`.duckdb`** there shows guidance to use **Import DuckDB** instead, because browsers cannot
+  pass full file paths to the server. When native pick is unavailable, small databases may still be staged
+  via **`POST /api/datasets/duckdb/upload`** (see [`backend/README.md`](../backend/README.md)). The relation
+  picker loads the catalog quickly (no per-table row counts by default); filter by **schema** (toggle chips),
+  search by name or type, and use **Load** on a row for row counts. Selected relations are snapshotted to Parquet under **`.dcc_uploads/duckdb_imports/`**
+  and registered as normal datasets; later changes to the source file do not alter imported snapshots.
+  Large relation exports can take several minutes; if import fails with a timeout, raise
+  **`DCC_DUCKDB_IMPORT_TIMEOUT_SECONDS`** (default 300) in [`backend/README.md`](../backend/README.md#uploads-and-path-registration).
 
 **Manual refresh:** Use **Refresh** in the dataset strip or
 **`POST /api/datasets/{dataset_id}/profile/refresh`**. The UI handles job polling;

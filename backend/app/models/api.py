@@ -58,13 +58,26 @@ class RegisterFolderRequest(BaseModel):
     recursive: bool = False
 
 
-class DuckDbUploadResponse(BaseModel):
-    upload_id: str
+class DuckDbCapabilitiesResponse(BaseModel):
+    local_open_enabled: bool
+    upload_soft_max_bytes: int
+    inspect_include_row_counts_default: bool
+    native_pick_enabled: bool
+
+
+class DuckDbSourceResponse(BaseModel):
+    source_id: str
     filename: str
+    source_kind: str = Field(..., description="upload or local")
+
+
+class DuckDbOpenLocalRequest(BaseModel):
+    path: str = Field(..., description="Absolute path to a local .duckdb file")
 
 
 class DuckDbInspectRequest(BaseModel):
-    upload_id: str = Field(..., description="Staged DuckDB upload id from POST /api/datasets/duckdb/upload")
+    source_id: str = Field(..., description="DuckDB source id from upload or open-local")
+    include_row_counts: bool = False
 
 
 class DuckDbRelationRef(BaseModel):
@@ -76,8 +89,18 @@ class DuckDbRelationRef(BaseModel):
 
 
 class DuckDbImportRequest(BaseModel):
-    upload_id: str = Field(..., description="Staged DuckDB upload id from POST /api/datasets/duckdb/upload")
+    source_id: str = Field(..., description="DuckDB source id from upload or open-local")
     relations: list[DuckDbRelationRef] = Field(default_factory=list, min_length=1, max_length=100)
+
+
+class DuckDbRelationCountRequest(BaseModel):
+    source_id: str
+    schema_name: str = Field(..., alias="schema")
+    name: str
+
+
+class DuckDbRelationCountResponse(BaseModel):
+    row_count: int | None = None
 
 
 class DuckDbRelationSummary(BaseModel):

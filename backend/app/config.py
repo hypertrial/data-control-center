@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     upload_validate_parse: bool = True
     upload_orphan_ttl_hours: float = Field(default=24.0, ge=0.0)
 
+    # DuckDB import: browser upload vs open-from-disk for large local files.
+    enable_duckdb_local_open: bool = True
+    enable_duckdb_native_pick: bool = True
+    duckdb_upload_soft_max_bytes: int = 512 * 1024 * 1024
+    duckdb_inspect_include_row_counts: bool = False
+    duckdb_local_open_ttl_hours: float = Field(default=24.0, ge=0.0)
+    duckdb_import_timeout_seconds: float = Field(default=300.0, ge=5.0, le=3600.0)
+
     # Filesystem security boundaries.
     allow_arbitrary_registration_paths: bool = False
     enable_path_registration: bool = False

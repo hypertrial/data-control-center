@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -11,17 +13,19 @@ import duckdb
 
 from app.config import Settings
 from app.errors import AppError, CODES
-from app.models.api import DuckDbRelationRef, DuckDbRelationSummary
+from app.models.api import DuckDbRelationRef, DuckDbRelationSummary, DuckDbSourceResponse
 from app.services.registry import (
     DatasetRegistry,
     RegisteredDataset,
     guard_reserved_identifier,
     slugify_file_stem,
 )
+from app.services.upload_validation import validate_duckdb_upload
 
-ATTACH_ALIAS = "_dcc_import_src"
 DUCKDB_SOURCES_DIR = "duckdb_sources"
-_UPLOAD_ID_LEN = 16
+DUCKDB_LOCAL_SOURCES_DIR = "local"
+LOCAL_SOURCE_PREFIX = "loc_"
+_SOURCE_ID_LEN = 16
 
 
 class DuckDbImportError(RuntimeError):
@@ -43,9 +47,101 @@ def _upload_root(settings: Settings) -> Path:
 
 
 def _staged_upload_dir(upload_id: str, settings: Settings) -> Path:
-    if len(upload_id) != _UPLOAD_ID_LEN or not all(c in "0123456789abcdef" for c in upload_id):
+    if len(upload_id) != _SOURCE_ID_LEN or not all(c in "0123456789abcdef" for c in upload_id):
         raise AppError(status_code=400, code=CODES.BAD_REQUEST, message="Invalid DuckDB upload id.")
     return _upload_root(settings) / DUCKDB_SOURCES_DIR / upload_id
+
+
+def _local_sources_dir(settings: Settings) -> Path:
+    return _upload_root(settings) / DUCKDB_SOURCES_DIR / DUCKDB_LOCAL_SOURCES_DIR
+
+
+def _local_metadata_path(source_id: str, settings: Settings) -> Path:
+    if not source_id.startswith(LOCAL_SOURCE_PREFIX):
+        raise AppError(status_code=400, code=CODES.BAD_REQUEST, message="Invalid DuckDB source id.")
+    suffix = source_id[len(LOCAL_SOURCE_PREFIX) :]
+    if len(suffix) != _SOURCE_ID_LEN or not all(c in "0123456789abcdef" for c in suffix):
+        raise AppError(status_code=400, code=CODES.BAD_REQUEST, message="Invalid DuckDB source id.")
+    return _local_sources_dir(settings) / f"{source_id}.json"
+
+
+def _is_local_source_id(source_id: str) -> bool:
+    return source_id.startswith(LOCAL_SOURCE_PREFIX)
+
+
+def _is_upload_source_id(source_id: str) -> bool:
+    return (
+        len(source_id) == _SOURCE_ID_LEN
+        and all(c in "0123456789abcdef" for c in source_id)
+        and not _is_local_source_id(source_id)
+    )
+
+
+def register_local_duckdb_open(
+    raw_path: str,
+    *,
+    registry: DatasetRegistry,
+    settings: Settings,
+) -> DuckDbSourceResponse:
+    if not settings.enable_duckdb_local_open:
+        raise AppError(
+            status_code=403,
+            code=CODES.PATH_NOT_ALLOWED,
+            message="Opening DuckDB files from disk is disabled.",
+        )
+    p = Path(raw_path).expanduser()
+    if not p.is_absolute():
+        raise AppError(status_code=400, code=CODES.BAD_REQUEST, message="Path must be absolute.")
+    p = p.resolve()
+    registry.ensure_registration_allowed(p)
+    if p.suffix.lower() != ".duckdb":
+        raise AppError(status_code=400, code=CODES.BAD_REQUEST, message="Path must point to a .duckdb file.")
+    if not p.is_file():
+        raise AppError(status_code=404, code=CODES.NOT_FOUND, message="DuckDB file not found.")
+    reject_workspace_duckdb_upload(p, settings=settings)
+    validate_duckdb_upload(p, settings)
+
+    source_id = f"{LOCAL_SOURCE_PREFIX}{uuid.uuid4().hex[:_SOURCE_ID_LEN]}"
+    meta_dir = _local_sources_dir(settings)
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    meta_path = _local_metadata_path(source_id, settings)
+    meta_path.write_text(
+        json.dumps({"path": str(p), "filename": p.name, "created_at": time.time()}),
+        encoding="utf-8",
+    )
+    return DuckDbSourceResponse(source_id=source_id, filename=p.name, source_kind="local")
+
+
+def pick_and_register_local_duckdb(
+    *,
+    registry: DatasetRegistry,
+    settings: Settings,
+) -> DuckDbSourceResponse:
+    if not settings.enable_duckdb_native_pick:
+        raise AppError(
+            status_code=403,
+            code=CODES.PATH_NOT_ALLOWED,
+            message="Native DuckDB file picker is disabled.",
+        )
+    from app.services.duckdb_native_pick import native_pick_available, pick_local_duckdb_path
+
+    if not native_pick_available():
+        raise AppError(
+            status_code=503,
+            code=CODES.INTERNAL_ERROR,
+            message="Native file picker is not available on this system.",
+        )
+    try:
+        picked = pick_local_duckdb_path()
+    except Exception as exc:
+        raise AppError(
+            status_code=503,
+            code=CODES.INTERNAL_ERROR,
+            message="Native file picker failed. Enter an absolute path instead.",
+        ) from exc
+    if picked is None:
+        raise AppError(status_code=400, code=CODES.BAD_REQUEST, message="File selection was cancelled.")
+    return register_local_duckdb_open(str(picked), registry=registry, settings=settings)
 
 
 def resolve_staged_duckdb_upload(upload_id: str, *, settings: Settings) -> Path:
@@ -65,6 +161,47 @@ def resolve_staged_duckdb_upload(upload_id: str, *, settings: Settings) -> Path:
             message="Cannot import the active Data Control Center workspace database.",
         )
     return source
+
+
+def resolve_local_duckdb_source(source_id: str, *, registry: DatasetRegistry, settings: Settings) -> Path:
+    meta_path = _local_metadata_path(source_id, settings)
+    if not meta_path.is_file():
+        raise AppError(status_code=404, code=CODES.NOT_FOUND, message="DuckDB source not found.")
+    try:
+        payload = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AppError(status_code=404, code=CODES.NOT_FOUND, message="DuckDB source not found.") from exc
+    raw = payload.get("path")
+    if not isinstance(raw, str) or not raw.strip():
+        raise AppError(status_code=400, code=CODES.BAD_REQUEST, message="DuckDB source is invalid.")
+    p = Path(raw).expanduser().resolve()
+    registry.ensure_registration_allowed(p)
+    if not p.is_file() or p.suffix.lower() != ".duckdb":
+        raise AppError(status_code=404, code=CODES.NOT_FOUND, message="DuckDB file not found.")
+    reject_workspace_duckdb_upload(p, settings=settings)
+    return p
+
+
+def resolve_duckdb_source(source_id: str, *, registry: DatasetRegistry, settings: Settings) -> Path:
+    if _is_local_source_id(source_id):
+        return resolve_local_duckdb_source(source_id, registry=registry, settings=settings)
+    if _is_upload_source_id(source_id):
+        return resolve_staged_duckdb_upload(source_id, settings=settings)
+    raise AppError(status_code=400, code=CODES.BAD_REQUEST, message="Invalid DuckDB source id.")
+
+
+def cleanup_duckdb_local_opens(settings: Settings) -> None:
+    root = _local_sources_dir(settings)
+    if not root.is_dir():
+        return
+    ttl_seconds = settings.duckdb_local_open_ttl_hours * 3600
+    cutoff = time.time() - ttl_seconds
+    for meta in root.glob("*.json"):
+        try:
+            if meta.stat().st_mtime <= cutoff:
+                meta.unlink(missing_ok=True)
+        except OSError:
+            continue
 
 
 def reject_workspace_duckdb_upload(path: Path, *, settings: Settings) -> None:
@@ -96,9 +233,7 @@ def _connect_source(source_path: Path) -> duckdb.DuckDBPyConnection:
     return duckdb.connect(str(source_path), read_only=True)
 
 
-def _relation_expr(schema_name: str, relation_name: str, *, attached: bool) -> str:
-    if attached:
-        return f"{_quote_ident(ATTACH_ALIAS)}.{_quote_ident(schema_name)}.{_quote_ident(relation_name)}"
+def _relation_expr(schema_name: str, relation_name: str) -> str:
     return f"{_quote_ident(schema_name)}.{_quote_ident(relation_name)}"
 
 
@@ -112,18 +247,47 @@ def _relation_row_count(
     try:
         _set_timeout(con, settings.registration_count_timeout_seconds)
         row = con.execute(
-            f"SELECT COUNT(*) AS c FROM {_relation_expr(schema_name, relation_name, attached=False)}"
+            f"SELECT COUNT(*) AS c FROM {_relation_expr(schema_name, relation_name)}"
         ).fetchone()
         return int(row[0]) if row else None
     except Exception:
         return None
 
 
+def count_duckdb_relation(
+    source_path: Path,
+    *,
+    schema_name: str,
+    relation_name: str,
+    settings: Settings,
+) -> int | None:
+    try:
+        con = _connect_source(source_path)
+    except Exception as exc:  # noqa: BLE001
+        raise AppError(
+            status_code=400,
+            code=CODES.BAD_REQUEST,
+            message="DuckDB file could not be opened.",
+        ) from exc
+    try:
+        return _relation_row_count(
+            con,
+            schema_name=schema_name,
+            relation_name=relation_name,
+            settings=settings,
+        )
+    finally:
+        con.close()
+
+
 def inspect_duckdb_relations(
     source_path: Path,
     *,
     settings: Settings,
+    include_row_counts: bool | None = None,
 ) -> list[DuckDbRelationSummary]:
+    if include_row_counts is None:
+        include_row_counts = settings.duckdb_inspect_include_row_counts
     try:
         con = _connect_source(source_path)
     except Exception as exc:  # noqa: BLE001
@@ -150,18 +314,21 @@ def inspect_duckdb_relations(
         out: list[DuckDbRelationSummary] = []
         for schema_name, name, table_type, column_count in rows:
             rel_type = "view" if str(table_type).upper() == "VIEW" else "table"
+            row_count: int | None = None
+            if include_row_counts:
+                row_count = _relation_row_count(
+                    con,
+                    schema_name=str(schema_name),
+                    relation_name=str(name),
+                    settings=settings,
+                )
             out.append(
                 DuckDbRelationSummary(
                     schema_name=str(schema_name),
                     name=str(name),
                     type=rel_type,
                     column_count=int(column_count or 0),
-                    row_count=_relation_row_count(
-                        con,
-                        schema_name=str(schema_name),
-                        relation_name=str(name),
-                        settings=settings,
-                    ),
+                    row_count=row_count,
                 )
             )
         return out
@@ -207,21 +374,33 @@ def _validate_requested_relations(
             raise DuckDbImportError("Selected DuckDB relation is not available for import.")
 
 
+def _snapshot_copy_error_message(exc: BaseException, *, label: str) -> str:
+    detail = str(exc).lower()
+    if "timeout" in detail or "statement_timeout" in detail:
+        return (
+            f"Export timed out for {label}. Try fewer relations or raise "
+            "DCC_DUCKDB_IMPORT_TIMEOUT_SECONDS."
+        )
+    return f"Unable to copy DuckDB relation {label}."
+
+
 def _snapshot_relation(
     con: duckdb.DuckDBPyConnection,
     *,
     rel: DuckDbRelationRef,
     export_path: Path,
 ) -> None:
+    # Use the source file connection (not ATTACH under another alias) so views that
+    # reference catalog-qualified names (e.g. oddsfox.schema.table) still resolve.
     sql = (
-        f"COPY (SELECT * FROM {_relation_expr(rel.schema_name, rel.name, attached=True)}) "
+        f"COPY (SELECT * FROM {_relation_expr(rel.schema_name, rel.name)}) "
         f"TO {_quote_string(str(export_path))} (FORMAT PARQUET)"
     )
     try:
         con.execute(sql)
     except Exception as exc:  # noqa: BLE001
         label = (rel.alias or rel.name).strip() or rel.name
-        raise DuckDbImportError(f"Unable to copy DuckDB relation {label}.") from exc
+        raise DuckDbImportError(_snapshot_copy_error_message(exc, label=label)) from exc
 
 
 def import_duckdb_relations(
@@ -236,7 +415,7 @@ def import_duckdb_relations(
     if not relations:
         raise DuckDbImportError("Select at least one DuckDB relation to import.")
 
-    available = inspect_duckdb_relations(source_path, settings=settings)
+    available = inspect_duckdb_relations(source_path, settings=settings, include_row_counts=False)
     _validate_requested_relations(available, relations)
 
     batch_dir = _upload_root(settings) / "duckdb_imports" / uuid.uuid4().hex[:16]
@@ -245,12 +424,10 @@ def import_duckdb_relations(
     registered: list[RegisteredDataset] = []
     taken_paths: set[Path] = set()
 
-    con = duckdb.connect(":memory:")
+    con: duckdb.DuckDBPyConnection | None = None
     try:
-        _set_timeout(con, settings.query_timeout_seconds)
-        con.execute(
-            f"ATTACH {_quote_string(str(source_path))} AS {_quote_ident(ATTACH_ALIAS)} (READ_ONLY)"
-        )
+        con = _connect_source(source_path)
+        _set_timeout(con, settings.duckdb_import_timeout_seconds)
         for idx, rel in enumerate(relations):
             stem = _export_stem(source_path, rel)
             export_path = _unique_export_path(batch_dir, stem, taken_paths)
@@ -270,11 +447,8 @@ def import_duckdb_relations(
         _cleanup_empty_dir(batch_dir)
         raise DuckDbImportError("DuckDB import failed.") from exc
     finally:
-        try:
-            con.execute(f"DETACH {_quote_ident(ATTACH_ALIAS)}")
-        except Exception:
-            pass
-        con.close()
+        if con is not None:
+            con.close()
 
     summaries = [registry.to_summary(ds).model_dump(mode="json") for ds in registered]
     return {"datasets": summaries}

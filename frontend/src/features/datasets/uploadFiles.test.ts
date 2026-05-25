@@ -3,10 +3,16 @@ import {
   filterDuckDbFiles,
   filterSupportedFiles,
   hasIngestibleFiles,
+  hasTabularIngestibleFiles,
   partitionIncomingFiles,
+  TABULAR_ACCEPT_ATTR,
 } from '@/features/datasets/uploadFiles'
 
 describe('uploadFiles', () => {
+  it('tabular accept excludes duckdb', () => {
+    expect(TABULAR_ACCEPT_ATTR).not.toContain('duckdb')
+  })
+
   it('partitions data and duckdb files', () => {
     const csv = new File(['a'], 'a.csv')
     const duck = new File(['b'], 'b.duckdb')
@@ -34,5 +40,10 @@ describe('uploadFiles', () => {
     expect(hasIngestibleFiles([new File(['a'], 'a.csv')])).toBe(true)
     expect(hasIngestibleFiles([new File(['b'], 'b.duckdb')])).toBe(true)
     expect(hasIngestibleFiles([new File(['c'], 'c.exe')])).toBe(false)
+  })
+
+  it('reports tabular ingestible only for data files', () => {
+    expect(hasTabularIngestibleFiles([new File(['a'], 'a.csv')])).toBe(true)
+    expect(hasTabularIngestibleFiles([new File(['b'], 'b.duckdb')])).toBe(false)
   })
 })

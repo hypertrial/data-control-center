@@ -4,9 +4,8 @@ import { api } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DatasetDropzone } from '@/features/datasets/DatasetDropzone'
-import { DuckDbImportDialog } from '@/features/datasets/DuckDbImportDialog'
-import { useDatasetIngestion } from '@/features/datasets/useDatasetIngestion'
-import { ACCEPT_ATTR } from '@/features/datasets/uploadFiles'
+import { useDatasetIngestionContext } from '@/features/datasets/DatasetIngestionProvider'
+import { TABULAR_ACCEPT_ATTR } from '@/features/datasets/uploadFiles'
 import { Dialog, DialogContent, DialogFooter } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
@@ -37,9 +36,7 @@ export function DatasetSidebar() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
 
-  const { busy, ingestFiles, duckDbSession, closeDuckDbSession, handleDuckDbImported } = useDatasetIngestion({
-    setActiveDatasetId,
-  })
+  const { busy, ingestFiles, duckDbCapabilities, openDuckDbFromDisk } = useDatasetIngestionContext()
 
   const q = useQuery({ queryKey: ['datasets'], queryFn: api.listDatasets })
   const list = useMemo(() => q.data ?? [], [q.data])
@@ -133,12 +130,53 @@ export function DatasetSidebar() {
             </Button>
           </div>
 
-          {!narrow && emptyWorkspace ? (
-            <div className="mt-3 space-y-3 rounded-lg border border-dashed border-border-default bg-white/[0.03] p-3 text-center text-xs leading-relaxed text-fg-muted">
-              <Upload className="mx-auto h-6 w-6 text-fg-muted" aria-hidden />
-              <p className="font-medium text-fg">No datasets in this workspace</p>
-              <DatasetDropzone busy={busy} onFilesPicked={(files) => void ingestFiles(files)} />
-            </div>
+          {emptyWorkspace ? (
+            narrow ? (
+              <div className="mt-2 flex flex-col items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  disabled={busy}
+                  aria-label="Upload files"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept={TABULAR_ACCEPT_ATTR}
+                  className="sr-only"
+                  aria-label="Upload data files"
+                  onChange={(e) => {
+                    const files = e.target.files ? Array.from(e.target.files) : []
+                    e.target.value = ''
+                    void ingestFiles(files)
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="mt-3 space-y-3 rounded-lg border border-dashed border-border-default bg-white/[0.03] p-3 text-center text-xs leading-relaxed text-fg-muted">
+                <Upload className="mx-auto h-6 w-6 text-fg-muted" aria-hidden />
+                <p className="font-medium text-fg">No datasets in this workspace</p>
+                <DatasetDropzone busy={busy} onFilesPicked={(files) => void ingestFiles(files)} />
+                {duckDbCapabilities?.local_open_enabled ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    disabled={busy}
+                    onClick={() => openDuckDbFromDisk()}
+                  >
+                    <Database className="mr-2 h-3.5 w-3.5" />
+                    Import DuckDB
+                  </Button>
+                ) : null}
+              </div>
+            )
           ) : null}
 
           {!narrow && !emptyWorkspace ? (
@@ -164,12 +202,12 @@ export function DatasetSidebar() {
                 void ingestFiles(files)
               }}
             >
-              <input ref={fileInputRef} type="file" multiple accept={ACCEPT_ATTR} className="sr-only" aria-label="Upload data files" onChange={(e) => {
+              <input ref={fileInputRef} type="file" multiple accept={TABULAR_ACCEPT_ATTR} className="sr-only" aria-label="Upload data files" onChange={(e) => {
                 const files = e.target.files ? Array.from(e.target.files) : []
                 e.target.value = ''
                 void ingestFiles(files)
               }} />
-              <input ref={folderInputRef} type="file" multiple accept={ACCEPT_ATTR} className="sr-only" aria-label="Upload folder of data files" {...({ webkitdirectory: '' } as object)} onChange={(e) => {
+              <input ref={folderInputRef} type="file" multiple accept={TABULAR_ACCEPT_ATTR} className="sr-only" aria-label="Upload folder of data files" {...({ webkitdirectory: '' } as object)} onChange={(e) => {
                 const files = e.target.files ? Array.from(e.target.files) : []
                 e.target.value = ''
                 void ingestFiles(files)
@@ -182,6 +220,19 @@ export function DatasetSidebar() {
                 <FolderOpen className="mr-2 h-3.5 w-3.5" />
                 Folder
               </Button>
+              {duckDbCapabilities?.local_open_enabled ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  disabled={busy}
+                  onClick={() => openDuckDbFromDisk()}
+                >
+                  <Database className="mr-2 h-3.5 w-3.5" />
+                  Import DuckDB
+                </Button>
+              ) : null}
             </div>
           ) : null}
 
@@ -190,7 +241,7 @@ export function DatasetSidebar() {
               <Button type="button" variant="outline" size="icon" disabled={busy} aria-label="Upload files" onClick={() => fileInputRef.current?.click()}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               </Button>
-              <input ref={fileInputRef} type="file" multiple accept={ACCEPT_ATTR} className="sr-only" aria-label="Upload data files" onChange={(e) => {
+              <input ref={fileInputRef} type="file" multiple accept={TABULAR_ACCEPT_ATTR} className="sr-only" aria-label="Upload data files" onChange={(e) => {
                 const files = e.target.files ? Array.from(e.target.files) : []
                 e.target.value = ''
                 void ingestFiles(files)
@@ -284,12 +335,6 @@ export function DatasetSidebar() {
           </div>
         </div>
       </aside>
-
-      <DuckDbImportDialog
-        session={duckDbSession}
-        onClose={closeDuckDbSession}
-        onImported={(imported) => void handleDuckDbImported(imported)}
-      />
 
       <Dialog open={!!confirmDelete} onOpenChange={(open) => !open && setConfirmDelete(null)}>
         <DialogContent title="Remove dataset" className="max-w-md">

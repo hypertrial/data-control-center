@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,6 +61,22 @@ _RESERVED_VIEW_IDENTIFIERS = frozenset(
         "distinct",
     }
 )
+
+
+def implicit_registration_roots(*, cwd: Path | None = None) -> list[Path]:
+    """Filesystem roots allowed for local open/pick without explicit configuration.
+
+    On macOS, when the backend runs from a path under ``/Volumes/<Volume>/``, that
+    volume mount is included so external SSDs and other removable volumes work out of
+    the box for DuckDB open-from-disk.
+    """
+    resolved = (cwd or Path.cwd()).resolve()
+    roots: list[Path] = []
+    if sys.platform == "darwin":
+        parts = resolved.parts
+        if len(parts) >= 3 and parts[0] == "/" and parts[1] == "Volumes":
+            roots.append(Path("/").joinpath(*parts[:3]))
+    return roots
 
 
 def slugify_file_stem(raw_stem: str, dataset_id: str) -> str:
@@ -119,9 +136,14 @@ class DatasetRegistry:
         self._by_id: dict[str, RegisteredDataset] = {}
         self._load_from_db()
         self.cleanup_upload_orphans()
+        from app.services.duckdb_import import cleanup_duckdb_local_opens
+
+        cleanup_duckdb_local_opens(self._settings)
 
     def _allowed_roots(self) -> list[Path]:
         roots: list[Path] = []
+        for root in implicit_registration_roots():
+            roots.append(root.resolve())
         for root in self._settings.registration_allowed_roots:
             p = root if root.is_absolute() else Path.cwd() / root
             roots.append(p.resolve())

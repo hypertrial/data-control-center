@@ -10,7 +10,8 @@ import type {
   DatasetSummary,
   DuckDbRelationRef,
   DuckDbRelationSummary,
-  DuckDbUploadResponse,
+  DuckDbCapabilities,
+  DuckDbSourceResponse,
   HealthResponse,
   JobCreateResponse,
   JobDetail,
@@ -243,10 +244,13 @@ export const api = {
     )
   },
 
+  duckDbCapabilities: () =>
+    handle<DuckDbCapabilities>(apiFetch(`${API}/datasets/duckdb/capabilities`)),
+
   uploadDuckDb: (file: File) => {
     const body = new FormData()
     body.append('file', file)
-    return handle<DuckDbUploadResponse>(
+    return handle<DuckDbSourceResponse>(
       apiFetch(`${API}/datasets/duckdb/upload`, {
         method: 'POST',
         body,
@@ -254,21 +258,49 @@ export const api = {
     )
   },
 
-  inspectDuckDb: (uploadId: string) =>
+  openLocalDuckDb: (path: string) =>
+    handle<DuckDbSourceResponse>(
+      apiFetch(`${API}/datasets/duckdb/open-local`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      }),
+    ),
+
+  pickLocalDuckDb: () =>
+    handle<DuckDbSourceResponse>(
+      apiFetch(`${API}/datasets/duckdb/pick-local`, {
+        method: 'POST',
+      }),
+    ),
+
+  inspectDuckDb: (sourceId: string, options?: { includeRowCounts?: boolean }) =>
     handle<DuckDbRelationSummary[]>(
       apiFetch(`${API}/datasets/duckdb/inspect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ upload_id: uploadId }),
+        body: JSON.stringify({
+          source_id: sourceId,
+          include_row_counts: options?.includeRowCounts ?? false,
+        }),
       }),
     ),
 
-  importDuckDbRelations: (uploadId: string, relations: DuckDbRelationRef[]) =>
+  duckDbRelationCount: (sourceId: string, schema: string, name: string) =>
+    handle<{ row_count: number | null }>(
+      apiFetch(`${API}/datasets/duckdb/relation-count`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_id: sourceId, schema, name }),
+      }),
+    ),
+
+  importDuckDbRelations: (sourceId: string, relations: DuckDbRelationRef[]) =>
     handle<JobCreateResponse>(
       apiFetch(`${API}/datasets/duckdb/import`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ upload_id: uploadId, relations }),
+        body: JSON.stringify({ source_id: sourceId, relations }),
       }),
     ),
 

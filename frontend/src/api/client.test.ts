@@ -172,7 +172,9 @@ describe('api client', () => {
   })
 
   it('uploadDuckDb POST multipart', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonOk({ upload_id: 'up1', filename: 'source.duckdb' }))
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonOk({ source_id: 'up1', filename: 'source.duckdb', source_kind: 'upload' }),
+    )
     vi.stubGlobal('fetch', fetchMock)
     const file = new File(['db'], 'source.duckdb')
     await api.uploadDuckDb(file)
@@ -185,6 +187,40 @@ describe('api client', () => {
     expect(init.body).toBeInstanceOf(FormData)
   })
 
+  it('duckDbCapabilities GET', async () => {
+    const caps = {
+      local_open_enabled: true,
+      upload_soft_max_bytes: 512,
+      inspect_include_row_counts_default: false,
+    }
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk(caps))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(api.duckDbCapabilities()).resolves.toEqual(caps)
+    expect(fetchMock).toHaveBeenCalledWith('/api/datasets/duckdb/capabilities', expect.any(Object))
+    expectToken(fetchMock.mock.calls[0]![1] as RequestInit)
+  })
+
+  it('pickLocalDuckDb POST', async () => {
+    const body = { source_id: 'loc_1', filename: 'w.duckdb', source_kind: 'local' }
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk(body))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(api.pickLocalDuckDb()).resolves.toEqual(body)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/datasets/duckdb/pick-local',
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
+  it('openLocalDuckDb POST JSON', async () => {
+    const body = { source_id: 'loc_1', filename: 'w.duckdb', source_kind: 'local' }
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk(body))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(api.openLocalDuckDb('/data/w.duckdb')).resolves.toEqual(body)
+    const init = fetchMock.mock.calls[0]![1] as RequestInit
+    expectToken(init)
+    expect(init.body).toBe(JSON.stringify({ path: '/data/w.duckdb' }))
+  })
+
   it('inspectDuckDb POST JSON', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonOk([]))
     vi.stubGlobal('fetch', fetchMock)
@@ -195,7 +231,23 @@ describe('api client', () => {
     )
     const init = fetchMock.mock.calls[0]![1] as RequestInit
     expectToken(init)
-    expect(init.body).toBe(JSON.stringify({ upload_id: 'up1' }))
+    expect(init.body).toBe(JSON.stringify({ source_id: 'up1', include_row_counts: false }))
+  })
+
+  it('inspectDuckDb can request row counts', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk([]))
+    vi.stubGlobal('fetch', fetchMock)
+    await api.inspectDuckDb('up1', { includeRowCounts: true })
+    const init = fetchMock.mock.calls[0]![1] as RequestInit
+    expect(init.body).toBe(JSON.stringify({ source_id: 'up1', include_row_counts: true }))
+  })
+
+  it('duckDbRelationCount POST JSON', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk({ row_count: 42 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(api.duckDbRelationCount('up1', 'main', 'orders')).resolves.toEqual({ row_count: 42 })
+    const init = fetchMock.mock.calls[0]![1] as RequestInit
+    expect(init.body).toBe(JSON.stringify({ source_id: 'up1', schema: 'main', name: 'orders' }))
   })
 
   it('importDuckDbRelations POST JSON', async () => {
@@ -213,7 +265,7 @@ describe('api client', () => {
     expectToken(init)
     expect(init.body).toBe(
       JSON.stringify({
-        upload_id: 'up1',
+        source_id: 'up1',
         relations: [{ schema: 'main', name: 'orders', alias: 'orders_copy' }],
       }),
     )

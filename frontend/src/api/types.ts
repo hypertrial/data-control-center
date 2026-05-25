@@ -41,9 +41,17 @@ export type DatasetSummary = {
   quality_score?: number | null
 }
 
-export type DuckDbUploadResponse = {
-  upload_id: string
+export type DuckDbCapabilities = {
+  local_open_enabled: boolean
+  upload_soft_max_bytes: number
+  inspect_include_row_counts_default: boolean
+  native_pick_enabled: boolean
+}
+
+export type DuckDbSourceResponse = {
+  source_id: string
   filename: string
+  source_kind: 'upload' | 'local'
 }
 
 export type DuckDbRelationSummary = {

@@ -5,14 +5,16 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useSearchParams } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api/client'
+import { DatasetIngestionProvider } from '@/features/datasets/DatasetIngestionProvider'
 import { DatasetSidebar } from '@/features/datasets/DatasetSidebar'
+import { useUiStore } from '@/store/uiStore'
 
 function SearchProbe() {
   const [sp] = useSearchParams()
   return <span data-testid="ds-param">{sp.get('ds') ?? ''}</span>
 }
 
-const toastMock = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
+const toastMock = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), message: vi.fn() }))
 
 vi.mock('sonner', () => ({ toast: toastMock }))
 
@@ -21,6 +23,10 @@ vi.mock('@/api/client', () => ({
     listDatasets: vi.fn(),
     uploadDatasets: vi.fn(),
     uploadDuckDb: vi.fn(),
+    duckDbCapabilities: vi.fn(),
+    pickLocalDuckDb: vi.fn(),
+    openLocalDuckDb: vi.fn(),
+    duckDbRelationCount: vi.fn(),
     deleteDataset: vi.fn(),
     inspectDuckDb: vi.fn(),
     importDuckDbRelations: vi.fn(),
@@ -34,13 +40,16 @@ function wrap(ui: React.ReactElement, initialEntry = '/') {
   })
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
-      <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+      <QueryClientProvider client={qc}>
+        <DatasetIngestionProvider>{ui}</DatasetIngestionProvider>
+      </QueryClientProvider>
     </MemoryRouter>,
   )
 }
 
 describe('DatasetSidebar', () => {
   beforeEach(() => {
+    useUiStore.getState().setSidebarCollapsed(false)
     toastMock.error.mockReset()
     toastMock.success.mockReset()
     vi.mocked(api.deleteDataset).mockReset()
@@ -73,7 +82,22 @@ describe('DatasetSidebar', () => {
       },
     ])
     vi.mocked(api.deleteDataset).mockResolvedValue(undefined)
-    vi.mocked(api.uploadDuckDb).mockResolvedValue({ upload_id: 'up_1', filename: 'source.duckdb' })
+    vi.mocked(api.duckDbCapabilities).mockResolvedValue({
+      local_open_enabled: true,
+      upload_soft_max_bytes: 1024 * 1024 * 1024,
+      inspect_include_row_counts_default: false,
+      native_pick_enabled: true,
+    })
+    vi.mocked(api.pickLocalDuckDb).mockResolvedValue({
+      source_id: 'loc_sidebar',
+      filename: 'picked.duckdb',
+      source_kind: 'local',
+    })
+    vi.mocked(api.uploadDuckDb).mockResolvedValue({
+      source_id: 'up_1',
+      filename: 'source.duckdb',
+      source_kind: 'upload',
+    })
     vi.mocked(api.inspectDuckDb).mockResolvedValue([
       { schema: 'main', name: 'orders', type: 'table', column_count: 2, row_count: 2 },
       { schema: 'main', name: 'large_orders', type: 'view', column_count: 2, row_count: 1 },
@@ -317,32 +341,38 @@ describe('DatasetSidebar', () => {
     )
   })
 
-  async function uploadDuckDbFile(user: ReturnType<typeof userEvent.setup>, container: HTMLElement) {
-    const fileInput = container.querySelector(
-      'input[type="file"]:not([webkitdirectory])',
-    ) as HTMLInputElement
-    await user.upload(fileInput, new File(['db'], 'source.duckdb'))
-    await waitFor(() => expect(api.uploadDuckDb).toHaveBeenCalled())
-    await waitFor(() => expect(api.inspectDuckDb).toHaveBeenCalledWith('up_1'))
+  async function openDuckDbImport(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Import DuckDB' }))
+    await waitFor(() => expect(api.pickLocalDuckDb).toHaveBeenCalled())
+    await waitFor(() => expect(api.inspectDuckDb).toHaveBeenCalledWith('loc_sidebar'))
     await waitFor(() => expect(screen.getByRole('dialog', { name: 'Import DuckDB' })).toBeInTheDocument())
     await waitFor(() => expect(screen.getByText('orders')).toBeInTheDocument())
   }
 
+  it('opens duckdb via Import DuckDB and native pick', async () => {
+    const user = userEvent.setup()
+    wrap(<DatasetSidebar />)
+    await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Import DuckDB' }))
+    await waitFor(() => expect(api.pickLocalDuckDb).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Import DuckDB' })).toBeInTheDocument())
+  })
+
   it('uploads and imports selected DuckDB relations', async () => {
     const user = userEvent.setup()
-    const { container } = wrap(<DatasetSidebar />)
+    wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
 
-    await uploadDuckDbFile(user, container)
+    await openDuckDbImport(user)
 
     await user.click(screen.getByLabelText('Select main.orders'))
-    await user.click(screen.getByLabelText('Select main.orders'))
-    await user.click(screen.getByLabelText('Select main.orders'))
-    await user.type(screen.getByLabelText('Alias for main.orders'), 'orders_copy')
+    const aliasInput = screen.getByLabelText('Alias for main.orders')
+    await user.clear(aliasInput)
+    await user.type(aliasInput, 'orders_copy')
     await user.click(screen.getByRole('button', { name: /Import 1/ }))
 
     await waitFor(() =>
-      expect(api.importDuckDbRelations).toHaveBeenCalledWith('up_1', [
+      expect(api.importDuckDbRelations).toHaveBeenCalledWith('loc_sidebar', [
         { schema: 'main', name: 'orders', alias: 'orders_copy' },
       ]),
     )
@@ -352,12 +382,12 @@ describe('DatasetSidebar', () => {
 
   it('selects and clears all inspected DuckDB relations', async () => {
     const user = userEvent.setup()
-    const { container } = wrap(<DatasetSidebar />)
+    wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
 
-    await uploadDuckDbFile(user, container)
+    await openDuckDbImport(user)
 
-    await user.click(screen.getByRole('button', { name: 'Select all' }))
+    await user.click(screen.getByRole('button', { name: 'Select all shown' }))
     expect(screen.getByLabelText('Select main.orders')).toBeChecked()
     expect(screen.getByLabelText('Select main.large_orders')).toBeChecked()
     await user.click(screen.getByRole('button', { name: 'Clear selection' }))
@@ -365,14 +395,35 @@ describe('DatasetSidebar', () => {
     expect(screen.getByLabelText('Select main.large_orders')).not.toBeChecked()
   })
 
-  it('opens DuckDB import after uploading in an empty workspace', async () => {
+  it('shows collapsed sidebar upload control', async () => {
+    useUiStore.getState().setSidebarCollapsed(true)
+    const user = userEvent.setup()
+    const { container } = wrap(<DatasetSidebar />)
+    await waitFor(() => expect(screen.getByTitle('ds_001 - /p')).toBeInTheDocument())
+    const fileInput = container.querySelector('input[aria-label="Upload data files"]') as HTMLInputElement
+    const clickSpy = vi.spyOn(fileInput, 'click').mockImplementation(() => {})
+    await user.click(screen.getByRole('button', { name: 'Upload files' }))
+    expect(clickSpy).toHaveBeenCalled()
+    clickSpy.mockRestore()
+  })
+
+  it('routes duckdb-only folder picks through native import', async () => {
+    const { container } = wrap(<DatasetSidebar />)
+    await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
+    const folderInput = container.querySelector('input[webkitdirectory]') as HTMLInputElement
+    const f = new File(['db'], 'only.duckdb')
+    Object.defineProperty(folderInput, 'files', { value: [f], configurable: true })
+    fireEvent.change(folderInput)
+    await waitFor(() => expect(api.pickLocalDuckDb).toHaveBeenCalled())
+  })
+
+  it('opens DuckDB import from Import DuckDB in an empty workspace', async () => {
     const user = userEvent.setup()
     vi.mocked(api.listDatasets).mockResolvedValue([])
-    const { container } = wrap(<DatasetSidebar />)
+    wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/No datasets in this workspace/i)).toBeInTheDocument())
 
-    const fileInput = container.querySelector('input[aria-label="Upload data files"]') as HTMLInputElement
-    await user.upload(fileInput, new File(['db'], 'source.duckdb'))
+    await user.click(screen.getByRole('button', { name: 'Import DuckDB' }))
     await waitFor(() => expect(screen.getByRole('dialog', { name: 'Import DuckDB' })).toBeInTheDocument())
   })
 
@@ -391,10 +442,10 @@ describe('DatasetSidebar', () => {
       finished_at: 'now',
       result: null,
     })
-    const { container } = wrap(<DatasetSidebar />)
+    wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
 
-    await uploadDuckDbFile(user, container)
+    await openDuckDbImport(user)
     await user.click(screen.getByLabelText('Select main.orders'))
     await user.click(screen.getByRole('button', { name: /Import 1/ }))
 
@@ -403,10 +454,10 @@ describe('DatasetSidebar', () => {
 
   it('validates DuckDB import requires selected relations', async () => {
     const user = userEvent.setup()
-    const { container } = wrap(<DatasetSidebar />)
+    wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
 
-    await uploadDuckDbFile(user, container)
+    await openDuckDbImport(user)
     await user.click(screen.getByRole('button', { name: /^Import\s*$/ }))
     expect(toastMock.error).toHaveBeenCalledWith('Select at least one DuckDB table or view.')
   })
@@ -414,13 +465,10 @@ describe('DatasetSidebar', () => {
   it('shows DuckDB inspect errors', async () => {
     const user = userEvent.setup()
     vi.mocked(api.inspectDuckDb).mockRejectedValue(new Error('cannot inspect'))
-    const { container } = wrap(<DatasetSidebar />)
+    wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
 
-    const fileInput = container.querySelector(
-      'input[type="file"]:not([webkitdirectory])',
-    ) as HTMLInputElement
-    await user.upload(fileInput, new File(['db'], 'source.duckdb'))
+    await user.click(screen.getByRole('button', { name: 'Import DuckDB' }))
     await waitFor(() => expect(screen.getByText('cannot inspect')).toBeInTheDocument())
   })
 })

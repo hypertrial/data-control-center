@@ -295,6 +295,23 @@ def test_register_path_reserved_keyword_stem(tmp_path: Path) -> None:
     assert ds.view_name == "order_dcc"
 
 
+def test_implicit_registration_roots_macos_volume(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.services.registry.sys.platform", "darwin")
+    from app.services.registry import implicit_registration_roots
+
+    cwd = Path("/Volumes/Mac SSD/hypertrial/data-control-center/backend")
+    assert implicit_registration_roots(cwd=cwd) == [Path("/Volumes/Mac SSD")]
+
+
+def test_implicit_registration_roots_ignored_off_macos_volume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.services.registry.sys.platform", "darwin")
+    from app.services.registry import implicit_registration_roots
+
+    assert implicit_registration_roots(cwd=Path("/Users/me/project")) == []
+
+
 def test_registration_allowed_roots_support_relative_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

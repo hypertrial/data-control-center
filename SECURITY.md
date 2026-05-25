@@ -65,6 +65,9 @@ override risk.
 Path-based registration, upload limits, and related **`DCC_*`** settings are documented in
 [`backend/README.md`](backend/README.md#configuration) (see **Local-only security** and
 **Uploads and path registration**). Implementation: [`backend/app/services/registry.py`](backend/app/services/registry.py).
-DuckDB relation import accepts only browser-uploaded **`.duckdb`** files staged under the app-owned
-upload directory. Inspect/import APIs resolve **`upload_id`** within that staging area only; they do
-not accept arbitrary filesystem paths and do not grant SQL users permission to run `ATTACH` on user paths.
+DuckDB relation import uses either app-staged uploads or **open-local** / **pick-local** references
+under allowed registration roots (same **`ensure_registration_allowed`** checks as path registration).
+Inspect/import
+APIs resolve **`source_id`** only (staged upload id or **`loc_*`** metadata); they do not grant SQL users
+permission to run `ATTACH` on arbitrary paths. Local-open metadata is stored under the app upload tree and
+expires per **`DCC_DUCKDB_LOCAL_OPEN_TTL_HOURS`**.

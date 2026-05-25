@@ -13,19 +13,26 @@ from app.api.datasets_upload import _safe_upload_filename
 from app.api.deps import JobsDep, RegistryDep, SettingsDep, WorkspaceDep
 from app.errors import CODES, to_http_error
 from app.models.api import (
+    DuckDbCapabilitiesResponse,
     DuckDbImportRequest,
     DuckDbInspectRequest,
+    DuckDbOpenLocalRequest,
+    DuckDbRelationCountRequest,
+    DuckDbRelationCountResponse,
     DuckDbRelationSummary,
-    DuckDbUploadResponse,
+    DuckDbSourceResponse,
     JobCreateResponse,
     JobStatus,
 )
 from app.services.duckdb_import import (
     DUCKDB_SOURCES_DIR,
+    count_duckdb_relation,
     import_duckdb_relations,
     inspect_duckdb_relations,
+    pick_and_register_local_duckdb,
+    register_local_duckdb_open,
     reject_workspace_duckdb_upload,
-    resolve_staged_duckdb_upload,
+    resolve_duckdb_source,
 )
 from app.services.upload_validation import UploadValidationError, validate_duckdb_upload
 from app.telemetry import emit
@@ -33,11 +40,23 @@ from app.telemetry import emit
 router = APIRouter(prefix="/duckdb")
 
 
-@router.post("/upload", response_model=DuckDbUploadResponse)
+@router.get("/capabilities", response_model=DuckDbCapabilitiesResponse)
+def duckdb_capabilities(settings: SettingsDep) -> DuckDbCapabilitiesResponse:
+    from app.services.duckdb_native_pick import native_pick_available
+
+    return DuckDbCapabilitiesResponse(
+        local_open_enabled=settings.enable_duckdb_local_open,
+        upload_soft_max_bytes=settings.duckdb_upload_soft_max_bytes,
+        inspect_include_row_counts_default=settings.duckdb_inspect_include_row_counts,
+        native_pick_enabled=settings.enable_duckdb_native_pick and native_pick_available(),
+    )
+
+
+@router.post("/upload", response_model=DuckDbSourceResponse)
 async def upload_duckdb(
     settings: SettingsDep,
     file: Annotated[UploadFile | None, File()] = None,
-) -> DuckDbUploadResponse:
+) -> DuckDbSourceResponse:
     if file is None:
         raise to_http_error(status_code=400, code=CODES.BAD_REQUEST, message="No DuckDB file uploaded")
     raw_name = file.filename or ""
@@ -54,8 +73,8 @@ async def upload_duckdb(
         upload_root = Path.cwd() / upload_root
     upload_root.mkdir(parents=True, exist_ok=True)
 
-    upload_id = uuid.uuid4().hex[:16]
-    batch_dir = upload_root.resolve() / DUCKDB_SOURCES_DIR / upload_id
+    source_id = uuid.uuid4().hex[:16]
+    batch_dir = upload_root.resolve() / DUCKDB_SOURCES_DIR / source_id
     batch_dir.mkdir(parents=True)
     dest = batch_dir / safe
     size = 0
@@ -91,16 +110,54 @@ async def upload_duckdb(
         emit("security.upload_reject", reason=type(exc).__name__, filename=safe)
         raise to_http_error(status_code=400, code=CODES.BAD_REQUEST, message=str(exc)) from exc
 
-    return DuckDbUploadResponse(upload_id=upload_id, filename=safe)
+    return DuckDbSourceResponse(source_id=source_id, filename=safe, source_kind="upload")
+
+
+@router.post("/open-local", response_model=DuckDbSourceResponse)
+def open_local_duckdb(
+    body: DuckDbOpenLocalRequest,
+    registry: RegistryDep,
+    settings: SettingsDep,
+) -> DuckDbSourceResponse:
+    return register_local_duckdb_open(body.path, registry=registry, settings=settings)
+
+
+@router.post("/pick-local", response_model=DuckDbSourceResponse)
+def pick_local_duckdb(
+    registry: RegistryDep,
+    settings: SettingsDep,
+) -> DuckDbSourceResponse:
+    return pick_and_register_local_duckdb(registry=registry, settings=settings)
 
 
 @router.post("/inspect", response_model=list[DuckDbRelationSummary])
 def inspect_duckdb(
     body: DuckDbInspectRequest,
+    registry: RegistryDep,
     settings: SettingsDep,
 ) -> list[DuckDbRelationSummary]:
-    source_path = resolve_staged_duckdb_upload(body.upload_id, settings=settings)
-    return inspect_duckdb_relations(source_path, settings=settings)
+    source_path = resolve_duckdb_source(body.source_id, registry=registry, settings=settings)
+    return inspect_duckdb_relations(
+        source_path,
+        settings=settings,
+        include_row_counts=body.include_row_counts,
+    )
+
+
+@router.post("/relation-count", response_model=DuckDbRelationCountResponse)
+def duckdb_relation_count(
+    body: DuckDbRelationCountRequest,
+    registry: RegistryDep,
+    settings: SettingsDep,
+) -> DuckDbRelationCountResponse:
+    source_path = resolve_duckdb_source(body.source_id, registry=registry, settings=settings)
+    row_count = count_duckdb_relation(
+        source_path,
+        schema_name=body.schema_name,
+        relation_name=body.name,
+        settings=settings,
+    )
+    return DuckDbRelationCountResponse(row_count=row_count)
 
 
 @router.post("/import", response_model=JobCreateResponse)
@@ -111,7 +168,7 @@ def import_duckdb(
     jobs: JobsDep,
     settings: SettingsDep,
 ) -> JobCreateResponse:
-    source_path = resolve_staged_duckdb_upload(body.upload_id, settings=settings)
+    source_path = resolve_duckdb_source(body.source_id, registry=registry, settings=settings)
 
     def _run(job_id: str) -> dict:
         if workspace.jobs.job_cancel_requested(job_id):

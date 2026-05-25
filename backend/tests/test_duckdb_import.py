@@ -12,16 +12,22 @@ from app.models.api import DuckDbImportRequest, DuckDbRelationRef
 from app.services.duckdb_import import (
     DUCKDB_SOURCES_DIR,
     DuckDbImportError,
+    LOCAL_SOURCE_PREFIX,
+    _local_metadata_path,
     _cleanup_empty_dir,
     _relation_row_count,
     _set_timeout,
     _snapshot_relation,
     _upload_root,
     _workspace_path,
+    cleanup_duckdb_local_opens,
     cleanup_unregistered_import_files,
+    count_duckdb_relation,
     import_duckdb_relations,
     inspect_duckdb_relations,
+    register_local_duckdb_open,
     reject_workspace_duckdb_upload,
+    resolve_duckdb_source,
     resolve_staged_duckdb_upload,
 )
 from app.services.upload_validation import UploadValidationError, validate_duckdb_upload
@@ -62,7 +68,7 @@ def _stage_upload(tmp_path: Path, source: Path, *, filename: str | None = None) 
     return upload_id
 
 
-def test_inspect_lists_tables_and_views(tmp_path: Path) -> None:
+def test_inspect_lists_tables_and_views_metadata_only_by_default(tmp_path: Path) -> None:
     source = tmp_path / "source.duckdb"
     _source_db(source)
 
@@ -72,9 +78,212 @@ def test_inspect_lists_tables_and_views(tmp_path: Path) -> None:
     assert by_name["orders"].schema_name == "main"
     assert by_name["orders"].type == "table"
     assert by_name["orders"].column_count == 2
-    assert by_name["orders"].row_count == 2
+    assert by_name["orders"].row_count is None
     assert by_name["high_value"].type == "view"
+    assert by_name["high_value"].row_count is None
+
+
+def test_inspect_include_row_counts(tmp_path: Path) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    rows = inspect_duckdb_relations(source, settings=_settings(tmp_path), include_row_counts=True)
+    by_name = {row.name: row for row in rows}
+    assert by_name["orders"].row_count == 2
     assert by_name["high_value"].row_count == 1
+
+
+def test_count_duckdb_relation(tmp_path: Path) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    settings = _settings(tmp_path)
+    assert count_duckdb_relation(source, schema_name="main", relation_name="orders", settings=settings) == 2
+
+
+def test_pick_and_register_local_duckdb(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    settings = _settings(tmp_path)
+    registry = DatasetRegistry(Workspace(settings), settings)
+    monkeypatch.setattr(
+        "app.services.duckdb_native_pick.pick_local_duckdb_path",
+        lambda: source,
+    )
+    from app.services.duckdb_import import pick_and_register_local_duckdb
+
+    opened = pick_and_register_local_duckdb(registry=registry, settings=settings)
+    assert opened.source_kind == "local"
+    assert opened.filename == "source.duckdb"
+
+
+def test_pick_and_register_cancelled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path)
+    registry = DatasetRegistry(Workspace(settings), settings)
+    monkeypatch.setattr("app.services.duckdb_native_pick.pick_local_duckdb_path", lambda: None)
+    from app.services.duckdb_import import pick_and_register_local_duckdb
+
+    with pytest.raises(AppError, match="cancelled"):
+        pick_and_register_local_duckdb(registry=registry, settings=settings)
+
+
+def test_pick_and_register_unavailable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path)
+    registry = DatasetRegistry(Workspace(settings), settings)
+    monkeypatch.setattr("app.services.duckdb_native_pick.native_pick_available", lambda: False)
+    from app.services.duckdb_import import pick_and_register_local_duckdb
+
+    with pytest.raises(AppError, match="not available"):
+        pick_and_register_local_duckdb(registry=registry, settings=settings)
+
+
+def test_pick_and_register_disabled(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, enable_duckdb_native_pick=False)
+    registry = DatasetRegistry(Workspace(settings), settings)
+    from app.services.duckdb_import import pick_and_register_local_duckdb
+
+    with pytest.raises(AppError, match="disabled"):
+        pick_and_register_local_duckdb(registry=registry, settings=settings)
+
+
+def test_register_and_resolve_local_open(tmp_path: Path) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    settings = _settings(tmp_path)
+    registry = DatasetRegistry(Workspace(settings), settings)
+    opened = register_local_duckdb_open(str(source), registry=registry, settings=settings)
+    assert opened.source_kind == "local"
+    assert opened.source_id.startswith(LOCAL_SOURCE_PREFIX)
+    resolved = resolve_duckdb_source(opened.source_id, registry=registry, settings=settings)
+    assert resolved == source.resolve()
+
+
+def test_register_local_open_disabled(tmp_path: Path) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    settings = _settings(tmp_path, enable_duckdb_local_open=False)
+    registry = DatasetRegistry(Workspace(settings), settings)
+    with pytest.raises(AppError, match="disabled"):
+        register_local_duckdb_open(str(source), registry=registry, settings=settings)
+
+
+def test_register_local_open_requires_absolute_path(tmp_path: Path) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    settings = _settings(tmp_path)
+    registry = DatasetRegistry(Workspace(settings), settings)
+    with pytest.raises(AppError, match="absolute"):
+        register_local_duckdb_open("source.duckdb", registry=registry, settings=settings)
+
+
+def test_local_metadata_path_validation(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    with pytest.raises(AppError, match="Invalid DuckDB source id"):
+        _local_metadata_path("not-local", settings)
+    with pytest.raises(AppError, match="Invalid DuckDB source id"):
+        _local_metadata_path(f"{LOCAL_SOURCE_PREFIX}tooshort", settings)
+
+
+def test_register_local_open_validation_errors(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    registry = DatasetRegistry(Workspace(settings), settings)
+    txt = tmp_path / "data.txt"
+    txt.write_text("x")
+    with pytest.raises(AppError, match="\\.duckdb"):
+        register_local_duckdb_open(str(txt.resolve()), registry=registry, settings=settings)
+    missing = tmp_path / "missing.duckdb"
+    with pytest.raises(AppError, match="not found"):
+        register_local_duckdb_open(str(missing.resolve()), registry=registry, settings=settings)
+
+
+def test_resolve_local_missing_file_after_register(tmp_path: Path) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    settings = _settings(tmp_path)
+    registry = DatasetRegistry(Workspace(settings), settings)
+    opened = register_local_duckdb_open(str(source.resolve()), registry=registry, settings=settings)
+    source.unlink()
+    with pytest.raises(AppError, match="not found"):
+        resolve_duckdb_source(opened.source_id, registry=registry, settings=settings)
+
+
+def test_resolve_local_metadata_read_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    settings = _settings(tmp_path)
+    registry = DatasetRegistry(Workspace(settings), settings)
+    opened = register_local_duckdb_open(str(source.resolve()), registry=registry, settings=settings)
+    meta = _upload_root(settings) / DUCKDB_SOURCES_DIR / "local" / f"{opened.source_id}.json"
+
+    def fail_read_text(*_args, **_kwargs):  # noqa: ANN002, ANN003
+        raise OSError("read failed")
+
+    monkeypatch.setattr(type(meta), "read_text", fail_read_text)
+    with pytest.raises(AppError, match="not found"):
+        resolve_duckdb_source(opened.source_id, registry=registry, settings=settings)
+
+
+def test_cleanup_duckdb_local_opens_ignores_unlink_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    settings = _settings(tmp_path, duckdb_local_open_ttl_hours=0.0)
+    registry = DatasetRegistry(Workspace(settings), settings)
+    register_local_duckdb_open(str(source.resolve()), registry=registry, settings=settings)
+    original_unlink = Path.unlink
+
+    def fail_unlink(self, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        if str(self).endswith(".json"):
+            raise OSError("unlink failed")
+        return original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_unlink)
+    cleanup_duckdb_local_opens(settings)
+
+
+def test_count_duckdb_relation_open_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.services.duckdb_import._connect_source",
+        lambda _path: (_ for _ in ()).throw(RuntimeError("open failed")),
+    )
+    with pytest.raises(AppError, match="could not be opened"):
+        count_duckdb_relation(
+            tmp_path / "missing.duckdb",
+            schema_name="main",
+            relation_name="orders",
+            settings=_settings(tmp_path),
+        )
+
+
+def test_resolve_duckdb_source_invalid_id(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    registry = DatasetRegistry(Workspace(settings), settings)
+    with pytest.raises(AppError, match="Invalid DuckDB source id"):
+        resolve_duckdb_source("bad-id", registry=registry, settings=settings)
+
+
+def test_resolve_local_invalid_metadata(tmp_path: Path) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    settings = _settings(tmp_path)
+    registry = DatasetRegistry(Workspace(settings), settings)
+    opened = register_local_duckdb_open(str(source.resolve()), registry=registry, settings=settings)
+    meta = (
+        _upload_root(settings) / DUCKDB_SOURCES_DIR / "local" / f"{opened.source_id}.json"
+    )
+    meta.write_text("{}", encoding="utf-8")
+    with pytest.raises(AppError, match="invalid"):
+        resolve_duckdb_source(opened.source_id, registry=registry, settings=settings)
+
+
+def test_cleanup_duckdb_local_opens(tmp_path: Path) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    settings = _settings(tmp_path, duckdb_local_open_ttl_hours=0.0)
+    registry = DatasetRegistry(Workspace(settings), settings)
+    opened = register_local_duckdb_open(str(source), registry=registry, settings=settings)
+    cleanup_duckdb_local_opens(settings)
+    with pytest.raises(AppError, match="not found"):
+        resolve_duckdb_source(opened.source_id, registry=registry, settings=settings)
 
 
 def test_resolve_staged_upload(tmp_path: Path) -> None:
@@ -327,7 +536,7 @@ def test_inspect_preserves_app_errors_from_row_count(
 
     monkeypatch.setattr("app.services.duckdb_import._relation_row_count", fail_row_count)
     with pytest.raises(AppError, match="row count app error"):
-        inspect_duckdb_relations(source, settings=_settings(tmp_path))
+        inspect_duckdb_relations(source, settings=_settings(tmp_path), include_row_counts=True)
 
 
 def test_import_table_snapshots_to_app_owned_parquet(tmp_path: Path) -> None:
@@ -362,6 +571,36 @@ def test_import_table_snapshots_to_app_owned_parquet(tmp_path: Path) -> None:
 
         rows = ws.connection.execute(f"SELECT COUNT(*) FROM {ds.view_name}").fetchone()[0]
         assert rows == 2
+    finally:
+        ws.close()
+
+
+def test_import_view_with_catalog_qualified_definition(tmp_path: Path) -> None:
+    """Views that reference file-stem catalog names must export on a direct connection."""
+    source = tmp_path / "warehouse.duckdb"
+    con = duckdb.connect(str(source))
+    try:
+        con.execute("CREATE SCHEMA s")
+        con.execute("CREATE TABLE s.t AS SELECT 1 AS id")
+        con.execute("CREATE VIEW s.v AS SELECT * FROM warehouse.s.t")
+    finally:
+        con.close()
+
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    try:
+        reg = DatasetRegistry(ws, settings)
+        result = import_duckdb_relations(
+            source_path=source,
+            relations=[DuckDbRelationRef(schema="s", name="v")],
+            registry=reg,
+            settings=settings,
+            queue_prepare=lambda dataset_id: "job",
+        )
+        assert len(result["datasets"]) == 1
+        ds = reg.get(result["datasets"][0]["dataset_id"])
+        assert ds is not None
+        assert ds.source_path.exists()
     finally:
         ws.close()
 
@@ -443,6 +682,54 @@ def test_snapshot_relation_sanitizes_copy_failures(tmp_path: Path) -> None:
         )
 
 
+def test_snapshot_relation_timeout_message() -> None:
+    class TimeoutCon:
+        def execute(self, _sql: str):  # noqa: ANN201
+            raise RuntimeError("Query timeout exceeded")
+
+    with pytest.raises(DuckDbImportError, match="Export timed out"):
+        _snapshot_relation(
+            TimeoutCon(),  # type: ignore[arg-type]
+            rel=DuckDbRelationRef(schema="main", name="orders"),
+            export_path=Path("out.parquet"),
+        )
+
+
+def test_import_uses_duckdb_import_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.services.duckdb_import as duckdb_import
+
+    source = tmp_path / "sales.duckdb"
+    _source_db(source)
+    settings = Settings(
+        workspace_db_path=tmp_path / "w.duckdb",
+        upload_dir=tmp_path / "uploads",
+        duckdb_import_timeout_seconds=42.0,
+    )
+    ws = Workspace(settings)
+    timeouts: list[float] = []
+    real_set_timeout = duckdb_import._set_timeout
+
+    def capture_timeout(con, seconds: float) -> None:  # noqa: ANN001
+        timeouts.append(seconds)
+        real_set_timeout(con, seconds)
+
+    try:
+        reg = DatasetRegistry(ws, settings)
+        monkeypatch.setattr(duckdb_import, "_set_timeout", capture_timeout)
+        import_duckdb_relations(
+            source_path=source,
+            relations=[DuckDbRelationRef(schema="main", name="orders")],
+            registry=reg,
+            settings=settings,
+            queue_prepare=lambda dataset_id: "job",
+        )
+        assert timeouts == [42.0]
+    finally:
+        ws.close()
+
+
 def test_duckdb_import_error_during_snapshot_cleans_batch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -469,9 +756,7 @@ def test_duckdb_import_error_during_snapshot_cleans_batch(
         ws.close()
 
 
-def test_generic_import_failure_and_detach_failure_are_sanitized(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_generic_import_failure_is_sanitized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import app.services.duckdb_import as duckdb_import
 
     source = tmp_path / "sales.duckdb"
@@ -479,21 +764,14 @@ def test_generic_import_failure_and_detach_failure_are_sanitized(
     settings = _settings(tmp_path)
     ws = Workspace(settings)
     real_connect = duckdb_import.duckdb.connect
-
-    class BadImportCon:
-        def execute(self, sql: str):  # noqa: ANN201
-            if sql.startswith("DETACH"):
-                raise RuntimeError("detach failed")
-            if sql.startswith("SET"):
-                return self
-            raise RuntimeError("attach failed")
-
-        def close(self) -> None:
-            pass
+    read_only_opens = 0
 
     def fake_connect(path: str, *args, **kwargs):  # noqa: ANN001, ANN202
-        if path == ":memory:":
-            return BadImportCon()
+        nonlocal read_only_opens
+        if kwargs.get("read_only"):
+            read_only_opens += 1
+            if read_only_opens > 1:
+                raise RuntimeError("open failed")
         return real_connect(path, *args, **kwargs)
 
     try:
@@ -583,10 +861,10 @@ def test_duckdb_import_route_job_honors_preexisting_cancel(tmp_path: Path) -> No
 
     try:
         reg = DatasetRegistry(ws, settings)
-        upload_id = _stage_upload(tmp_path, source)
+        source_id = _stage_upload(tmp_path, source)
         response = import_duckdb(
             DuckDbImportRequest(
-                upload_id=upload_id,
+                source_id=source_id,
                 relations=[DuckDbRelationRef(schema="main", name="orders")],
             ),
             reg,
