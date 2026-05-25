@@ -21,7 +21,7 @@ vi.mock('@/api/client', () => ({
     inspectDuckDb: vi.fn(),
     duckDbRelationCount: vi.fn(),
     importDuckDbRelations: vi.fn(),
-    getJob: vi.fn(),
+    waitForJob: vi.fn(),
   },
 }))
 
@@ -42,6 +42,8 @@ describe('DuckDbImportDialog', () => {
     toastMock.success.mockReset()
     vi.mocked(api.inspectDuckDb).mockReset()
     vi.mocked(api.duckDbRelationCount).mockReset()
+    vi.mocked(api.importDuckDbRelations).mockReset()
+    vi.mocked(api.waitForJob).mockReset()
   })
 
   it('shows staging copy while source id is pending', () => {
@@ -96,7 +98,7 @@ describe('DuckDbImportDialog', () => {
       { schema: 'main', name: 'orders', type: 'table', column_count: 2, row_count: 2 },
     ])
     vi.mocked(api.importDuckDbRelations).mockResolvedValue({ job_id: 'job1', status: 'queued' })
-    vi.mocked(api.getJob).mockResolvedValue({
+    vi.mocked(api.waitForJob).mockResolvedValue({
       job_id: 'job1',
       kind: 'duckdb_import',
       dataset_id: null,
@@ -125,8 +127,23 @@ describe('DuckDbImportDialog', () => {
     await user.click(screen.getByLabelText('Select main.orders'))
     await user.click(screen.getByRole('button', { name: /Import 1/ }))
 
+    await waitFor(() => expect(api.waitForJob).toHaveBeenCalledWith('job1', { timeoutMs: 600_000 }))
     await waitFor(() => expect(onImported).toHaveBeenCalled())
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('reports shared job polling failures during import', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.inspectDuckDb).mockResolvedValue([relation('orders')])
+    vi.mocked(api.importDuckDbRelations).mockResolvedValue({ job_id: 'job1', status: 'queued' })
+    vi.mocked(api.waitForJob).mockRejectedValue(new Error('DuckDB import timed out.'))
+    wrap(
+      <DuckDbImportDialog session={{ sourceId: 'up_1', filename: 'source.duckdb' }} onClose={vi.fn()} onImported={vi.fn()} />,
+    )
+    await waitFor(() => expect(screen.getByText('orders')).toBeInTheDocument())
+    await user.click(screen.getByLabelText('Select main.orders'))
+    await user.click(screen.getByRole('button', { name: /Import 1/ }))
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith('DuckDB import timed out.'))
   })
 
   it('virtualizes large relation lists', async () => {

@@ -313,6 +313,7 @@ class SavedQuery(BaseModel):
     saved_id: str
     name: str
     sql: str
+    description: str | None = None
     created_at: str
     updated_at: str
 
@@ -320,11 +321,13 @@ class SavedQuery(BaseModel):
 class SavedQueryCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     sql: str = Field(..., min_length=1, max_length=500_000)
+    description: str | None = Field(default=None, max_length=5_000)
 
 
 class SavedQueryPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     sql: str | None = Field(default=None, min_length=1, max_length=500_000)
+    description: str | None = Field(default=None, max_length=5_000)
 
 
 class AgentAskRequest(BaseModel):

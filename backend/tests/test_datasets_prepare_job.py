@@ -3,6 +3,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from app.api.datasets_jobs import _fast_row_and_column_count, _queue_dataset_prepare_job
 from app.config import Settings
 from app.services.registry import RegisteredDataset
@@ -98,3 +100,35 @@ def test_prepare_fn_returns_canceled_after_profile(monkeypatch) -> None:
 
     fn = _dataset_prepare_fn("ds_x", registry, workspace, Settings())
     assert fn("job_x") == {"dataset_id": "ds_x", "status": "canceled"}
+
+
+def test_prepare_fn_passes_cancellation_callback_into_profile(monkeypatch) -> None:
+    from app.api.datasets_jobs import _dataset_prepare_fn
+    from app.services.profiler.builder import ProfileBuildCancelled
+
+    registry = MagicMock()
+    ds = MagicMock()
+    ds.dataset_id = "ds_x"
+    ds.file_size_bytes = 1
+    registry.get.return_value = ds
+
+    workspace = MagicMock()
+    workspace.jobs.job_cancel_requested.side_effect = [False, False, True]
+    monkeypatch.setattr("app.api.datasets_jobs._fast_row_and_column_count", lambda *a, **k: (1, 1))
+
+    def fake_build_profile(*_args, cancel_requested=None, **_kwargs):  # noqa: ANN001
+        assert cancel_requested is not None
+        assert cancel_requested()
+        raise ProfileBuildCancelled("Profile build canceled.")
+
+    monkeypatch.setattr("app.api.datasets_jobs.build_profile", fake_build_profile)
+    fn = _dataset_prepare_fn("ds_x", registry, workspace, Settings())
+    with pytest.raises(ProfileBuildCancelled):
+        fn("job_x")
+
+
+def test_profile_cancel_check_raises() -> None:
+    from app.services.profiler.builder import ProfileBuildCancelled, _check_cancelled
+
+    with pytest.raises(ProfileBuildCancelled):
+        _check_cancelled(lambda: True)

@@ -48,6 +48,10 @@ workspace file by hand—that removes app cache, Ask history, and upload copies 
 for breaking changes. Schema details:
 [`backend/README.md`](backend/README.md#workspace-database).
 
+Current **Unreleased** changes add a **`description`** column to saved SQL snippets. If
+you already have a local workspace from an earlier build, run **`make clean-local`** before
+starting the app after this change.
+
 ### Upgrading to 1.0.0
 
 If you used **0.1.0**, read [**CHANGELOG — 1.0.0**](CHANGELOG.md#100---2026-05-20) before

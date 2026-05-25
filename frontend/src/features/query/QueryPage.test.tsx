@@ -204,12 +204,13 @@ describe('QueryPage', () => {
     const user = userEvent.setup()
     const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined)
     h.listSavedQueries.mockResolvedValue([
-      { saved_id: 'sq1', name: 'Revenue check', sql: 'SELECT revenue FROM foo', created_at: 't', updated_at: 't' },
+      { saved_id: 'sq1', name: 'Revenue check', sql: 'SELECT revenue FROM foo', description: null, created_at: 't', updated_at: 't' },
     ])
     h.createSavedQuery.mockResolvedValue({
       saved_id: 'sq2',
       name: 'Pretty query',
       sql: 'SELECT * FROM foo',
+      description: 'Helpful note',
       created_at: 't',
       updated_at: 't',
     })
@@ -235,12 +236,14 @@ describe('QueryPage', () => {
     await user.click(screen.getByRole('button', { name: 'Save query' }))
     const saveInput = screen.getByLabelText('Name')
     await user.type(saveInput, 'Pretty query')
+    await user.type(screen.getByLabelText('Description (optional)'), 'Helpful note')
     await user.click(screen.getByRole('button', { name: /^Save$/i }))
 
     await waitFor(() =>
       expect(h.createSavedQuery).toHaveBeenCalledWith({
         name: 'Pretty query',
         sql: 'SELECT 42',
+        description: 'Helpful note',
       }),
     )
     expect(toastMock.success).toHaveBeenCalledWith('Saved query stored')
@@ -250,7 +253,7 @@ describe('QueryPage', () => {
   it('shows save errors and duplicate-name warning', async () => {
     const user = userEvent.setup()
     h.listSavedQueries.mockResolvedValue([
-      { saved_id: 'sq1', name: 'Dup', sql: 'SELECT 1', created_at: 't', updated_at: 't' },
+      { saved_id: 'sq1', name: 'Dup', sql: 'SELECT 1', description: null, created_at: 't', updated_at: 't' },
     ])
     h.createSavedQuery.mockRejectedValue(new Error('cannot save'))
     wrap(<QueryPage />)

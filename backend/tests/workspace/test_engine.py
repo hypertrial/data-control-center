@@ -225,12 +225,20 @@ def test_saved_query_crud(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     ws = Workspace(settings)
     try:
-        sid = ws.saved_queries.insert_saved_query("n1", "SELECT 1")
+        sid = ws.saved_queries.insert_saved_query("n1", "SELECT 1", "desc")
         row = ws.saved_queries.get_saved_query(sid)
         assert row and row["name"] == "n1" and row["sql"] == "SELECT 1"
-        assert ws.saved_queries.update_saved_query(sid, name="n2", sql="SELECT 2")
+        assert row["description"] == "desc"
+        assert ws.saved_queries.update_saved_query(sid, name="n2", sql="SELECT 2", description="desc2")
         row2 = ws.saved_queries.get_saved_query(sid)
         assert row2 and row2["name"] == "n2" and row2["sql"] == "SELECT 2"
+        assert row2["description"] == "desc2"
+        assert ws.saved_queries.update_saved_query(sid, description=None)
+        assert ws.saved_queries.get_saved_query(sid)["description"] is None
+        blank_sid = ws.saved_queries.insert_saved_query("blank", "SELECT 3", "   ")
+        assert ws.saved_queries.get_saved_query(blank_sid)["description"] is None
+        assert ws.saved_queries.update_saved_query(blank_sid, description="   ")
+        assert ws.saved_queries.get_saved_query(blank_sid)["description"] is None
         assert ws.saved_queries.delete_saved_query(sid)
         assert ws.saved_queries.get_saved_query(sid) is None
         assert not ws.saved_queries.delete_saved_query(sid)
@@ -413,6 +421,20 @@ def test_workspace_rejects_missing_registered_at_column(tmp_path: Path) -> None:
     con = duckdb.connect(str(db_path))
     con.execute("DROP INDEX dcc_datasets_view_name_unique")
     con.execute("ALTER TABLE dcc_datasets DROP COLUMN registered_at")
+    con.close()
+
+    with pytest.raises(
+        UnsupportedWorkspaceSchemaError,
+        match="Unsupported workspace database schema",
+    ):
+        Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+
+
+def test_workspace_rejects_saved_queries_without_description_column(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy_saved_queries.duckdb"
+    _create_current_workspace_db(db_path)
+    con = duckdb.connect(str(db_path))
+    con.execute("ALTER TABLE dcc_saved_queries DROP COLUMN description")
     con.close()
 
     with pytest.raises(
@@ -864,12 +886,18 @@ def test_workspace_facade_delegates_to_engine_and_stores(
             calls["list_saved_queries"] = True
             return [{"saved_id": "s1"}]
 
-        def insert_saved_query(self, name: str, sql: str) -> str:
-            calls["insert_saved_query"] = (name, sql)
+        def insert_saved_query(self, name: str, sql: str, description: str | None = None) -> str:
+            calls["insert_saved_query"] = (name, sql, description)
             return "saved-id"
 
-        def update_saved_query(self, saved_id: str, name: str | None = None, sql: str | None = None) -> bool:
-            calls["update_saved_query"] = (saved_id, name, sql)
+        def update_saved_query(
+            self,
+            saved_id: str,
+            name: str | None = None,
+            sql: str | None = None,
+            description=None,  # noqa: ANN001
+        ) -> bool:
+            calls["update_saved_query"] = (saved_id, name, sql, description)
             return True
 
         def delete_saved_query(self, saved_id: str) -> bool:
@@ -933,8 +961,8 @@ def test_workspace_facade_delegates_to_engine_and_stores(
     assert ws.profiles.list_profile_history("ds_1", 4) == [{"history_id": "h1"}]
     assert ws.profiles.load_profile_history_blob("h1") == {"history_id": "h1"}
     assert ws.saved_queries.list_saved_queries() == [{"saved_id": "s1"}]
-    assert ws.saved_queries.insert_saved_query("saved", "SELECT 1") == "saved-id"
-    assert ws.saved_queries.update_saved_query("saved-id", name="renamed", sql="SELECT 2") is True
+    assert ws.saved_queries.insert_saved_query("saved", "SELECT 1", "note") == "saved-id"
+    assert ws.saved_queries.update_saved_query("saved-id", name="renamed", sql="SELECT 2", description="note2") is True
     assert ws.saved_queries.delete_saved_query("saved-id") is True
     assert ws.saved_queries.get_saved_query("saved-id") == {"saved_id": "saved-id"}
     assert ws.profiles.get_profile_history_meta("h1") == {"history_id": "h1"}
@@ -961,7 +989,7 @@ def test_workspace_facade_delegates_to_engine_and_stores(
     assert calls["drop_view_if_exists"] == "view_a"
     assert calls["register_file_view"] == ("view_a", tmp_path / "a.csv", "csv")
     assert calls["save_profile_cache"] == ("ds_1", {"quality_score": 88})
-    assert calls["update_saved_query"] == ("saved-id", "renamed", "SELECT 2")
+    assert calls["update_saved_query"] == ("saved-id", "renamed", "SELECT 2", "note2")
     assert calls["job_insert"] == ("job-1", "profile", "ds_1", "queued")
     assert calls["job_update"] == (
         "job-1",

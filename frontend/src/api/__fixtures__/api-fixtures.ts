@@ -81,6 +81,7 @@ export const savedQueryFixture: SavedQuery = {
   saved_id: 'sq1',
   name: 'q',
   sql: 'SELECT 1',
+  description: 'Saved note',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 }

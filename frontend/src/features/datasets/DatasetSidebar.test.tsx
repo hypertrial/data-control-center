@@ -30,7 +30,7 @@ vi.mock('@/api/client', () => ({
     deleteDataset: vi.fn(),
     inspectDuckDb: vi.fn(),
     importDuckDbRelations: vi.fn(),
-    getJob: vi.fn(),
+    waitForJob: vi.fn(),
   },
 }))
 
@@ -56,7 +56,7 @@ describe('DatasetSidebar', () => {
     vi.mocked(api.uploadDuckDb).mockReset()
     vi.mocked(api.inspectDuckDb).mockReset()
     vi.mocked(api.importDuckDbRelations).mockReset()
-    vi.mocked(api.getJob).mockReset()
+    vi.mocked(api.waitForJob).mockReset()
     vi.mocked(api.listDatasets).mockResolvedValue([
       {
         dataset_id: 'ds_001',
@@ -103,7 +103,7 @@ describe('DatasetSidebar', () => {
       { schema: 'main', name: 'large_orders', type: 'view', column_count: 2, row_count: 1 },
     ])
     vi.mocked(api.importDuckDbRelations).mockResolvedValue({ job_id: 'job_import', status: 'queued' })
-    vi.mocked(api.getJob).mockResolvedValue({
+    vi.mocked(api.waitForJob).mockResolvedValue({
       job_id: 'job_import',
       kind: 'duckdb_import',
       dataset_id: null,
@@ -376,7 +376,7 @@ describe('DatasetSidebar', () => {
         { schema: 'main', name: 'orders', alias: 'orders_copy' },
       ]),
     )
-    await waitFor(() => expect(api.getJob).toHaveBeenCalledWith('job_import'))
+    await waitFor(() => expect(api.waitForJob).toHaveBeenCalledWith('job_import', { timeoutMs: 600_000 }))
     expect(toastMock.success).toHaveBeenCalledWith('Imported 1 DuckDB relation(s).')
   })
 
@@ -429,19 +429,7 @@ describe('DatasetSidebar', () => {
 
   it('shows DuckDB import job failures', async () => {
     const user = userEvent.setup()
-    vi.mocked(api.getJob).mockResolvedValue({
-      job_id: 'job_import',
-      kind: 'duckdb_import',
-      dataset_id: null,
-      status: 'failed',
-      progress: 1,
-      error_message: 'copy failed',
-      cancel_requested: false,
-      created_at: 'now',
-      updated_at: 'now',
-      finished_at: 'now',
-      result: null,
-    })
+    vi.mocked(api.waitForJob).mockRejectedValue(new Error('copy failed'))
     wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
 

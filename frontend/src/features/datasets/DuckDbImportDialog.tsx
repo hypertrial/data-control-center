@@ -11,7 +11,6 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
-const DUCKDB_IMPORT_POLL_MS = 1200
 const DUCKDB_IMPORT_TIMEOUT_MS = 600_000
 const VIRTUALIZE_THRESHOLD = 100
 const ROW_HEIGHT_PX = 52
@@ -32,10 +31,6 @@ type Props = {
 
 function duckDbRelationKey(rel: Pick<DuckDbRelationSummary, 'schema' | 'name'>): string {
   return `${rel.schema}\u0000${rel.name}`
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 type RowCountState = number | null | 'loading'
@@ -163,21 +158,9 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
   )
 
   const waitForDuckDbImport = useCallback(async (jobId: string): Promise<DatasetSummary[]> => {
-    const started = Date.now()
-    for (;;) {
-      if (Date.now() - started > DUCKDB_IMPORT_TIMEOUT_MS) {
-        throw new Error('DuckDB import timed out.')
-      }
-      const job = await api.getJob(jobId)
-      if (job.status === 'completed') {
-        const datasets = job.result?.datasets
-        return Array.isArray(datasets) ? (datasets as DatasetSummary[]) : []
-      }
-      if (job.status === 'failed' || job.status === 'canceled') {
-        throw new Error(job.error_message || `DuckDB import ${job.status}.`)
-      }
-      await sleep(DUCKDB_IMPORT_POLL_MS)
-    }
+    const job = await api.waitForJob(jobId, { timeoutMs: DUCKDB_IMPORT_TIMEOUT_MS })
+    const datasets = job.result?.datasets
+    return Array.isArray(datasets) ? (datasets as DatasetSummary[]) : []
   }, [])
 
   const importDuckDb = useCallback(async () => {

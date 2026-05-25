@@ -164,7 +164,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   })
 }
 
-async function waitForJob(jobId: string, opts?: JobPollOptions): Promise<JobDetail> {
+export async function waitForJob(jobId: string, opts?: JobPollOptions): Promise<JobDetail> {
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_JOB_POLL_TIMEOUT_MS
   const started = Date.now()
   let attempt = 0
@@ -304,6 +304,7 @@ export const api = {
       }),
     ),
 
+  waitForJob,
   fetchDatasetProfile,
   fetchDatasetProfileOnce,
 

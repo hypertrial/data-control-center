@@ -39,6 +39,15 @@ from app.telemetry import emit
 _FULL_METRICS_WARNING = "Full profile metrics were unavailable; sample metrics are shown."
 
 
+class ProfileBuildCancelled(RuntimeError):
+    """Raised when a profile build observes a requested cancellation."""
+
+
+def _check_cancelled(cancel_requested: Callable[[], bool] | None) -> None:
+    if cancel_requested is not None and cancel_requested():
+        raise ProfileBuildCancelled("Profile build canceled.")
+
+
 def _sample_duplicate_row_pct(row_count: int, col_count: int, df_sample) -> float | None:
     if row_count > 0 and col_count and len(df_sample):
         try:
@@ -355,6 +364,7 @@ def build_profile(
     *,
     on_progress: Callable[[float], None] | None = None,
     budget: ProfileTimeBudget | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> DatasetProfile:
     profiling_started = time.monotonic()
     if budget is None:
@@ -364,17 +374,23 @@ def build_profile(
         if on_progress is not None:
             on_progress(frac)
 
+    _check_cancelled(cancel_requested)
     _progress(0.0)
     inputs = _collect_profile_inputs(ds, settings, workspace, budget)
+    _check_cancelled(cancel_requested)
     _progress(0.2)
     early_full = _collect_early_full_metrics(inputs, ds, workspace, settings, budget)
+    _check_cancelled(cancel_requested)
     _progress(0.4)
     columns = _derive_column_profiles_stage(inputs, early_full)
+    _check_cancelled(cancel_requested)
     structure = _infer_structure_stage(inputs, columns, settings)
+    _check_cancelled(cancel_requested)
     _progress(0.6)
     merged_full = _merge_late_full_metrics(
         inputs, ds, workspace, settings, structure, early_full, columns, budget
     )
+    _check_cancelled(cancel_requested)
     structure = _finalize_structure_from_metrics(structure, inputs, merged_full)
     _progress(0.9)
 
@@ -390,6 +406,7 @@ def build_profile(
         inputs.sample_n,
         primary_grain_columns=structure.primary_grain,
     )
+    _check_cancelled(cancel_requested)
 
     penalty = sum(i.score_impact for i in issues)
     quality_score = max(0.0, min(100.0, 100.0 - penalty))

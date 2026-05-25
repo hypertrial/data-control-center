@@ -63,6 +63,50 @@ def test_local_session_and_token_guard(tmp_path: Path, monkeypatch: pytest.Monke
         assert ok.status_code == 200
 
 
+def test_generated_local_token_is_reused_for_job_redaction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DCC_WORKSPACE_DB_PATH", str(tmp_path / "w.duckdb"))
+    monkeypatch.setenv("DCC_REQUIRE_LOCAL_API_TOKEN", "true")
+    monkeypatch.delenv("DCC_LOCAL_API_TOKEN", raising=False)
+
+    generated: list[str] = []
+
+    def fake_generate(_settings: Settings) -> str:
+        token = f"generated-token-{len(generated)}"
+        generated.append(token)
+        return token
+
+    monkeypatch.setattr("app.main.generate_local_api_token", fake_generate)
+    from app.main import create_app
+
+    with TestClient(create_app()) as c:
+        session = c.get("/api/local-session")
+        assert session.status_code == 200
+        token = session.json()["token"]
+        assert token == "generated-token-0"
+
+        job_id = c.app.state.jobs.submit(
+            kind="profile_refresh",
+            dataset_id=None,
+            fn=lambda _job_id: (_ for _ in ()).throw(RuntimeError(f"leaked {token}")),
+        )
+        deadline = time.time() + 2
+        row = None
+        while time.time() < deadline:
+            row = c.app.state.workspace.jobs.job_get(job_id)
+            if row and row["status"] == "failed":
+                break
+            time.sleep(0.01)
+
+    assert generated == ["generated-token-0"]
+    assert row is not None
+    assert row["status"] == "failed"
+    assert token not in row["error_message"]
+    assert "<redacted>" in row["error_message"]
+
+
 def test_local_only_rejects_non_loopback_headers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     with _secure_client(tmp_path, monkeypatch, token="secret") as c:
         headers = {LOCAL_TOKEN_HEADER: "secret"}

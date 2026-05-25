@@ -13,6 +13,13 @@ from app.services.agent import (
     OLLAMA_SQL_DRAFT_FORMAT,
     run_agent_ask_stream,
 )
+from app.services.agent.workflow_run import (
+    _append_parse_retry,
+    _draft_sql_once,
+    _prepare_ask_preflight,
+    _query_retry_reason,
+    _summary_answer_events,
+)
 from app.services.registry import DatasetRegistry
 from app.services.workspace import Workspace
 
@@ -24,6 +31,88 @@ def test_run_agent_ask_stream_no_datasets(tmp_path: Path) -> None:
         run_agent_ask_stream(reg, settings, AgentAskRequest(question="q")),
     )
     assert [e["type"] for e in events] == ["meta", "stage", "error", "timing", "done"]
+
+
+def test_ask_preflight_builds_messages_and_limit(registry_csv: DatasetRegistry) -> None:
+    settings = Settings(agent_max_rows=50, query_max_rows=25)
+    preflight, err = _prepare_ask_preflight(registry_csv, settings, AgentAskRequest(question="q"))
+    assert err is None
+    assert preflight is not None
+    assert preflight.limit == 25
+    assert [m["role"] for m in preflight.messages] == ["system", "user"]
+
+
+def test_draft_sql_once_and_parse_retry_message() -> None:
+    messages = [{"role": "user", "content": "q"}]
+
+    result = _draft_sql_once(
+        Settings(),
+        messages,
+        lambda *_args: json.dumps({"sql": "SELECT 1", "explanation": "ok"}),
+    )
+    assert result.draft is not None
+    assert result.error is None
+
+    _append_parse_retry(messages, "bad", "not json")
+    assert messages[-2] == {"role": "assistant", "content": "bad"}
+    assert "not json" in messages[-1]["content"]
+
+
+def test_query_retry_reason_empty_and_sql_error() -> None:
+    from app.models.api import QueryResult
+
+    empty = QueryResult(columns=[], rows=[], row_count=0, truncated=False, error=None)
+    assert _query_retry_reason(empty, "SELECT * FROM t WHERE x = 1", 0, 2)
+    assert _query_retry_reason(empty, "SELECT * FROM t", 0, 2) is None
+    failed = QueryResult(columns=[], rows=[], row_count=0, truncated=False, error="bad sql")
+    assert _query_retry_reason(failed, "SELECT * FROM t", 0, 2) == "bad sql"
+
+
+def test_summary_answer_events_streams_tokens_and_answer() -> None:
+    from app.models.api import AgentSqlDraft, QueryResult
+
+    qres = QueryResult(columns=[], rows=[{"x": 1}], row_count=1, truncated=False, error=None)
+    draft = AgentSqlDraft(sql="SELECT 1", explanation="")
+
+    events = list(
+        _summary_answer_events(
+            req=AgentAskRequest(question="q"),
+            settings=Settings(),
+            llm_settings=Settings(),
+            draft=draft,
+            qres=qres,
+            emit_summary_tokens=True,
+            ollama_call=lambda *_args: '{"answer":"unused"}',
+            ollama_stream=lambda *_args: iter(['{"answer":"streamed"}']),
+        )
+    )
+
+    assert [e["type"] for e in events] == ["token", "summary_answer"]
+    assert events[-1]["data"]["answer"] == "streamed"
+
+
+def test_summary_answer_events_falls_back_on_http_error() -> None:
+    from app.models.api import AgentSqlDraft, QueryResult
+
+    qres = QueryResult(columns=[], rows=[{"x": 1}], row_count=1, truncated=False, error=None)
+    draft = AgentSqlDraft(sql="SELECT 1", explanation="")
+
+    def fail(*_args):  # noqa: ANN202
+        raise httpx.ReadTimeout("slow")
+
+    events = list(
+        _summary_answer_events(
+            req=AgentAskRequest(question="q"),
+            settings=Settings(),
+            llm_settings=Settings(),
+            draft=draft,
+            qres=qres,
+            emit_summary_tokens=False,
+            ollama_call=fail,
+            ollama_stream=lambda *_args: iter(()),
+        )
+    )
+    assert events == [{"type": "summary_answer", "data": {"answer": "x: 1."}}]
 
 
 def test_run_agent_ask_stream_happy(registry_csv: DatasetRegistry) -> None:

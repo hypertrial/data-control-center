@@ -107,6 +107,8 @@ saved SQL, and Ask tables. Implementation: [`app/services/workspace.py`](app/ser
 On open, an empty file gets **`create_workspace_schema`**; an existing file must match
 expected **`dcc_*`** tables. A legacy **`schema_version`** table is dropped automatically
 after validation. Incompatible layouts fail fast—see root [README — Upgrading](../README.md#upgrading--workspace-schema).
+The current schema includes **`dcc_saved_queries.description`**; older local workspaces
+without that column require **`make clean-local`**.
 
 ### Query and samples
 

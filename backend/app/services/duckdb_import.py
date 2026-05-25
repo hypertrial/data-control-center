@@ -32,6 +32,15 @@ class DuckDbImportError(RuntimeError):
     """Raised with a sanitized message for import job failures."""
 
 
+class DuckDbImportCancelled(DuckDbImportError):
+    """Raised when a DuckDB import observes a requested cancellation."""
+
+
+def _check_cancelled(cancel_requested: Callable[[], bool] | None) -> None:
+    if cancel_requested is not None and cancel_requested():
+        raise DuckDbImportCancelled("DuckDB import canceled.")
+
+
 def _workspace_path(settings: Settings) -> Path:
     p = settings.workspace_db_path
     if not p.is_absolute():
@@ -411,6 +420,7 @@ def import_duckdb_relations(
     settings: Settings,
     queue_prepare: Callable[[str], str],
     on_progress: Callable[[float], None] | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     if not relations:
         raise DuckDbImportError("Select at least one DuckDB relation to import.")
@@ -423,21 +433,29 @@ def import_duckdb_relations(
     copied: list[Path] = []
     registered: list[RegisteredDataset] = []
     taken_paths: set[Path] = set()
+    snapshots: list[Path] = []
 
     con: duckdb.DuckDBPyConnection | None = None
     try:
+        _check_cancelled(cancel_requested)
         con = _connect_source(source_path)
         _set_timeout(con, settings.duckdb_import_timeout_seconds)
         for idx, rel in enumerate(relations):
+            _check_cancelled(cancel_requested)
             stem = _export_stem(source_path, rel)
             export_path = _unique_export_path(batch_dir, stem, taken_paths)
             copied.append(export_path)
             _snapshot_relation(con, rel=rel, export_path=export_path)
+            snapshots.append(export_path)
+            if on_progress is not None:
+                on_progress((idx + 1) / max(1, len(relations)) * 0.75)
+        _check_cancelled(cancel_requested)
+        for idx, export_path in enumerate(snapshots):
             ds = registry.register_path(export_path, compute_counts=False)
             registered.append(ds)
             queue_prepare(ds.dataset_id)
             if on_progress is not None:
-                on_progress((idx + 1) / len(relations))
+                on_progress(0.75 + (idx + 1) / max(1, len(snapshots)) * 0.25)
     except DuckDbImportError:
         cleanup_unregistered_import_files(copied, registered)
         _cleanup_empty_dir(batch_dir)

@@ -661,13 +661,22 @@ def test_profile_diff_unknown_history(client, tmp_path) -> None:
 
 def test_saved_queries_http(client) -> None:
     assert client.get("/api/saved-queries").json() == []
-    c = client.post("/api/saved-queries", json={"name": "q1", "sql": "SELECT 1"})
+    c = client.post(
+        "/api/saved-queries",
+        json={"name": "q1", "sql": "SELECT 1", "description": "first query"},
+    )
     assert c.status_code == 200
     sid = c.json()["saved_id"]
+    assert c.json()["description"] == "first query"
     assert len(client.get("/api/saved-queries").json()) == 1
-    p = client.patch(f"/api/saved-queries/{sid}", json={"name": "q2"})
+    p = client.patch(f"/api/saved-queries/{sid}", json={"name": "q2", "description": "renamed"})
     assert p.status_code == 200
+    assert p.json()["description"] == "renamed"
+    cleared = client.patch(f"/api/saved-queries/{sid}", json={"description": None})
+    assert cleared.status_code == 200
+    assert cleared.json()["description"] is None
     assert client.patch(f"/api/saved-queries/{sid}", json={}).status_code == 400
+    assert client.patch(f"/api/saved-queries/{sid}", json={"name": None}).status_code == 400
     assert client.delete(f"/api/saved-queries/{sid}").status_code == 204
     assert client.delete(f"/api/saved-queries/{sid}").status_code == 404
     assert client.get("/api/saved-queries").json() == []

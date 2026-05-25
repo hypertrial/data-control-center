@@ -126,8 +126,8 @@ describe('api types conformance', () => {
 
   it('SavedQuery variants', () => {
     expectTypeOf(savedQueryFixture).toEqualTypeOf<SavedQuery>()
-    const create: SavedQueryCreate = { name: 'n', sql: 'SELECT 1' }
-    const patch: SavedQueryPatch = { name: 'n2' }
+    const create: SavedQueryCreate = { name: 'n', sql: 'SELECT 1', description: 'note' }
+    const patch: SavedQueryPatch = { name: 'n2', description: null }
     expect(create.sql).toBeTruthy()
     expect(patch.name).toBe('n2')
   })

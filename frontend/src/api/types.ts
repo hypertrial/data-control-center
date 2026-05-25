@@ -242,6 +242,7 @@ export type SavedQuery = {
   saved_id: string
   name: string
   sql: string
+  description: string | null
   created_at: string
   updated_at: string
 }
@@ -249,11 +250,13 @@ export type SavedQuery = {
 export type SavedQueryCreate = {
   name: string
   sql: string
+  description?: string | null
 }
 
 export type SavedQueryPatch = {
   name?: string | null
   sql?: string | null
+  description?: string | null
 }
 
 export type AskConversation = {

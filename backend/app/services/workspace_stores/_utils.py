@@ -30,24 +30,3 @@ def record_exists(con: Any, table: str, id_col: str, id_val: str) -> bool:
         [id_val],
     ).fetchone()
     return row is not None
-
-
-def apply_partial_update(
-    con: Any,
-    table: str,
-    id_col: str,
-    id_val: str,
-    fields: dict[str, Any],
-) -> None:
-    patch = {key: value for key, value in fields.items() if value is not None}
-    if not patch:
-        return
-    sets = ["updated_at = now()"]
-    vals: list[Any] = []
-    for col, val in patch.items():
-        if col == "name":
-            val = str(val).strip()
-        sets.append(f"{col} = ?")
-        vals.append(val)
-    vals.append(id_val)
-    con.execute(f"UPDATE {table} SET {', '.join(sets)} WHERE {id_col} = ?", vals)

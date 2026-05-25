@@ -17,7 +17,7 @@ def list_saved_queries(workspace: WorkspaceDep) -> list[SavedQuery]:
 
 @router.post("", response_model=SavedQuery)
 def create_saved_query(body: SavedQueryCreate, workspace: WorkspaceDep) -> SavedQuery:
-    sid = workspace.saved_queries.insert_saved_query(body.name, body.sql)
+    sid = workspace.saved_queries.insert_saved_query(body.name, body.sql, body.description)
     row = workspace.saved_queries.get_saved_query(sid)
     if not row:
         raise HTTPException(status_code=500, detail="Failed to read saved query")
@@ -30,9 +30,22 @@ def patch_saved_query(
     body: SavedQueryPatch,
     workspace: WorkspaceDep,
 ) -> SavedQuery:
-    if body.name is None and body.sql is None:
+    if not body.model_fields_set:
         raise HTTPException(status_code=400, detail="No fields to update")
-    if not workspace.saved_queries.update_saved_query(saved_id, name=body.name, sql=body.sql):
+    if (
+        "description" not in body.model_fields_set
+        and body.name is None
+        and body.sql is None
+    ):
+        raise HTTPException(status_code=400, detail="No fields to update")
+    description = body.description if "description" in body.model_fields_set else None
+    kwargs = {"name": body.name, "sql": body.sql}
+    if "description" in body.model_fields_set:
+        kwargs["description"] = description
+    if not workspace.saved_queries.update_saved_query(
+        saved_id,
+        **kwargs,
+    ):
         raise HTTPException(status_code=404, detail="Saved query not found")
     row = workspace.saved_queries.get_saved_query(saved_id)
     if not row:

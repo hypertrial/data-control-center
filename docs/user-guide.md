@@ -98,7 +98,7 @@ the UI keeps the sampled value and labels it using profile metadata.
 
 **History and diff:** Profile snapshot diff is no longer exposed in the UI; use the API if you need historical comparison.
 
-**Saved SQL:** Snippets persist in the workspace and appear in the SQL tab and command palette.
+**Saved SQL:** Snippets and optional descriptions persist in the workspace and appear in the SQL tab and command palette.
 
 ## SQL tab
 

@@ -11,6 +11,7 @@ from app.api.datasets_duckdb import import_duckdb
 from app.models.api import DuckDbImportRequest, DuckDbRelationRef
 from app.services.duckdb_import import (
     DUCKDB_SOURCES_DIR,
+    DuckDbImportCancelled,
     DuckDbImportError,
     LOCAL_SOURCE_PREFIX,
     _local_metadata_path,
@@ -752,6 +753,79 @@ def test_duckdb_import_error_during_snapshot_cleans_batch(
                 queue_prepare=lambda dataset_id: "job",
             )
         assert list((tmp_path / "uploads").rglob("*.parquet")) == []
+    finally:
+        ws.close()
+
+
+def test_duckdb_import_cancel_between_snapshots_cleans_and_registers_none(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "sales.duckdb"
+    _source_db(source)
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    checks = {"n": 0}
+
+    def cancel_after_first_snapshot() -> bool:
+        checks["n"] += 1
+        return checks["n"] >= 3
+
+    try:
+        reg = DatasetRegistry(ws, settings)
+        with pytest.raises(DuckDbImportCancelled):
+            import_duckdb_relations(
+                source_path=source,
+                relations=[
+                    DuckDbRelationRef(schema="main", name="orders"),
+                    DuckDbRelationRef(schema="main", name="high_value"),
+                ],
+                registry=reg,
+                settings=settings,
+                queue_prepare=lambda dataset_id: "job",
+                cancel_requested=cancel_after_first_snapshot,
+            )
+        assert reg.list_all() == []
+        assert list((tmp_path / "uploads").rglob("*.parquet")) == []
+    finally:
+        ws.close()
+
+
+def test_duckdb_import_snapshots_all_relations_before_registration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "sales.duckdb"
+    _source_db(source)
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    snapshots = 0
+
+    try:
+        reg = DatasetRegistry(ws, settings)
+        real_snapshot = _snapshot_relation
+        real_register = reg.register_path
+
+        def track_snapshot(*args, **kwargs):  # noqa: ANN001, ANN202
+            nonlocal snapshots
+            snapshots += 1
+            return real_snapshot(*args, **kwargs)
+
+        def track_register(path: Path, *, compute_counts: bool = True):  # noqa: ANN202
+            assert snapshots == 2
+            return real_register(path, compute_counts=compute_counts)
+
+        monkeypatch.setattr("app.services.duckdb_import._snapshot_relation", track_snapshot)
+        monkeypatch.setattr(reg, "register_path", track_register)
+        import_duckdb_relations(
+            source_path=source,
+            relations=[
+                DuckDbRelationRef(schema="main", name="orders"),
+                DuckDbRelationRef(schema="main", name="high_value"),
+            ],
+            registry=reg,
+            settings=settings,
+            queue_prepare=lambda dataset_id: "job",
+        )
     finally:
         ws.close()
 

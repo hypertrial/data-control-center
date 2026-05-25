@@ -63,6 +63,7 @@ EXPECTED_TABLES: dict[str, tuple[ColumnSpec, ...]] = {
         ("saved_id", "VARCHAR", True, True),
         ("name", "VARCHAR", True, False),
         ("sql", "VARCHAR", True, False),
+        ("description", "VARCHAR", False, False),
         ("created_at", "TIMESTAMP", False, False),
         ("updated_at", "TIMESTAMP", False, False),
     ),
@@ -205,6 +206,7 @@ def create_workspace_schema(con: duckdb.DuckDBPyConnection) -> None:
           saved_id VARCHAR PRIMARY KEY,
           name VARCHAR NOT NULL,
           sql VARCHAR NOT NULL,
+          description VARCHAR,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );

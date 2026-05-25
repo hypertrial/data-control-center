@@ -11,8 +11,8 @@ from pathlib import Path
 from threading import RLock
 
 from app.config import Settings
-from app.errors import AppError, CODES
 from app.models.api import DatasetSummary
+from app.services.registry_policy import RegistrationPathPolicy
 from app.services.workspace import UnsupportedWorkspaceSchemaError, Workspace
 
 SUPPORTED_EXTENSIONS = {".csv", ".parquet", ".json", ".jsonl", ".ndjson", ".tsv"}
@@ -131,6 +131,7 @@ class DatasetRegistry:
     def __init__(self, workspace: Workspace, settings: Settings) -> None:
         self._workspace = workspace
         self._settings = settings
+        self._path_policy = RegistrationPathPolicy(settings)
         self._lock = RLock()
         self._next_id = self._load_max_id() + 1
         self._by_id: dict[str, RegisteredDataset] = {}
@@ -140,48 +141,14 @@ class DatasetRegistry:
 
         cleanup_duckdb_local_opens(self._settings)
 
-    def _allowed_roots(self) -> list[Path]:
-        roots: list[Path] = []
-        for root in implicit_registration_roots():
-            roots.append(root.resolve())
-        for root in self._settings.registration_allowed_roots:
-            p = root if root.is_absolute() else Path.cwd() / root
-            roots.append(p.resolve())
-        upload_dir = self._settings.upload_dir
-        if not upload_dir.is_absolute():
-            upload_dir = Path.cwd() / upload_dir
-        roots.append(upload_dir.resolve())
-        return roots
-
     def _upload_root(self) -> Path:
-        upload_dir = self._settings.upload_dir
-        if not upload_dir.is_absolute():
-            upload_dir = Path.cwd() / upload_dir
-        return upload_dir.resolve()
+        return self._path_policy.upload_root()
 
     def is_app_owned_upload(self, path: Path) -> bool:
-        try:
-            path.expanduser().resolve().relative_to(self._upload_root())
-            return True
-        except ValueError:
-            return False
+        return self._path_policy.is_app_owned_upload(path)
 
     def ensure_registration_allowed(self, path: Path) -> None:
-        if self._settings.allow_arbitrary_registration_paths:
-            return
-        candidate = path.expanduser().resolve()
-        for root in self._allowed_roots():
-            try:
-                candidate.relative_to(root)
-                return
-            except ValueError:
-                continue
-        raise AppError(
-            status_code=403,
-            code=CODES.PATH_NOT_ALLOWED,
-            message="Path is outside allowed registration roots.",
-            details={"path": candidate.name},
-        )
+        self._path_policy.ensure_registration_allowed(path, implicit_registration_roots())
 
     def cleanup_upload_orphans(self) -> None:
         root = self._upload_root()

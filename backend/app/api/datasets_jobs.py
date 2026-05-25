@@ -66,6 +66,7 @@ def _dataset_prepare_fn(
             workspace,
             on_progress=on_progress,
             budget=budget,
+            cancel_requested=lambda: workspace.jobs.job_cancel_requested(job_id),
         )
 
         if workspace.jobs.job_cancel_requested(job_id):

@@ -113,7 +113,12 @@ export function QueryPage() {
   })
 
   const createSaved = useMutation({
-    mutationFn: () => api.createSavedQuery({ name: saveName.trim(), sql: sqlText }),
+    mutationFn: () =>
+      api.createSavedQuery({
+        name: saveName.trim(),
+        sql: sqlText,
+        description: saveDescription.trim() || null,
+      }),
     onSuccess: () => {
       toast.success('Saved query stored')
       setSaveOpen(false)

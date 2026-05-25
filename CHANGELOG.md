@@ -11,10 +11,13 @@ stable release. Maintainer tagging steps: [`docs/RELEASE.md`](docs/RELEASE.md).
 ### Added
 
 - DuckDB **open-from-disk** for large local `.duckdb` files (`POST /api/datasets/duckdb/open-local`, **`pick-local`** native file picker), capabilities endpoint, searchable relation picker, and lazy per-relation row counts.
+- Saved SQL snippets now persist an optional description.
 
 ### Fixed
 
 - DuckDB relation import now snapshots through a direct read-only connection to the source file so views that reference catalog-qualified names (e.g. `oddsfox.schema.table` in dbt-built databases) export correctly.
+- The local API token is generated once per backend process and reused for background job error redaction.
+- Profile refresh and DuckDB import jobs observe cancellation between expensive stages.
 
 ### Changed
 
@@ -28,6 +31,7 @@ stable release. Maintainer tagging steps: [`docs/RELEASE.md`](docs/RELEASE.md).
 ### Breaking
 
 - Removed unused **`/api/saved-charts`** endpoints. Existing local workspaces drop the **`dcc_saved_charts`** table on next startup (any saved chart rows are discarded).
+- Workspace DB: **`dcc_saved_queries`** now includes a nullable **`description`** column. Existing local workspaces with the old table shape must run **`make clean-local`** or delete **`.dcc_workspace.duckdb`** before startup.
 
 ## [1.0.0] - 2026-05-20
 

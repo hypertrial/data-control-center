@@ -188,6 +188,7 @@ def import_duckdb(
             settings=settings,
             queue_prepare=queue_prepare,
             on_progress=on_progress,
+            cancel_requested=lambda: workspace.jobs.job_cancel_requested(job_id),
         )
         workspace.jobs.job_update(job_id, progress=0.95)
         return result

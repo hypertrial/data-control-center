@@ -465,6 +465,16 @@ describe('api client', () => {
     expectToken(fetchMock.mock.calls[0]![1] as RequestInit)
   })
 
+  it('waitForJob returns completed jobs', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk({ job_id: 'j1', status: 'completed' }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(api.waitForJob('j1', { timeoutMs: 100 })).resolves.toMatchObject({
+      job_id: 'j1',
+      status: 'completed',
+    })
+    expect(fetchMock).toHaveBeenCalledWith('/api/jobs/j1', expect.any(Object))
+  })
+
   it('cancelJob POST', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonOk({ job_id: 'j1', status: 'canceled' }))
     vi.stubGlobal('fetch', fetchMock)
@@ -568,6 +578,7 @@ describe('api client', () => {
           saved_id: 'sq_1',
           name: 'q',
           sql: 'SELECT 1',
+          description: 'note',
           created_at: 'c',
           updated_at: 'u',
         }),
@@ -577,6 +588,7 @@ describe('api client', () => {
           saved_id: 'sq_1',
           name: 'q2',
           sql: 'SELECT 2',
+          description: null,
           created_at: 'c',
           updated_at: 'u2',
         }),
@@ -584,8 +596,8 @@ describe('api client', () => {
       .mockResolvedValueOnce({ ok: true, statusText: 'No Content', text: () => Promise.resolve('') } as Response)
     vi.stubGlobal('fetch', fetchMock)
     await api.listSavedQueries()
-    await api.createSavedQuery({ name: 'q', sql: 'SELECT 1' })
-    await api.patchSavedQuery('sq_1', { name: 'q2' })
+    await api.createSavedQuery({ name: 'q', sql: 'SELECT 1', description: 'note' })
+    await api.patchSavedQuery('sq_1', { name: 'q2', description: null })
     await api.deleteSavedQuery('sq_1')
     expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries', expect.any(Object))
     expect(fetchMock).toHaveBeenCalledWith('/api/saved-queries', expect.objectContaining({ method: 'POST' }))
