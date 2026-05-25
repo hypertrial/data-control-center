@@ -8,6 +8,10 @@ stable release. Maintainer tagging steps: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- GitHub Actions CI installs `python3-tk` on Ubuntu and DuckDB picker tests mock `native_pick_available` so backend jobs pass on headless Linux runners.
+
 ## [1.1.0] - 2026-05-25
 
 ### Upgrade from 1.0.0

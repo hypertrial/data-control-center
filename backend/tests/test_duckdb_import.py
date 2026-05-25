@@ -105,6 +105,7 @@ def test_pick_and_register_local_duckdb(tmp_path: Path, monkeypatch: pytest.Monk
     _source_db(source)
     settings = _settings(tmp_path)
     registry = DatasetRegistry(Workspace(settings), settings)
+    monkeypatch.setattr("app.services.duckdb_native_pick.native_pick_available", lambda: True)
     monkeypatch.setattr(
         "app.services.duckdb_native_pick.pick_local_duckdb_path",
         lambda: source,
@@ -119,6 +120,7 @@ def test_pick_and_register_local_duckdb(tmp_path: Path, monkeypatch: pytest.Monk
 def test_pick_and_register_cancelled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
     registry = DatasetRegistry(Workspace(settings), settings)
+    monkeypatch.setattr("app.services.duckdb_native_pick.native_pick_available", lambda: True)
     monkeypatch.setattr("app.services.duckdb_native_pick.pick_local_duckdb_path", lambda: None)
     from app.services.duckdb_import import pick_and_register_local_duckdb
 

@@ -962,6 +962,7 @@ def test_duckdb_capabilities(client) -> None:
 def test_duckdb_pick_local(client, tmp_path, monkeypatch) -> None:
     source = tmp_path / "picked.duckdb"
     _make_duckdb_source(source)
+    monkeypatch.setattr("app.services.duckdb_native_pick.native_pick_available", lambda: True)
     monkeypatch.setattr(
         "app.services.duckdb_native_pick.pick_local_duckdb_path",
         lambda: source,

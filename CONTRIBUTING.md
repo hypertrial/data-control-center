@@ -88,7 +88,8 @@ cd frontend && npm run build
 ### CI (GitHub Actions)
 
 **Primary CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on push and
-pull requests to **`main`** and **`master`**, matching **`make check`**.
+pull requests to **`main`** and **`master`**, matching **`make check`**. The backend job
+installs **`python3-tk`** on Ubuntu so Linux native-picker tests can import Tkinter.
 
 **Additional security jobs** (CodeQL, npm audit, pip-audit, gitleaks in
 [`.github/workflows/security-audit.yml`](.github/workflows/security-audit.yml) and

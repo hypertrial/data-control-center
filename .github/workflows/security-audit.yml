@@ -7,6 +7,10 @@ on:
   schedule:
     - cron: "41 4 * * 1"
 
+concurrency:
+  group: security-audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   security-events: write
@@ -15,6 +19,7 @@ jobs:
   npm-audit:
     name: npm audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: frontend
@@ -35,13 +40,14 @@ jobs:
   python-audit:
     name: pip-audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: backend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Install uv
+      - name: Setup uv
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -53,6 +59,7 @@ jobs:
   secrets:
     name: gitleaks
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
