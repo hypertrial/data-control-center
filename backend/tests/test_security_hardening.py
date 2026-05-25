@@ -124,6 +124,27 @@ def test_allow_non_local_override_still_requires_token(tmp_path: Path, monkeypat
         assert c.options("/api/datasets", headers={"host": "example.com"}).status_code in {200, 405}
 
 
+@pytest.mark.parametrize(
+    "poisoned_host",
+    [
+        "[::1]/api/local-session?bar=",
+        "example.com/api/local-session?bar=",
+    ],
+    ids=["loopback_bracket_host", "non_local_host"],
+)
+def test_malformed_host_does_not_bypass_token_guard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    poisoned_host: str,
+) -> None:
+    if poisoned_host.startswith("example.com"):
+        monkeypatch.setenv("DCC_ALLOW_NON_LOCAL_HOST", "true")
+    with _secure_client(tmp_path, monkeypatch, token="secret") as c:
+        r = c.get("/api/datasets", headers={"host": poisoned_host})
+        assert r.status_code == 403
+        assert "local api token" in r.json()["error"]["message"].lower()
+
+
 def test_path_registration_disabled_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DCC_WORKSPACE_DB_PATH", str(tmp_path / "w.duckdb"))
     monkeypatch.setenv("DCC_ENABLE_PATH_REGISTRATION", "false")

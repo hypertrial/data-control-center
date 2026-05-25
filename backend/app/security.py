@@ -82,7 +82,7 @@ def _path_requires_token(path: str) -> bool:
 
 async def local_security_middleware(request: Request, call_next) -> Response:  # type: ignore[no-untyped-def]
     settings: Settings = request.app.state.settings
-    path = request.url.path
+    path = request.scope["path"]
 
     if request.method == "OPTIONS":
         return await call_next(request)

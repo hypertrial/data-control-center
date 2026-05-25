@@ -15,6 +15,8 @@ stable release. Maintainer tagging steps: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ### Fixed
 
+- Starlette upgraded to a patched release; token middleware uses the routed request path so malformed `Host` headers can no longer bypass `X-DCC-Local-Token`.
+- gitleaks CI install now verifies the release tarball SHA256 before installation.
 - DuckDB relation import now snapshots through a direct read-only connection to the source file so views that reference catalog-qualified names (e.g. `oddsfox.schema.table` in dbt-built databases) export correctly.
 - The local API token is generated once per backend process and reused for background job error redaction.
 - Profile refresh and DuckDB import jobs observe cancellation between expensive stages.
