@@ -98,6 +98,23 @@ EXPECTED_INDEXES: dict[str, tuple[str, bool]] = {
 
 OBSOLETE_INDEXES = ("dcc_profile_history_ds_created",)
 
+LEGACY_SAVED_QUERIES_WITHOUT_DESCRIPTION: tuple[ColumnSpec, ...] = (
+    ("saved_id", "VARCHAR", True, True),
+    ("name", "VARCHAR", True, False),
+    ("sql", "VARCHAR", True, False),
+    ("created_at", "TIMESTAMP", False, False),
+    ("updated_at", "TIMESTAMP", False, False),
+)
+
+MIGRATED_SAVED_QUERIES_WITH_DESCRIPTION_LAST: tuple[ColumnSpec, ...] = (
+    ("saved_id", "VARCHAR", True, True),
+    ("name", "VARCHAR", True, False),
+    ("sql", "VARCHAR", True, False),
+    ("created_at", "TIMESTAMP", False, False),
+    ("updated_at", "TIMESTAMP", False, False),
+    ("description", "VARCHAR", False, False),
+)
+
 
 def _unsupported(message: str) -> UnsupportedWorkspaceSchemaError:
     return UnsupportedWorkspaceSchemaError(
@@ -258,6 +275,25 @@ def _drop_obsolete_saved_charts_table(con: duckdb.DuckDBPyConnection) -> None:
     logger.info("Removed obsolete dcc_saved_charts table from workspace database")
 
 
+def _add_saved_query_description_column(con: duckdb.DuckDBPyConnection) -> None:
+    existing = _existing_dcc_tables(con)
+    if "dcc_saved_queries" not in existing:
+        return
+    if _table_columns(con, "dcc_saved_queries") != LEGACY_SAVED_QUERIES_WITHOUT_DESCRIPTION:
+        return
+    con.execute("ALTER TABLE dcc_saved_queries ADD COLUMN description VARCHAR")
+    logger.info("Added nullable dcc_saved_queries.description column to workspace database")
+
+
+def _table_columns_match(table_name: str, actual_columns: tuple[ColumnSpec, ...]) -> bool:
+    expected_columns = EXPECTED_TABLES[table_name]
+    if actual_columns == expected_columns:
+        return True
+    if table_name == "dcc_saved_queries":
+        return actual_columns == MIGRATED_SAVED_QUERIES_WITH_DESCRIPTION_LAST
+    return False
+
+
 def _validate_schema(con: duckdb.DuckDBPyConnection) -> None:
     existing = _existing_dcc_tables(con)
     expected = set(EXPECTED_TABLES)
@@ -266,9 +302,9 @@ def _validate_schema(con: duckdb.DuckDBPyConnection) -> None:
         extra = ", ".join(sorted(existing - expected)) or "none"
         raise _unsupported(f"expected current workspace tables; missing={missing}; extra={extra}")
 
-    for table_name, expected_columns in EXPECTED_TABLES.items():
+    for table_name in EXPECTED_TABLES:
         actual_columns = _table_columns(con, table_name)
-        if actual_columns != expected_columns:
+        if not _table_columns_match(table_name, actual_columns):
             raise _unsupported(f"table {table_name} columns do not match the current schema")
 
     duplicate = con.execute(
@@ -308,6 +344,7 @@ class WorkspaceSchema:
         if _existing_dcc_tables(con):
             _drop_obsolete_indexes(con)
             _drop_obsolete_saved_charts_table(con)
+            _add_saved_query_description_column(con)
             _validate_schema(con)
         else:
             create_workspace_schema(con)

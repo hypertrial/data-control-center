@@ -430,18 +430,40 @@ def test_workspace_rejects_missing_registered_at_column(tmp_path: Path) -> None:
         Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
 
 
-def test_workspace_rejects_saved_queries_without_description_column(tmp_path: Path) -> None:
+def test_workspace_adds_saved_query_description_column(tmp_path: Path) -> None:
     db_path = tmp_path / "legacy_saved_queries.duckdb"
     _create_current_workspace_db(db_path)
+    ws = Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+    try:
+        sid = ws.saved_queries.insert_saved_query("legacy", "SELECT 1", "lost during legacy downgrade")
+    finally:
+        ws.close()
+
     con = duckdb.connect(str(db_path))
     con.execute("ALTER TABLE dcc_saved_queries DROP COLUMN description")
     con.close()
 
-    with pytest.raises(
-        UnsupportedWorkspaceSchemaError,
-        match="Unsupported workspace database schema",
-    ):
-        Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+    ws = Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+    try:
+        row = ws.saved_queries.get_saved_query(sid)
+        assert row is not None
+        assert row["description"] is None
+    finally:
+        ws.close()
+
+
+def test_workspace_accepts_saved_query_description_before_timestamps(tmp_path: Path) -> None:
+    db_path = tmp_path / "saved_queries_current.duckdb"
+    _create_current_workspace_db(db_path)
+
+    ws = Workspace(Settings(workspace_db_path=db_path, allow_arbitrary_registration_paths=True))
+    try:
+        sid = ws.saved_queries.insert_saved_query("current", "SELECT 1", "description")
+        row = ws.saved_queries.get_saved_query(sid)
+        assert row is not None
+        assert row["description"] == "description"
+    finally:
+        ws.close()
 
 
 def test_workspace_rejects_legacy_job_error_column(tmp_path: Path) -> None:

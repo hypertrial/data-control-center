@@ -27,11 +27,11 @@ stable release. Maintainer tagging steps: [`docs/RELEASE.md`](docs/RELEASE.md).
 - Large files (above **`DCC_PROFILE_HEAVY_SCAN_MAX_BYTES`**, default 256 MiB) use Parquet metadata / bounded counts and sample-scoped null metrics; profiles include a structure warning when metrics are sample-based.
 - Profiling honors **`DCC_PROFILE_TIMEOUT_SECONDS`** (extended by **`DCC_PROFILE_LARGE_FILE_TIMEOUT_SECONDS`** on heavy scans); prepare jobs report incremental **`progress`**.
 - Frontend profile loading polls jobs with exponential backoff and deduplicates profile queries across tabs (Charts uses **`useDatasetProfile`**).
+- Workspace DB: **`dcc_saved_queries`** now includes a nullable **`description`** column. Existing local workspaces with the prior saved-query table shape are updated in place on startup.
 
 ### Breaking
 
 - Removed unused **`/api/saved-charts`** endpoints. Existing local workspaces drop the **`dcc_saved_charts`** table on next startup (any saved chart rows are discarded).
-- Workspace DB: **`dcc_saved_queries`** now includes a nullable **`description`** column. Existing local workspaces with the old table shape must run **`make clean-local`** or delete **`.dcc_workspace.duckdb`** before startup.
 
 ## [1.0.0] - 2026-05-20
 
