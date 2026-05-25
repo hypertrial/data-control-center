@@ -4,11 +4,12 @@
 
 | Version | Supported |
 | --- | --- |
-| 1.0.x | Yes |
-| 0.1.0 | Best-effort only; upgrade to 1.0.0 |
+| 1.1.x | Yes |
+| 1.0.x | Best-effort only; upgrade to 1.1.0 |
+| 0.1.0 | No |
 | &lt; 0.1.0 | No |
 
-Security fixes land on **`main`** and are included in the next **1.0.x** patch release.
+Security fixes land on **`main`** and are included in the next **1.1.x** patch release.
 See [`docs/RELEASE.md`](docs/RELEASE.md) for tagging steps.
 
 ## Reporting A Vulnerability

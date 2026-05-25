@@ -48,8 +48,19 @@ workspace file by hand—that removes app cache, Ask history, and upload copies 
 for breaking changes. Schema details:
 [`backend/README.md`](backend/README.md#workspace-database).
 
-Current **Unreleased** changes add a **`description`** column to saved SQL snippets.
-Workspaces with the prior saved-query table shape are updated in place on startup.
+### Upgrading to 1.1.0
+
+If you used **1.0.0**, read [**CHANGELOG — 1.1.0**](CHANGELOG.md#110---2026-05-25) before
+upgrading. In short:
+
+1. Update custom API clients: DuckDB inspect/import APIs use **`source_id`** (replaces
+   **`upload_id`**).
+2. **`/api/saved-charts`** was removed; saved chart rows are dropped from local workspaces on
+   next startup.
+3. Saved SQL snippets gain an optional **`description`** column; existing workspaces migrate
+   in place on startup.
+4. Large datasets may rebuild profiles with sample-scoped metrics; the UI polls prepare jobs
+   until ready.
 
 ### Upgrading to 1.0.0
 

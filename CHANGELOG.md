@@ -8,6 +8,19 @@ stable release. Maintainer tagging steps: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-25
+
+### Upgrade from 1.0.0
+
+1. Update custom API clients: DuckDB inspect/import APIs use **`source_id`** (replaces
+   **`upload_id`**).
+2. **`/api/saved-charts`** was removed; saved chart rows are dropped from local workspaces on
+   next startup.
+3. Saved SQL snippets gain an optional **`description`** column; existing workspaces migrate
+   in place on startup.
+4. Large datasets may rebuild profiles with sample-scoped metrics; the UI polls prepare jobs
+   until ready.
+
 ### Added
 
 - DuckDB **open-from-disk** for large local `.duckdb` files (`POST /api/datasets/duckdb/open-local`, **`pick-local`** native file picker), capabilities endpoint, searchable relation picker, and lazy per-relation row counts.

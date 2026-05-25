@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "React frontend for Data Control Center.",
   "license": "MIT",
   "author": "Hypertrial",
