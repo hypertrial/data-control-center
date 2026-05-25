@@ -20,7 +20,8 @@ from app.services.registry import (
 )
 
 ATTACH_ALIAS = "_dcc_import_src"
-INTERNAL_SCHEMAS = {"information_schema", "pg_catalog"}
+DUCKDB_SOURCES_DIR = "duckdb_sources"
+_UPLOAD_ID_LEN = 16
 
 
 class DuckDbImportError(RuntimeError):
@@ -34,36 +35,45 @@ def _workspace_path(settings: Settings) -> Path:
     return p.resolve()
 
 
-def resolve_duckdb_source_path(
-    raw_path: str,
-    *,
-    registry: DatasetRegistry,
-    settings: Settings,
-) -> Path:
-    if not settings.enable_path_registration:
-        raise AppError(
-            status_code=403,
-            code=CODES.PATH_NOT_ALLOWED,
-            message=(
-                "DuckDB import is disabled. Enable DCC_ENABLE_PATH_REGISTRATION "
-                "and keep the source file inside an allowed registration root."
-            ),
-        )
-    p = Path(raw_path).expanduser().resolve()
-    registry.ensure_registration_allowed(p)
-    if not p.exists():
-        raise AppError(status_code=404, code=CODES.NOT_FOUND, message="DuckDB file not found")
-    if p.is_dir():
-        raise AppError(status_code=400, code=CODES.BAD_REQUEST, message="Path must be a DuckDB file")
-    if p.suffix.lower() != ".duckdb":
-        raise AppError(status_code=400, code=CODES.BAD_REQUEST, message="Path must point to a .duckdb file")
-    if p == _workspace_path(settings):
+def _upload_root(settings: Settings) -> Path:
+    upload_dir = settings.upload_dir
+    if not upload_dir.is_absolute():
+        upload_dir = Path.cwd() / upload_dir
+    return upload_dir.resolve()
+
+
+def _staged_upload_dir(upload_id: str, settings: Settings) -> Path:
+    if len(upload_id) != _UPLOAD_ID_LEN or not all(c in "0123456789abcdef" for c in upload_id):
+        raise AppError(status_code=400, code=CODES.BAD_REQUEST, message="Invalid DuckDB upload id.")
+    return _upload_root(settings) / DUCKDB_SOURCES_DIR / upload_id
+
+
+def resolve_staged_duckdb_upload(upload_id: str, *, settings: Settings) -> Path:
+    batch_dir = _staged_upload_dir(upload_id, settings)
+    if not batch_dir.is_dir():
+        raise AppError(status_code=404, code=CODES.NOT_FOUND, message="DuckDB upload not found.")
+    candidates = sorted(p for p in batch_dir.iterdir() if p.is_file() and p.suffix.lower() == ".duckdb")
+    if not candidates:
+        raise AppError(status_code=404, code=CODES.NOT_FOUND, message="DuckDB upload not found.")
+    if len(candidates) > 1:
+        raise AppError(status_code=400, code=CODES.BAD_REQUEST, message="DuckDB upload is invalid.")
+    source = candidates[0].resolve()
+    if source == _workspace_path(settings):
         raise AppError(
             status_code=400,
             code=CODES.BAD_REQUEST,
             message="Cannot import the active Data Control Center workspace database.",
         )
-    return p
+    return source
+
+
+def reject_workspace_duckdb_upload(path: Path, *, settings: Settings) -> None:
+    if path.resolve() == _workspace_path(settings):
+        raise AppError(
+            status_code=400,
+            code=CODES.BAD_REQUEST,
+            message="Cannot import the active Data Control Center workspace database.",
+        )
 
 
 def _quote_ident(raw: str) -> str:
@@ -165,13 +175,6 @@ def inspect_duckdb_relations(
         ) from exc
     finally:
         con.close()
-
-
-def _upload_root(settings: Settings) -> Path:
-    upload_dir = settings.upload_dir
-    if not upload_dir.is_absolute():
-        upload_dir = Path.cwd() / upload_dir
-    return upload_dir.resolve()
 
 
 def _export_stem(source_path: Path, rel: DuckDbRelationRef) -> str:

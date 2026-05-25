@@ -20,6 +20,7 @@ vi.mock('@/api/client', () => ({
   api: {
     listDatasets: vi.fn(),
     uploadDatasets: vi.fn(),
+    uploadDuckDb: vi.fn(),
     deleteDataset: vi.fn(),
     inspectDuckDb: vi.fn(),
     importDuckDbRelations: vi.fn(),
@@ -43,6 +44,7 @@ describe('DatasetSidebar', () => {
     toastMock.error.mockReset()
     toastMock.success.mockReset()
     vi.mocked(api.deleteDataset).mockReset()
+    vi.mocked(api.uploadDuckDb).mockReset()
     vi.mocked(api.inspectDuckDb).mockReset()
     vi.mocked(api.importDuckDbRelations).mockReset()
     vi.mocked(api.getJob).mockReset()
@@ -71,6 +73,7 @@ describe('DatasetSidebar', () => {
       },
     ])
     vi.mocked(api.deleteDataset).mockResolvedValue(undefined)
+    vi.mocked(api.uploadDuckDb).mockResolvedValue({ upload_id: 'up_1', filename: 'source.duckdb' })
     vi.mocked(api.inspectDuckDb).mockResolvedValue([
       { schema: 'main', name: 'orders', type: 'table', column_count: 2, row_count: 2 },
       { schema: 'main', name: 'large_orders', type: 'view', column_count: 2, row_count: 1 },
@@ -314,16 +317,23 @@ describe('DatasetSidebar', () => {
     )
   })
 
-  it('inspects and imports selected DuckDB relations', async () => {
+  async function uploadDuckDbFile(user: ReturnType<typeof userEvent.setup>, container: HTMLElement) {
+    const fileInput = container.querySelector(
+      'input[type="file"]:not([webkitdirectory])',
+    ) as HTMLInputElement
+    await user.upload(fileInput, new File(['db'], 'source.duckdb'))
+    await waitFor(() => expect(api.uploadDuckDb).toHaveBeenCalled())
+    await waitFor(() => expect(api.inspectDuckDb).toHaveBeenCalledWith('up_1'))
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Import DuckDB' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('orders')).toBeInTheDocument())
+  }
+
+  it('uploads and imports selected DuckDB relations', async () => {
     const user = userEvent.setup()
-    wrap(<DatasetSidebar />)
+    const { container } = wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Import DuckDB' }))
-    await user.type(screen.getByLabelText(/DuckDB file path/i), '/tmp/source.duckdb')
-    await user.click(screen.getByRole('button', { name: 'Inspect' }))
-    await waitFor(() => expect(api.inspectDuckDb).toHaveBeenCalledWith('/tmp/source.duckdb'))
-    await waitFor(() => expect(screen.getByText('orders')).toBeInTheDocument())
+    await uploadDuckDbFile(user, container)
 
     await user.click(screen.getByLabelText('Select main.orders'))
     await user.click(screen.getByLabelText('Select main.orders'))
@@ -332,7 +342,7 @@ describe('DatasetSidebar', () => {
     await user.click(screen.getByRole('button', { name: /Import 1/ }))
 
     await waitFor(() =>
-      expect(api.importDuckDbRelations).toHaveBeenCalledWith('/tmp/source.duckdb', [
+      expect(api.importDuckDbRelations).toHaveBeenCalledWith('up_1', [
         { schema: 'main', name: 'orders', alias: 'orders_copy' },
       ]),
     )
@@ -342,13 +352,10 @@ describe('DatasetSidebar', () => {
 
   it('selects and clears all inspected DuckDB relations', async () => {
     const user = userEvent.setup()
-    wrap(<DatasetSidebar />)
+    const { container } = wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Import DuckDB' }))
-    await user.type(screen.getByLabelText(/DuckDB file path/i), '/tmp/source.duckdb')
-    await user.click(screen.getByRole('button', { name: 'Inspect' }))
-    await waitFor(() => expect(screen.getByText('orders')).toBeInTheDocument())
+    await uploadDuckDbFile(user, container)
 
     await user.click(screen.getByRole('button', { name: 'Select all' }))
     expect(screen.getByLabelText('Select main.orders')).toBeChecked()
@@ -358,14 +365,15 @@ describe('DatasetSidebar', () => {
     expect(screen.getByLabelText('Select main.large_orders')).not.toBeChecked()
   })
 
-  it('opens DuckDB import from an empty workspace', async () => {
+  it('opens DuckDB import after uploading in an empty workspace', async () => {
     const user = userEvent.setup()
     vi.mocked(api.listDatasets).mockResolvedValue([])
-    wrap(<DatasetSidebar />)
+    const { container } = wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/No datasets in this workspace/i)).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Import DuckDB' }))
-    expect(screen.getByRole('dialog', { name: 'Import DuckDB' })).toBeInTheDocument()
+    const fileInput = container.querySelector('input[aria-label="Upload data files"]') as HTMLInputElement
+    await user.upload(fileInput, new File(['db'], 'source.duckdb'))
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Import DuckDB' })).toBeInTheDocument())
   })
 
   it('shows DuckDB import job failures', async () => {
@@ -383,42 +391,36 @@ describe('DatasetSidebar', () => {
       finished_at: 'now',
       result: null,
     })
-    wrap(<DatasetSidebar />)
+    const { container } = wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Import DuckDB' }))
-    await user.type(screen.getByLabelText(/DuckDB file path/i), '/tmp/source.duckdb')
-    await user.click(screen.getByRole('button', { name: 'Inspect' }))
-    await waitFor(() => expect(screen.getByText('orders')).toBeInTheDocument())
+    await uploadDuckDbFile(user, container)
     await user.click(screen.getByLabelText('Select main.orders'))
     await user.click(screen.getByRole('button', { name: /Import 1/ }))
 
     await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith('copy failed'))
   })
 
-  it('validates DuckDB import dialog inputs', async () => {
+  it('validates DuckDB import requires selected relations', async () => {
     const user = userEvent.setup()
-    wrap(<DatasetSidebar />)
+    const { container } = wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Import DuckDB' }))
-    await user.click(screen.getByRole('button', { name: 'Inspect' }))
-    expect(toastMock.error).toHaveBeenCalledWith('Enter the path to a local .duckdb file.')
-
-    await user.type(screen.getByLabelText(/DuckDB file path/i), '/tmp/source.duckdb')
-    await user.click(screen.getByRole('button', { name: /^Import$/ }))
+    await uploadDuckDbFile(user, container)
+    await user.click(screen.getByRole('button', { name: /^Import\s*$/ }))
     expect(toastMock.error).toHaveBeenCalledWith('Select at least one DuckDB table or view.')
   })
 
   it('shows DuckDB inspect errors', async () => {
     const user = userEvent.setup()
     vi.mocked(api.inspectDuckDb).mockRejectedValue(new Error('cannot inspect'))
-    wrap(<DatasetSidebar />)
+    const { container } = wrap(<DatasetSidebar />)
     await waitFor(() => expect(screen.getByText(/^a$/)).toBeInTheDocument())
 
-    await user.click(screen.getByRole('button', { name: 'Import DuckDB' }))
-    await user.type(screen.getByLabelText(/DuckDB file path/i), '/tmp/source.duckdb')
-    await user.click(screen.getByRole('button', { name: 'Inspect' }))
-    await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith('cannot inspect'))
+    const fileInput = container.querySelector(
+      'input[type="file"]:not([webkitdirectory])',
+    ) as HTMLInputElement
+    await user.upload(fileInput, new File(['db'], 'source.duckdb'))
+    await waitFor(() => expect(screen.getByText('cannot inspect')).toBeInTheDocument())
   })
 })

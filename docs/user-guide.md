@@ -20,8 +20,8 @@ request/response shapes and **`DCC_*`** settings, see
 Evaluate the app without private data using the synthetic fixtures in
 [`examples/`](../examples/) and the [five-minute tour](5-minute-tour.md).
 
-**Upload (default):** In the web UI, drag-and-drop or select files, or use **Choose folder**
-to upload all supported files in a directory at once. The API stores copies under
+**Upload (default):** In the web UI, drag-and-drop or select files (including **`.duckdb`**),
+or use **Choose folder** to upload all supported files in a directory at once. The API stores copies under
 **`.dcc_uploads/`** (relative to the backend cwd unless overridden), validates them,
 then registers them. Upload limits are configured with **`DCC_UPLOAD_*`** variables (see
 [`backend/README.md`](../backend/README.md#uploads-and-path-registration)).
@@ -66,10 +66,11 @@ until **`completed`**, then retry.
   if profiling times out on very large Parquet files.
 - **Path registration** (when enabled) avoids re-copying data you already have on disk—useful when
   you analyze the same large file repeatedly. See [`backend/README.md`](../backend/README.md#uploads-and-path-registration).
-- **DuckDB import** (when path registration is enabled) inspects a local **`.duckdb`**
-  file and snapshots selected tables/views into app-owned Parquet copies under
-  **`.dcc_uploads/`**. Imported datasets then behave like normal uploads; later changes
-  to the source DuckDB file do not change the imported snapshot.
+- **DuckDB import:** Upload a **`.duckdb`** file the same way as CSV or Parquet (drag-and-drop,
+  file picker, or folder pick). The app stages the database under **`.dcc_uploads/duckdb_sources/`**,
+  lists importable tables/views, and snapshots your selections into Parquet copies under
+  **`.dcc_uploads/duckdb_imports/`**. Imported datasets then behave like normal uploads; later
+  changes to the original DuckDB file do not change the imported snapshot.
 
 **Manual refresh:** Use **Refresh** in the dataset strip or
 **`POST /api/datasets/{dataset_id}/profile/refresh`**. The UI handles job polling;

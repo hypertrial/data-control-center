@@ -1,7 +1,11 @@
-/** Mirrors backend `SUPPORTED_EXTENSIONS` for client-side filtering. */
+/** Mirrors backend supported upload extensions for client-side filtering. */
 const UPLOAD_EXT = new Set(['.csv', '.tsv', '.parquet', '.json', '.jsonl', '.ndjson'])
+const DUCKDB_EXT = '.duckdb'
 
-export const ACCEPT_ATTR = '.csv,.tsv,.parquet,.json,.jsonl,.ndjson'
+export const ACCEPT_ATTR = '.csv,.tsv,.parquet,.json,.jsonl,.ndjson,.duckdb'
+
+export const UNSUPPORTED_FILES_MESSAGE =
+  'No supported files (.csv, .tsv, .parquet, .json, .jsonl, .ndjson, .duckdb).'
 
 function extOf(name: string): string {
   const i = name.lastIndexOf('.')
@@ -19,4 +23,25 @@ function normalizeUploadFile(file: File): File {
 
 export function filterSupportedFiles(files: File[]): File[] {
   return files.map(normalizeUploadFile).filter((f) => UPLOAD_EXT.has(extOf(f.name)))
+}
+
+export function filterDuckDbFiles(files: File[]): File[] {
+  return files.map(normalizeUploadFile).filter((f) => extOf(f.name) === DUCKDB_EXT)
+}
+
+export function partitionIncomingFiles(files: File[]): { dataFiles: File[]; duckDbFiles: File[] } {
+  const normalized = files.map(normalizeUploadFile)
+  const dataFiles: File[] = []
+  const duckDbFiles: File[] = []
+  for (const file of normalized) {
+    const ext = extOf(file.name)
+    if (ext === DUCKDB_EXT) duckDbFiles.push(file)
+    else if (UPLOAD_EXT.has(ext)) dataFiles.push(file)
+  }
+  return { dataFiles, duckDbFiles }
+}
+
+export function hasIngestibleFiles(files: File[]): boolean {
+  const { dataFiles, duckDbFiles } = partitionIncomingFiles(files)
+  return dataFiles.length > 0 || duckDbFiles.length > 0
 }

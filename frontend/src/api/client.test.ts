@@ -171,17 +171,31 @@ describe('api client', () => {
     expect(init.body).toBeInstanceOf(FormData)
   })
 
+  it('uploadDuckDb POST multipart', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonOk({ upload_id: 'up1', filename: 'source.duckdb' }))
+    vi.stubGlobal('fetch', fetchMock)
+    const file = new File(['db'], 'source.duckdb')
+    await api.uploadDuckDb(file)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/datasets/duckdb/upload',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const init = fetchMock.mock.calls[0]![1] as RequestInit
+    expectToken(init)
+    expect(init.body).toBeInstanceOf(FormData)
+  })
+
   it('inspectDuckDb POST JSON', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonOk([]))
     vi.stubGlobal('fetch', fetchMock)
-    await api.inspectDuckDb('/tmp/source.duckdb')
+    await api.inspectDuckDb('up1')
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/datasets/duckdb/inspect',
       expect.objectContaining({ method: 'POST' }),
     )
     const init = fetchMock.mock.calls[0]![1] as RequestInit
     expectToken(init)
-    expect(init.body).toBe(JSON.stringify({ path: '/tmp/source.duckdb' }))
+    expect(init.body).toBe(JSON.stringify({ upload_id: 'up1' }))
   })
 
   it('importDuckDbRelations POST JSON', async () => {
@@ -189,7 +203,7 @@ describe('api client', () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonOk(body))
     vi.stubGlobal('fetch', fetchMock)
     await expect(
-      api.importDuckDbRelations('/tmp/source.duckdb', [{ schema: 'main', name: 'orders', alias: 'orders_copy' }]),
+      api.importDuckDbRelations('up1', [{ schema: 'main', name: 'orders', alias: 'orders_copy' }]),
     ).resolves.toEqual(body)
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/datasets/duckdb/import',
@@ -199,7 +213,7 @@ describe('api client', () => {
     expectToken(init)
     expect(init.body).toBe(
       JSON.stringify({
-        path: '/tmp/source.duckdb',
+        upload_id: 'up1',
         relations: [{ schema: 'main', name: 'orders', alias: 'orders_copy' }],
       }),
     )

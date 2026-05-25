@@ -1,48 +1,20 @@
-import { useQueryClient } from '@tanstack/react-query'
-import { FolderOpen, Loader2, Upload } from 'lucide-react'
-import { useCallback, useRef, useState } from 'react'
-import { toast } from 'sonner'
-import { api } from '@/api/client'
+import { Loader2, Upload } from 'lucide-react'
+import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { useUiStore } from '@/store/uiStore'
-import { ACCEPT_ATTR, filterSupportedFiles } from '@/features/datasets/uploadFiles'
+import { ACCEPT_ATTR } from '@/features/datasets/uploadFiles'
 
 type Props = {
   className?: string
+  busy?: boolean
+  onFilesPicked: (files: File[]) => void
+  onFolderPicked?: (files: File[]) => void
 }
 
-export function DatasetDropzone({ className }: Props) {
-  const qc = useQueryClient()
-  const setActiveDatasetId = useUiStore((s) => s.setActiveDatasetId)
-  const [busy, setBusy] = useState(false)
+export function DatasetDropzone({ className, busy = false, onFilesPicked, onFolderPicked }: Props) {
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
-
-  const uploadFiles = useCallback(
-    async (picked: File[]) => {
-      const files = filterSupportedFiles(picked)
-      if (!files.length) {
-        toast.error('No supported files (.csv, .tsv, .parquet, .json, .jsonl, .ndjson).')
-        return
-      }
-      setBusy(true)
-      try {
-        const rows = await api.uploadDatasets(files)
-        await qc.invalidateQueries({ queryKey: ['datasets'] })
-        if (rows.length) {
-          setActiveDatasetId(rows[rows.length - 1]!.dataset_id)
-          toast.success(`Registered ${rows.length} file(s).`)
-        }
-      } catch (e) {
-        toast.error((e as Error).message)
-      } finally {
-        setBusy(false)
-      }
-    },
-    [qc, setActiveDatasetId],
-  )
 
   return (
     <div className={cn('space-y-2', className)}>
@@ -56,20 +28,21 @@ export function DatasetDropzone({ className }: Props) {
         onChange={(e) => {
           const files = e.target.files ? Array.from(e.target.files) : []
           e.target.value = ''
-          void uploadFiles(files)
+          onFilesPicked(files)
         }}
       />
       <input
         ref={folderInputRef}
         type="file"
         multiple
+        accept={ACCEPT_ATTR}
         className="sr-only"
         aria-label="Upload folder of data files"
         {...({ webkitdirectory: '' } as object)}
         onChange={(e) => {
           const files = e.target.files ? Array.from(e.target.files) : []
           e.target.value = ''
-          void uploadFiles(files)
+          ;(onFolderPicked ?? onFilesPicked)(files)
         }}
       />
 
@@ -94,7 +67,7 @@ export function DatasetDropzone({ className }: Props) {
           e.stopPropagation()
           setDragOver(false)
           const files = e.dataTransfer.files ? Array.from(e.dataTransfer.files) : []
-          void uploadFiles(files)
+          onFilesPicked(files)
         }}
         onClick={() => fileInputRef.current?.click()}
         className={cn(
@@ -107,22 +80,25 @@ export function DatasetDropzone({ className }: Props) {
         <Upload className={cn('mb-2 h-8 w-8 text-fg-muted', dragOver && 'text-[hsl(var(--accent))]')} />
         <span className="font-medium text-fg">Drop files here</span>
         <span className="mt-1 text-fg-muted">or click to choose files</span>
+        <span className="mt-1 text-[10px] text-fg-muted">CSV, TSV, Parquet, JSON, JSONL, NDJSON, DuckDB</span>
       </button>
 
-      <Button
-        type="button"
-        variant="outline"
-        className="w-full"
-        disabled={busy}
-        onClick={() => folderInputRef.current?.click()}
-      >
-        {busy ? (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        ) : (
-          <FolderOpen className="mr-2 h-4 w-4" />
-        )}
-        Choose folder
-      </Button>
+      {onFolderPicked ? (
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          disabled={busy}
+          onClick={() => folderInputRef.current?.click()}
+        >
+          {busy ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Upload className="mr-2 h-4 w-4" />
+          )}
+          Choose folder
+        </Button>
+      ) : null}
     </div>
   )
 }

@@ -931,11 +931,22 @@ def _make_duckdb_source(path: Path) -> None:
         con.close()
 
 
-def test_duckdb_inspect_and_import_http(client, tmp_path) -> None:
+def _upload_duckdb_file(client, path: Path) -> str:
+    with path.open("rb") as f:
+        r = client.post(
+            "/api/datasets/duckdb/upload",
+            files=[("file", (path.name, f.read(), "application/octet-stream"))],
+        )
+    assert r.status_code == 200, r.text
+    return r.json()["upload_id"]
+
+
+def test_duckdb_upload_inspect_and_import_http(client, tmp_path) -> None:
     source = tmp_path / "source.duckdb"
     _make_duckdb_source(source)
+    upload_id = _upload_duckdb_file(client, source)
 
-    inspect = client.post("/api/datasets/duckdb/inspect", json={"path": str(source)})
+    inspect = client.post("/api/datasets/duckdb/inspect", json={"upload_id": upload_id})
     assert inspect.status_code == 200, inspect.text
     names = {row["name"]: row for row in inspect.json()}
     assert names["orders"]["schema"] == "main"
@@ -946,7 +957,7 @@ def test_duckdb_inspect_and_import_http(client, tmp_path) -> None:
 
     started = client.post(
         "/api/datasets/duckdb/import",
-        json={"path": str(source), "relations": [{"schema": "main", "name": "orders"}]},
+        json={"upload_id": upload_id, "relations": [{"schema": "main", "name": "orders"}]},
     )
     assert started.status_code == 200, started.text
     job = _wait_for_job(client, started.json()["job_id"], timeout=5.0)
@@ -962,30 +973,128 @@ def test_duckdb_inspect_and_import_http(client, tmp_path) -> None:
     assert query.json()["rows"][0]["total"] == 32.5
 
 
-def test_duckdb_import_disabled_by_path_registration(tmp_path, monkeypatch) -> None:
+def test_upload_rejects_duckdb_only_batch(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("DCC_WORKSPACE_DB_PATH", str(tmp_path / "w.duckdb"))
-    monkeypatch.setenv("DCC_ENABLE_PATH_REGISTRATION", "false")
+    monkeypatch.setenv("DCC_UPLOAD_DIR", str(tmp_path / "up"))
+    source = tmp_path / "source.duckdb"
+    _make_duckdb_source(source)
     from app.main import create_app
     from fastapi.testclient import TestClient
 
-    source = tmp_path / "source.duckdb"
-    _make_duckdb_source(source)
     with TestClient(create_app()) as c:
-        inspect = c.post("/api/datasets/duckdb/inspect", json={"path": str(source)})
-        imp = c.post(
-            "/api/datasets/duckdb/import",
-            json={"path": str(source), "relations": [{"schema": "main", "name": "orders"}]},
+        with source.open("rb") as f:
+            r = c.post(
+                "/api/datasets/upload",
+                files=[("files", (source.name, f.read(), "application/octet-stream"))],
+            )
+    assert r.status_code == 400
+    assert "DuckDB import flow" in r.json()["error"]["message"]
+
+
+def test_duckdb_upload_requires_duckdb_file(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("DCC_WORKSPACE_DB_PATH", str(tmp_path / "w.duckdb"))
+    monkeypatch.setenv("DCC_UPLOAD_DIR", str(tmp_path / "up"))
+    from app.main import create_app
+    from fastapi.testclient import TestClient
+
+    with TestClient(create_app()) as c:
+        assert c.post("/api/datasets/duckdb/upload").status_code == 400
+        r = c.post(
+            "/api/datasets/duckdb/upload",
+            files=[("file", ("data.csv", b"a\n1", "text/csv"))],
         )
-    assert inspect.status_code == 403
-    assert imp.status_code == 403
+    assert r.status_code == 400
+    assert "duckdb" in r.json()["error"]["message"].lower()
+
+
+def test_duckdb_upload_rejects_oversize(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("DCC_WORKSPACE_DB_PATH", str(tmp_path / "w.duckdb"))
+    monkeypatch.setenv("DCC_UPLOAD_DIR", str(tmp_path / "up"))
+    monkeypatch.setenv("DCC_UPLOAD_MAX_BYTES_PER_FILE", "4")
+    from app.main import create_app
+    from fastapi.testclient import TestClient
+
+    with TestClient(create_app()) as c:
+        r = c.post(
+            "/api/datasets/duckdb/upload",
+            files=[("file", ("big.duckdb", b"12345", "application/octet-stream"))],
+        )
+    assert r.status_code == 400
+
+
+def test_duckdb_upload_validation_cleanup_ignores_rmdir_errors(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("DCC_WORKSPACE_DB_PATH", str(tmp_path / "w.duckdb"))
+    monkeypatch.setenv("DCC_UPLOAD_DIR", str(tmp_path / "up"))
+    from app.main import create_app
+    from fastapi.testclient import TestClient
+
+    original_rmdir = Path.rmdir
+
+    def fail_rmdir(self):  # noqa: ANN001
+        if "duckdb_sources" in str(self):
+            raise OSError("cannot rmdir")
+        return original_rmdir(self)
+
+    monkeypatch.setattr(Path, "rmdir", fail_rmdir)
+    with TestClient(create_app()) as c:
+        r = c.post(
+            "/api/datasets/duckdb/upload",
+            files=[("file", ("bad.duckdb", b"not duckdb", "application/octet-stream"))],
+        )
+    assert r.status_code == 400
+
+
+def test_duckdb_upload_rejects_bad_file(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("DCC_WORKSPACE_DB_PATH", str(tmp_path / "w.duckdb"))
+    monkeypatch.setenv("DCC_UPLOAD_DIR", str(tmp_path / "up"))
+    from app.main import create_app
+    from fastapi.testclient import TestClient
+
+    with TestClient(create_app()) as c:
+        r = c.post(
+            "/api/datasets/duckdb/upload",
+            files=[("file", ("bad.duckdb", b"not duckdb", "application/octet-stream"))],
+        )
+    assert r.status_code == 400
+
+
+def test_duckdb_upload_write_failure_cleans_staging(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("DCC_WORKSPACE_DB_PATH", str(tmp_path / "w.duckdb"))
+    monkeypatch.setenv("DCC_UPLOAD_DIR", str(tmp_path / "up"))
+    from app.main import create_app
+    from fastapi.testclient import TestClient
+
+    original_open = Path.open
+    original_rmdir = Path.rmdir
+
+    def fail_open(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        if "duckdb_sources" in str(self) and args and args[0] == "wb":
+            raise OSError("disk full")
+        return original_open(self, *args, **kwargs)
+
+    def fail_rmdir(self):  # noqa: ANN001
+        if "duckdb_sources" in str(self):
+            raise OSError("cannot rmdir")
+        return original_rmdir(self)
+
+    monkeypatch.setattr(Path, "open", fail_open)
+    monkeypatch.setattr(Path, "rmdir", fail_rmdir)
+    with TestClient(create_app(), raise_server_exceptions=False) as c:
+        r = c.post(
+            "/api/datasets/duckdb/upload",
+            files=[("file", ("fail.duckdb", b"x", "application/octet-stream"))],
+        )
+    assert r.status_code == 500
+    assert list((tmp_path / "up" / "duckdb_sources").glob("*/fail.duckdb")) == []
 
 
 def test_duckdb_import_job_failure_is_sanitized(client, tmp_path) -> None:
     source = tmp_path / "source.duckdb"
     _make_duckdb_source(source)
+    upload_id = _upload_duckdb_file(client, source)
     started = client.post(
         "/api/datasets/duckdb/import",
-        json={"path": str(source), "relations": [{"schema": "main", "name": "missing"}]},
+        json={"upload_id": upload_id, "relations": [{"schema": "main", "name": "missing"}]},
     )
     assert started.status_code == 200
     job = _wait_for_job(client, started.json()["job_id"], timeout=5.0)

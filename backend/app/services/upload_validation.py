@@ -116,6 +116,40 @@ def _validate_jsonl(path: Path, settings: Settings) -> None:
     )
 
 
+def validate_duckdb_upload(path: Path, settings: Settings) -> None:
+    """Preflight a staged .duckdb upload before inspect/import."""
+    if path.suffix.lower() != ".duckdb":
+        raise UploadValidationError("File must be a DuckDB database.")
+    if not path.is_file():
+        raise UploadValidationError("DuckDB file is missing.")
+    try:
+        con = duckdb.connect(str(path), read_only=True)
+    except Exception as exc:  # noqa: BLE001
+        raise UploadValidationError("DuckDB file could not be opened.") from exc
+    try:
+        try:
+            con.execute(
+                f"SET statement_timeout='{max(100, int(settings.registration_count_timeout_seconds * 1000))}ms'"
+            )
+        except Exception as exc:  # noqa: BLE001
+            if "unrecognized configuration parameter" not in str(exc):
+                raise
+        con.execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_type IN ('BASE TABLE', 'VIEW')
+            LIMIT 1
+            """
+        ).fetchone()
+    except UploadValidationError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise UploadValidationError("DuckDB file could not be inspected.") from exc
+    finally:
+        con.close()
+
+
 def validate_upload_file(path: Path, settings: Settings) -> None:
     if not settings.upload_validate_parse:
         return

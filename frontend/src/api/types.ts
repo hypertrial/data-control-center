@@ -41,6 +41,11 @@ export type DatasetSummary = {
   quality_score?: number | null
 }
 
+export type DuckDbUploadResponse = {
+  upload_id: string
+  filename: string
+}
+
 export type DuckDbRelationSummary = {
   schema: string
   name: string

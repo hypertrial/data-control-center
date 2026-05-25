@@ -59,6 +59,9 @@ async def upload_datasets(
         raw_name = uf.filename or ""
         safe = _safe_upload_filename(raw_name)
         ext = Path(safe).suffix.lower()
+        if ext == ".duckdb":
+            skipped.append(safe)
+            continue
         if ext not in SUPPORTED_EXTENSIONS:
             skipped.append(safe)
             continue
@@ -103,7 +106,10 @@ async def upload_datasets(
 
     if not summaries:
         detail = "No supported data files in upload"
-        if skipped:
+        duckdb_only = skipped and all(Path(name).suffix.lower() == ".duckdb" for name in skipped)
+        if duckdb_only:
+            detail = "DuckDB files must use the DuckDB import flow, not dataset upload"
+        elif skipped:
             detail += f" (skipped: {', '.join(skipped)})"
         raise to_http_error(status_code=400, code=CODES.BAD_REQUEST, message=detail)
 

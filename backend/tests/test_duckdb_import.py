@@ -10,6 +10,7 @@ from app.errors import AppError
 from app.api.datasets_duckdb import import_duckdb
 from app.models.api import DuckDbImportRequest, DuckDbRelationRef
 from app.services.duckdb_import import (
+    DUCKDB_SOURCES_DIR,
     DuckDbImportError,
     _cleanup_empty_dir,
     _relation_row_count,
@@ -20,8 +21,10 @@ from app.services.duckdb_import import (
     cleanup_unregistered_import_files,
     import_duckdb_relations,
     inspect_duckdb_relations,
-    resolve_duckdb_source_path,
+    reject_workspace_duckdb_upload,
+    resolve_staged_duckdb_upload,
 )
+from app.services.upload_validation import UploadValidationError, validate_duckdb_upload
 from app.services.registry import DatasetRegistry
 from app.services.workspace import Workspace
 
@@ -47,6 +50,18 @@ def _source_db(path: Path) -> None:
         con.close()
 
 
+def _stage_upload(tmp_path: Path, source: Path, *, filename: str | None = None) -> str:
+    import shutil
+    import uuid
+
+    settings = _settings(tmp_path)
+    upload_id = uuid.uuid4().hex[:16]
+    batch = _upload_root(settings) / DUCKDB_SOURCES_DIR / upload_id
+    batch.mkdir(parents=True)
+    shutil.copy2(source, batch / (filename or source.name))
+    return upload_id
+
+
 def test_inspect_lists_tables_and_views(tmp_path: Path) -> None:
     source = tmp_path / "source.duckdb"
     _source_db(source)
@@ -62,52 +77,184 @@ def test_inspect_lists_tables_and_views(tmp_path: Path) -> None:
     assert by_name["high_value"].row_count == 1
 
 
-def test_resolve_rejects_disabled_paths_and_workspace_db(tmp_path: Path) -> None:
-    settings = _settings(tmp_path, enable_path_registration=False)
-    ws = Workspace(settings)
-    try:
-        reg = DatasetRegistry(ws, settings)
-        source = tmp_path / "source.duckdb"
-        _source_db(source)
-        with pytest.raises(AppError, match="disabled"):
-            resolve_duckdb_source_path(str(source), registry=reg, settings=settings)
-    finally:
-        ws.close()
-
+def test_resolve_staged_upload(tmp_path: Path) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
     settings = _settings(tmp_path)
-    ws = Workspace(settings)
-    try:
-        reg = DatasetRegistry(ws, settings)
-        with pytest.raises(AppError, match="active Data Control Center workspace"):
-            resolve_duckdb_source_path(str(settings.workspace_db_path), registry=reg, settings=settings)
-    finally:
-        ws.close()
+    upload_id = _stage_upload(tmp_path, source)
+    resolved = resolve_staged_duckdb_upload(upload_id, settings=settings)
+    assert resolved.name == "source.duckdb"
+    assert resolved.exists()
 
 
-def test_resolve_rejects_bad_paths(tmp_path: Path) -> None:
-    settings = _settings(tmp_path, allow_arbitrary_registration_paths=False, registration_allowed_roots=[tmp_path / "allowed"])
-    ws = Workspace(settings)
-    try:
-        reg = DatasetRegistry(ws, settings)
-        blocked = tmp_path / "blocked.duckdb"
-        _source_db(blocked)
-        with pytest.raises(AppError, match="outside allowed"):
-            resolve_duckdb_source_path(str(blocked), registry=reg, settings=settings)
+def test_resolve_staged_upload_errors(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    with pytest.raises(AppError, match="Invalid DuckDB upload id"):
+        resolve_staged_duckdb_upload("not-valid", settings=settings)
+    with pytest.raises(AppError, match="not found"):
+        resolve_staged_duckdb_upload("a" * 16, settings=settings)
 
-        allowed = tmp_path / "allowed"
-        allowed.mkdir()
-        text = allowed / "not_duck.txt"
-        text.write_text("x")
-        with pytest.raises(AppError, match=".duckdb"):
-            resolve_duckdb_source_path(str(text), registry=reg, settings=settings)
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    upload_id = _stage_upload(tmp_path, source)
+    batch = _upload_root(settings) / DUCKDB_SOURCES_DIR / upload_id
+    (batch / "extra.duckdb").write_bytes(b"x")
+    with pytest.raises(AppError, match="invalid"):
+        resolve_staged_duckdb_upload(upload_id, settings=settings)
 
-        with pytest.raises(AppError, match="must be a DuckDB file"):
-            resolve_duckdb_source_path(str(allowed), registry=reg, settings=settings)
 
-        with pytest.raises(AppError, match="not found"):
-            resolve_duckdb_source_path(str(allowed / "missing.duckdb"), registry=reg, settings=settings)
-    finally:
-        ws.close()
+def test_reject_workspace_duckdb_upload(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    ws_path = settings.workspace_db_path
+    ws_path.parent.mkdir(parents=True, exist_ok=True)
+    _source_db(ws_path)
+    with pytest.raises(AppError, match="active Data Control Center workspace"):
+        reject_workspace_duckdb_upload(ws_path, settings=settings)
+
+
+def test_validate_duckdb_upload(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    validate_duckdb_upload(source, settings)
+
+    bad = tmp_path / "bad.duckdb"
+    bad.write_bytes(b"not a duckdb file")
+    with pytest.raises(UploadValidationError, match="could not be opened"):
+        validate_duckdb_upload(bad, settings)
+
+    wrong_ext = tmp_path / "wrong.txt"
+    wrong_ext.write_text("x")
+    with pytest.raises(UploadValidationError, match="DuckDB database"):
+        validate_duckdb_upload(wrong_ext, settings)
+
+    missing = tmp_path / "missing.duckdb"
+    with pytest.raises(UploadValidationError, match="missing"):
+        validate_duckdb_upload(missing, settings)
+
+
+def test_validate_duckdb_upload_reraises_unexpected_timeout_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+
+    class Con:
+        def execute(self, sql: str):  # noqa: ANN201
+            if sql.startswith("SET statement_timeout"):
+                raise RuntimeError("timeout setup failed")
+            return self
+
+        def fetchone(self):  # noqa: ANN204
+            return (1,)
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "app.services.upload_validation.duckdb.connect",
+        lambda *_a, **_k: Con(),
+    )
+    with pytest.raises(UploadValidationError, match="could not be inspected"):
+        validate_duckdb_upload(source, settings=_settings(tmp_path))
+
+
+def test_validate_duckdb_upload_preserves_upload_validation_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+
+    class Con:
+        def execute(self, sql: str):  # noqa: ANN201
+            if "information_schema" in sql:
+                raise UploadValidationError("custom duckdb validation")
+            return self
+
+        def fetchone(self):  # noqa: ANN204
+            return (1,)
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "app.services.upload_validation.duckdb.connect",
+        lambda *_a, **_k: Con(),
+    )
+    with pytest.raises(UploadValidationError, match="custom duckdb validation"):
+        validate_duckdb_upload(source, settings=_settings(tmp_path))
+
+
+def test_validate_duckdb_upload_ignores_unrecognized_timeout_param(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+
+    class Con:
+        def execute(self, sql: str):  # noqa: ANN201
+            if sql.startswith("SET statement_timeout"):
+                raise RuntimeError("unrecognized configuration parameter statement_timeout")
+            return self
+
+        def fetchone(self):  # noqa: ANN204
+            return (1,)
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "app.services.upload_validation.duckdb.connect",
+        lambda *_a, **_k: Con(),
+    )
+    validate_duckdb_upload(source, settings=_settings(tmp_path))
+
+
+def test_validate_duckdb_upload_inspect_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+
+    class BadCon:
+        def execute(self, sql: str):  # noqa: ANN201
+            if "information_schema" in sql:
+                raise RuntimeError("inspect failed")
+            return self
+
+        def fetchone(self):  # noqa: ANN204
+            return None
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "app.services.upload_validation.duckdb.connect",
+        lambda *_a, **_k: BadCon(),
+    )
+    with pytest.raises(UploadValidationError, match="could not be inspected"):
+        validate_duckdb_upload(source, settings=_settings(tmp_path))
+
+
+def test_resolve_staged_empty_batch_and_workspace_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path)
+    upload_id = "b" * 16
+    batch = _upload_root(settings) / DUCKDB_SOURCES_DIR / upload_id
+    batch.mkdir(parents=True)
+    (batch / "notes.txt").write_text("x")
+    with pytest.raises(AppError, match="not found"):
+        resolve_staged_duckdb_upload(upload_id, settings=settings)
+
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    upload_id = _stage_upload(tmp_path, source)
+    resolved = resolve_staged_duckdb_upload(upload_id, settings=settings)
+    monkeypatch.setattr(
+        "app.services.duckdb_import._workspace_path",
+        lambda _settings: resolved,
+    )
+    with pytest.raises(AppError, match="active Data Control Center workspace"):
+        resolve_staged_duckdb_upload(upload_id, settings=settings)
 
 
 def test_relative_workspace_and_upload_paths_resolve_from_cwd(
@@ -436,9 +583,10 @@ def test_duckdb_import_route_job_honors_preexisting_cancel(tmp_path: Path) -> No
 
     try:
         reg = DatasetRegistry(ws, settings)
+        upload_id = _stage_upload(tmp_path, source)
         response = import_duckdb(
             DuckDbImportRequest(
-                path=str(source),
+                upload_id=upload_id,
                 relations=[DuckDbRelationRef(schema="main", name="orders")],
             ),
             reg,

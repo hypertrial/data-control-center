@@ -10,6 +10,7 @@ import type {
   DatasetSummary,
   DuckDbRelationRef,
   DuckDbRelationSummary,
+  DuckDbUploadResponse,
   HealthResponse,
   JobCreateResponse,
   JobDetail,
@@ -242,21 +243,32 @@ export const api = {
     )
   },
 
-  inspectDuckDb: (path: string) =>
+  uploadDuckDb: (file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    return handle<DuckDbUploadResponse>(
+      apiFetch(`${API}/datasets/duckdb/upload`, {
+        method: 'POST',
+        body,
+      }),
+    )
+  },
+
+  inspectDuckDb: (uploadId: string) =>
     handle<DuckDbRelationSummary[]>(
       apiFetch(`${API}/datasets/duckdb/inspect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
+        body: JSON.stringify({ upload_id: uploadId }),
       }),
     ),
 
-  importDuckDbRelations: (path: string, relations: DuckDbRelationRef[]) =>
+  importDuckDbRelations: (uploadId: string, relations: DuckDbRelationRef[]) =>
     handle<JobCreateResponse>(
       apiFetch(`${API}/datasets/duckdb/import`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, relations }),
+        body: JSON.stringify({ upload_id: uploadId, relations }),
       }),
     ),
 

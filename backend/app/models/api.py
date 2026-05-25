@@ -58,8 +58,13 @@ class RegisterFolderRequest(BaseModel):
     recursive: bool = False
 
 
+class DuckDbUploadResponse(BaseModel):
+    upload_id: str
+    filename: str
+
+
 class DuckDbInspectRequest(BaseModel):
-    path: str = Field(..., description="Absolute path to a local DuckDB database")
+    upload_id: str = Field(..., description="Staged DuckDB upload id from POST /api/datasets/duckdb/upload")
 
 
 class DuckDbRelationRef(BaseModel):
@@ -71,7 +76,7 @@ class DuckDbRelationRef(BaseModel):
 
 
 class DuckDbImportRequest(BaseModel):
-    path: str = Field(..., description="Absolute path to a local DuckDB database")
+    upload_id: str = Field(..., description="Staged DuckDB upload id from POST /api/datasets/duckdb/upload")
     relations: list[DuckDbRelationRef] = Field(default_factory=list, min_length=1, max_length=100)
 
 
