@@ -23,6 +23,13 @@ FORBIDDEN_SOURCE_FUNCTIONS = re.compile(
     re.IGNORECASE,
 )
 
+# DuckDB functions that can execute nested SQL, expose local metadata/secrets, or
+# disclose process/filesystem details outside registered dataset views.
+FORBIDDEN_DUCKDB_ESCAPE_FUNCTIONS = re.compile(
+    r"\b(query|query_table|current_setting|current_settings|getenv|duckdb_[a-z0-9_]*|pragma_[a-z0-9_]*)\s*\(",
+    re.IGNORECASE,
+)
+
 FROM_JOIN_PATTERN = re.compile(
     r"\b(?:FROM|JOIN)\s+([A-Za-z_][A-Za-z0-9_\.]*)",
     re.IGNORECASE,
@@ -62,6 +69,14 @@ FORBIDDEN_TABLE_FUNCTIONS = {
     "parquet_scan",
     "csv_scan",
     "json_scan",
+}
+
+FORBIDDEN_DUCKDB_FUNCTIONS = {
+    "current_setting",
+    "current_settings",
+    "getenv",
+    "query",
+    "query_table",
 }
 
 
@@ -251,6 +266,12 @@ def _validate_readonly_ast(sql: str) -> tuple[str | None, set[str], set[str]]:
         fn = _ast_function_name(node)
         if fn and (fn.startswith("read_") or fn in FORBIDDEN_TABLE_FUNCTIONS):
             return ("SQL contains forbidden file-reading or external source functions.", set(), set())
+        if fn and (
+            fn in FORBIDDEN_DUCKDB_FUNCTIONS
+            or fn.startswith("duckdb_")
+            or fn.startswith("pragma_")
+        ):
+            return ("SQL contains forbidden DuckDB system or dynamic SQL functions.", set(), set())
 
     refs, ctes = _extract_ast_relations(tree)
     return None, refs, ctes
@@ -272,6 +293,8 @@ def validate_workspace_sql(sql: str, view_names: set[str] | None = None) -> tupl
         return ("SQL contains forbidden keywords for this workspace.", None)
     if FORBIDDEN_SOURCE_FUNCTIONS.search(blanked):
         return ("SQL contains forbidden file-reading or external source functions.", None)
+    if FORBIDDEN_DUCKDB_ESCAPE_FUNCTIONS.search(blanked):
+        return ("SQL contains forbidden DuckDB system or dynamic SQL functions.", None)
 
     upper_head = stmt.lstrip().upper()
     if not (upper_head.startswith("SELECT") or upper_head.startswith("WITH")):

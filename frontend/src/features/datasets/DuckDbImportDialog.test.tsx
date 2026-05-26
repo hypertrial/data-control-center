@@ -64,7 +64,7 @@ describe('DuckDbImportDialog', () => {
       <DuckDbImportDialog session={{ sourceId: 'up_1', filename: 'source.duckdb' }} onClose={vi.fn()} onImported={vi.fn()} />,
     )
     await waitFor(() => expect(screen.getByText('orders')).toBeInTheDocument())
-    await user.type(screen.getByLabelText('Search DuckDB tables and views'), 'cust')
+    await user.type(screen.getByLabelText('Search DuckDB tables'), 'cust')
     expect(screen.queryByText('orders')).not.toBeInTheDocument()
     expect(screen.getByText('customers')).toBeInTheDocument()
   })
@@ -153,7 +153,7 @@ describe('DuckDbImportDialog', () => {
     wrap(
       <DuckDbImportDialog session={{ sourceId: 'up_1', filename: 'big.duckdb' }} onClose={vi.fn()} onImported={vi.fn()} />,
     )
-    await waitFor(() => expect(screen.getByText(/101 of 101 relation/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/101 of 101 table/)).toBeInTheDocument())
     expect(screen.getByText('table_0')).toBeInTheDocument()
   })
 
@@ -176,8 +176,8 @@ describe('DuckDbImportDialog', () => {
       <DuckDbImportDialog session={{ sourceId: 'up_1', filename: 'source.duckdb' }} onClose={vi.fn()} onImported={vi.fn()} />,
     )
     await waitFor(() => expect(screen.getByText('orders')).toBeInTheDocument())
-    await user.type(screen.getByLabelText('Search DuckDB tables and views'), 'zzznomatch')
-    expect(screen.getByText(/No relations match the current filters/)).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Search DuckDB tables'), 'zzznomatch')
+    expect(screen.getByText(/No tables match the current filters/)).toBeInTheDocument()
   })
 
   it('filters relations by schema', async () => {
@@ -193,7 +193,7 @@ describe('DuckDbImportDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Filter by schema analytics' }))
     expect(screen.queryByText('orders')).not.toBeInTheDocument()
     expect(screen.getByText('facts')).toBeInTheDocument()
-    expect(screen.getByText(/1 of 2 relation/)).toBeInTheDocument()
+    expect(screen.getByText(/1 of 2 table/)).toBeInTheDocument()
   })
 
   it('combines schema and search filters', async () => {
@@ -208,7 +208,7 @@ describe('DuckDbImportDialog', () => {
     )
     await waitFor(() => expect(screen.getByText('orders')).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'Filter by schema main' }))
-    await user.type(screen.getByLabelText('Search DuckDB tables and views'), 'cust')
+    await user.type(screen.getByLabelText('Search DuckDB tables'), 'cust')
     expect(screen.queryByText('orders')).not.toBeInTheDocument()
     expect(screen.getByText('customers')).toBeInTheDocument()
   })

@@ -982,6 +982,7 @@ def test_duckdb_upload_inspect_and_import_http(client, tmp_path) -> None:
     inspect = client.post("/api/datasets/duckdb/inspect", json={"source_id": source_id})
     assert inspect.status_code == 200, inspect.text
     names = {row["name"]: row for row in inspect.json()}
+    assert "large_orders" not in names
     assert names["orders"]["schema"] == "main"
     assert names["orders"]["type"] == "table"
     assert names["orders"]["column_count"] == 2
@@ -992,8 +993,8 @@ def test_duckdb_upload_inspect_and_import_http(client, tmp_path) -> None:
         json={"source_id": source_id, "include_row_counts": True},
     )
     names2 = {row["name"]: row for row in inspect_counts.json()}
+    assert "large_orders" not in names2
     assert names2["orders"]["row_count"] == 2
-    assert names2["large_orders"]["type"] == "view"
 
     count_one = client.post(
         "/api/datasets/duckdb/relation-count",
@@ -1001,6 +1002,13 @@ def test_duckdb_upload_inspect_and_import_http(client, tmp_path) -> None:
     )
     assert count_one.status_code == 200
     assert count_one.json()["row_count"] == 2
+
+    count_view = client.post(
+        "/api/datasets/duckdb/relation-count",
+        json={"source_id": source_id, "schema": "main", "name": "large_orders"},
+    )
+    assert count_view.status_code == 400
+    assert "not available" in count_view.json()["error"]["message"]
 
     started = client.post(
         "/api/datasets/duckdb/import",
@@ -1145,7 +1153,7 @@ def test_duckdb_open_local_inspect_http(client, tmp_path) -> None:
     source_id = body["source_id"]
     inspect = client.post("/api/datasets/duckdb/inspect", json={"source_id": source_id})
     assert inspect.status_code == 200
-    assert {row["name"] for row in inspect.json()} == {"orders", "large_orders"}
+    assert {row["name"] for row in inspect.json()} == {"orders"}
 
 
 def test_duckdb_import_job_failure_is_sanitized(client, tmp_path) -> None:

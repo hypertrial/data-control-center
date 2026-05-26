@@ -76,11 +76,11 @@ DuckDB import supports two source kinds (see **`GET /api/datasets/duckdb/capabil
 | **`POST /api/datasets/duckdb/upload`** | Stage a small **`.duckdb`** copy under **`.dcc_uploads/duckdb_sources/{source_id}/`** |
 | **`POST /api/datasets/duckdb/open-local`** | Register an on-disk **`.duckdb`** path (no copy; gated by **`DCC_ENABLE_DUCKDB_LOCAL_OPEN`**, allowed roots) |
 | **`POST /api/datasets/duckdb/pick-local`** | Native OS file picker → register path (macOS: **`osascript`**; Linux: Tk when available) |
-| **`POST /api/datasets/duckdb/inspect`** | List tables/views (`source_id`, optional **`include_row_counts`**) |
-| **`POST /api/datasets/duckdb/relation-count`** | Lazy **`COUNT(*)`** for one relation |
-| **`POST /api/datasets/duckdb/import`** | Snapshot selected relations to Parquet under **`.dcc_uploads/duckdb_imports/`** |
+| **`POST /api/datasets/duckdb/inspect`** | List importable base tables (`source_id`, optional **`include_row_counts`**) |
+| **`POST /api/datasets/duckdb/relation-count`** | Lazy **`COUNT(*)`** for one importable base table |
+| **`POST /api/datasets/duckdb/import`** | Snapshot selected base tables to Parquet under **`.dcc_uploads/duckdb_imports/`** |
 
-**`POST /api/datasets/upload`** rejects **`.duckdb`** files (use the DuckDB routes). Imports are snapshots, not live links.
+**`POST /api/datasets/upload`** rejects **`.duckdb`** files (use the DuckDB routes). DuckDB views are not importable; imports are table snapshots, not live links.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -89,7 +89,7 @@ DuckDB import supports two source kinds (see **`GET /api/datasets/duckdb/capabil
 | **`DCC_DUCKDB_UPLOAD_SOFT_MAX_BYTES`** | `536870912` (512 MiB) | Soft limit for **`duckdb/upload`** fallback when native pick is off |
 | **`DCC_DUCKDB_INSPECT_INCLUDE_ROW_COUNTS`** | `false` | Default inspect omits per-table counts |
 | **`DCC_DUCKDB_LOCAL_OPEN_TTL_HOURS`** | `24` | TTL for local-open metadata under **`duckdb_sources/local/`** |
-| **`DCC_DUCKDB_IMPORT_TIMEOUT_SECONDS`** | `300` | Per-import **`COPY … TO Parquet`** timeout (large relations can take minutes) |
+| **`DCC_DUCKDB_IMPORT_TIMEOUT_SECONDS`** | `300` | Per-import **`COPY … TO Parquet`** timeout (large tables can take minutes) |
 
 ### Workspace database
 

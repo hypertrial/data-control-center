@@ -124,7 +124,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
 
   useEffect(() => {
     if (!inspectQ.isSuccess || !session) return
-    toast.success(`Found ${inspectQ.data.length} importable relation(s) in ${session.filename}.`)
+    toast.success(`Found ${inspectQ.data.length} importable table(s) in ${session.filename}.`)
   }, [inspectQ.isSuccess, inspectQ.data, session])
 
   useEffect(() => {
@@ -173,7 +173,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
         return { schema: rel.schema, name: rel.name, alias: alias || null }
       })
     if (!relations.length) {
-      toast.error('Select at least one DuckDB table or view.')
+      toast.error('Select at least one DuckDB table.')
       return
     }
     setDuckDbBusy('import')
@@ -182,7 +182,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
       const imported = await waitForDuckDbImport(job.job_id)
       onImported(imported)
       onClose()
-      toast.success(`Imported ${imported.length} DuckDB relation(s).`)
+      toast.success(`Imported ${imported.length} DuckDB table(s).`)
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -324,7 +324,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
             ) : null}
 
             {!staging && !inspecting && !inspectError && !duckDbRelations.length ? (
-              <p className="text-sm text-fg-muted">No importable tables or views were found in this database.</p>
+              <p className="text-sm text-fg-muted">No importable tables were found in this database.</p>
             ) : null}
 
             {duckDbRelations.length ? (
@@ -376,8 +376,8 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
                   </div>
                 ) : null}
                 <Input
-                  aria-label="Search DuckDB tables and views"
-                  placeholder="Search name or type…"
+                  aria-label="Search DuckDB tables"
+                  placeholder="Search table names…"
                   value={search}
                   disabled={busy}
                   onChange={(e) => setSearch(e.target.value)}
@@ -400,7 +400,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
                       : 'Select all shown'}
                   </Button>
                   <span className="text-[10px] text-fg-muted">
-                    {filteredRelations.length} of {duckDbRelations.length} relation(s)
+                    {filteredRelations.length} of {duckDbRelations.length} table(s)
                   </span>
                 </div>
               </>
@@ -422,7 +422,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
                   <thead className="sticky top-0 z-10 bg-surface-2 text-fg-muted">
                     <tr>
                       <th className="px-2 py-2"> </th>
-                      <th className="max-w-0 px-2 py-2 font-medium">Relation</th>
+                      <th className="max-w-0 px-2 py-2 font-medium">Table</th>
                       <th className="px-2 py-2 font-medium">Type</th>
                       <th className="px-2 py-2 font-medium">Rows</th>
                       <th className="max-w-0 px-2 py-2 font-medium">Alias</th>
@@ -447,7 +447,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
             ) : null}
 
             {duckDbRelations.length && !filteredRelations.length && hasActiveFilters ? (
-              <p className="shrink-0 text-sm text-fg-muted">No relations match the current filters.</p>
+              <p className="shrink-0 text-sm text-fg-muted">No tables match the current filters.</p>
             ) : null}
           </div>
         </div>

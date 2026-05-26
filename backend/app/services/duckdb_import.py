@@ -1,4 +1,4 @@
-"""Inspect and snapshot relations from an external local DuckDB database."""
+"""Inspect and snapshot tables from an external local DuckDB database."""
 
 from __future__ import annotations
 
@@ -246,6 +246,34 @@ def _relation_expr(schema_name: str, relation_name: str) -> str:
     return f"{_quote_ident(schema_name)}.{_quote_ident(relation_name)}"
 
 
+def _relation_is_base_table(
+    con: duckdb.DuckDBPyConnection,
+    *,
+    schema_name: str,
+    relation_name: str,
+) -> bool:
+    row = con.execute(
+        """
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = ?
+          AND table_name = ?
+          AND table_type = 'BASE TABLE'
+        LIMIT 1
+        """,
+        [schema_name, relation_name],
+    ).fetchone()
+    return row is not None
+
+
+def _relation_not_importable_error() -> AppError:
+    return AppError(
+        status_code=400,
+        code=CODES.BAD_REQUEST,
+        message="Selected DuckDB relation is not available for import.",
+    )
+
+
 def _relation_row_count(
     con: duckdb.DuckDBPyConnection,
     *,
@@ -279,6 +307,8 @@ def count_duckdb_relation(
             message="DuckDB file could not be opened.",
         ) from exc
     try:
+        if not _relation_is_base_table(con, schema_name=schema_name, relation_name=relation_name):
+            raise _relation_not_importable_error()
         return _relation_row_count(
             con,
             schema_name=schema_name,
@@ -313,7 +343,7 @@ def inspect_duckdb_relations(
             LEFT JOIN information_schema.columns c
               ON c.table_schema = t.table_schema
              AND c.table_name = t.table_name
-            WHERE t.table_type IN ('BASE TABLE', 'VIEW')
+            WHERE t.table_type = 'BASE TABLE'
               AND lower(t.table_schema) NOT IN ('information_schema', 'pg_catalog')
               AND lower(t.table_schema) NOT LIKE 'duckdb_%'
             GROUP BY t.table_schema, t.table_name, t.table_type
@@ -321,8 +351,7 @@ def inspect_duckdb_relations(
             """
         ).fetchall()
         out: list[DuckDbRelationSummary] = []
-        for schema_name, name, table_type, column_count in rows:
-            rel_type = "view" if str(table_type).upper() == "VIEW" else "table"
+        for schema_name, name, _table_type, column_count in rows:
             row_count: int | None = None
             if include_row_counts:
                 row_count = _relation_row_count(
@@ -335,7 +364,7 @@ def inspect_duckdb_relations(
                 DuckDbRelationSummary(
                     schema_name=str(schema_name),
                     name=str(name),
-                    type=rel_type,
+                    type="table",
                     column_count=int(column_count or 0),
                     row_count=row_count,
                 )
@@ -423,7 +452,7 @@ def import_duckdb_relations(
     cancel_requested: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     if not relations:
-        raise DuckDbImportError("Select at least one DuckDB relation to import.")
+        raise DuckDbImportError("Select at least one DuckDB table to import.")
 
     available = inspect_duckdb_relations(source_path, settings=settings, include_row_counts=False)
     _validate_requested_relations(available, relations)

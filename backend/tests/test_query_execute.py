@@ -76,6 +76,21 @@ def test_execute_rejects_nested_file_read_function(registry_with_view: DatasetRe
     assert "forbidden file-reading" in out.error
 
 
+def test_execute_rejects_duckdb_dynamic_and_metadata_functions(
+    registry_with_view: DatasetRegistry,
+) -> None:
+    vw = next(iter(registry_with_view.list_all())).view_name
+    for sql in [
+        f"SELECT * FROM {vw}, query('SELECT * FROM read_csv_auto(''secret.csv'')')",
+        f"SELECT * FROM {vw}, query_table('dcc_datasets')",
+        f"SELECT current_setting('temp_directory') FROM {vw}",
+        f"SELECT * FROM {vw}, duckdb_settings()",
+    ]:
+        out = execute_query(registry_with_view, Settings(), QueryRequest(sql=sql))
+        assert out.error
+        assert "forbidden DuckDB system" in out.error
+
+
 def test_execute_insert_forbidden(registry_with_view: DatasetRegistry) -> None:
     vw = next(iter(registry_with_view.list_all())).view_name
     out = execute_query(

@@ -110,6 +110,14 @@ def test_extract_cte_names_ignores_non_with_sql() -> None:
         ("UPDATE v_ds_001 SET a=1", "forbidden"),
         ("PRAGMA table_info('x')", "forbidden"),
         ("SELECT * FROM read_csv_auto('x.csv')", "forbidden"),
+        ("SELECT * FROM real, query('SELECT * FROM read_csv_auto(''x.csv'')')", "forbidden"),
+        ("SELECT * FROM real, query_table('dcc_datasets')", "forbidden"),
+        ("SELECT current_setting('temp_directory') FROM real", "forbidden"),
+        ("SELECT getenv('HOME') FROM real", "forbidden"),
+        ("SELECT * FROM real, duckdb_databases()", "forbidden"),
+        ("SELECT * FROM real, duckdb_settings()", "forbidden"),
+        ("SELECT * FROM real, duckdb_secrets()", "forbidden"),
+        ("SELECT * FROM real, pragma_database_list()", "forbidden"),
         ("EXPLAIN SELECT 1", "SELECT"),
     ],
 )
@@ -202,6 +210,11 @@ def test_validate_readonly_ast_rejects_file_function_directly() -> None:
     assert err and "file-reading" in err and not refs and not ctes
 
 
+def test_validate_readonly_ast_rejects_quoted_duckdb_function_directly() -> None:
+    err, refs, ctes = _validate_readonly_ast('SELECT "duckdb_databases"()')
+    assert err and "DuckDB system" in err and not refs and not ctes
+
+
 def test_ast_function_name_reads_anonymous_function() -> None:
     tree = sqlglot.parse_one("SELECT custom_func(x) FROM real", read="duckdb")
     fn = next(tree.find_all(exp.Anonymous))
@@ -215,3 +228,12 @@ def test_validate_workspace_sql_forbidden_words_in_comments_and_strings() -> Non
     )
     assert err is None
     assert norm == "SELECT 'DROP TABLE nope' AS note FROM real"
+
+
+def test_validate_workspace_sql_allows_common_safe_functions() -> None:
+    err, norm = validate_workspace_sql(
+        "SELECT COUNT(*) AS n, LOWER(CAST(MAX(a) AS VARCHAR)) AS m FROM real",
+        {"real"},
+    )
+    assert err is None
+    assert norm is not None

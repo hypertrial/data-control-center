@@ -100,7 +100,7 @@ describe('DatasetSidebar', () => {
     })
     vi.mocked(api.inspectDuckDb).mockResolvedValue([
       { schema: 'main', name: 'orders', type: 'table', column_count: 2, row_count: 2 },
-      { schema: 'main', name: 'large_orders', type: 'view', column_count: 2, row_count: 1 },
+      { schema: 'main', name: 'refunds', type: 'table', column_count: 2, row_count: 1 },
     ])
     vi.mocked(api.importDuckDbRelations).mockResolvedValue({ job_id: 'job_import', status: 'queued' })
     vi.mocked(api.waitForJob).mockResolvedValue({
@@ -377,7 +377,7 @@ describe('DatasetSidebar', () => {
       ]),
     )
     await waitFor(() => expect(api.waitForJob).toHaveBeenCalledWith('job_import', { timeoutMs: 600_000 }))
-    expect(toastMock.success).toHaveBeenCalledWith('Imported 1 DuckDB relation(s).')
+    expect(toastMock.success).toHaveBeenCalledWith('Imported 1 DuckDB table(s).')
   })
 
   it('selects and clears all inspected DuckDB relations', async () => {
@@ -389,10 +389,10 @@ describe('DatasetSidebar', () => {
 
     await user.click(screen.getByRole('button', { name: 'Select all shown' }))
     expect(screen.getByLabelText('Select main.orders')).toBeChecked()
-    expect(screen.getByLabelText('Select main.large_orders')).toBeChecked()
+    expect(screen.getByLabelText('Select main.refunds')).toBeChecked()
     await user.click(screen.getByRole('button', { name: 'Clear selection' }))
     expect(screen.getByLabelText('Select main.orders')).not.toBeChecked()
-    expect(screen.getByLabelText('Select main.large_orders')).not.toBeChecked()
+    expect(screen.getByLabelText('Select main.refunds')).not.toBeChecked()
   })
 
   it('shows collapsed sidebar upload control', async () => {
@@ -447,7 +447,7 @@ describe('DatasetSidebar', () => {
 
     await openDuckDbImport(user)
     await user.click(screen.getByRole('button', { name: /^Import\s*$/ }))
-    expect(toastMock.error).toHaveBeenCalledWith('Select at least one DuckDB table or view.')
+    expect(toastMock.error).toHaveBeenCalledWith('Select at least one DuckDB table.')
   })
 
   it('shows DuckDB inspect errors', async () => {
