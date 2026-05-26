@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ApiRequestError } from '@/api/client'
-import { useDatasetProfile } from '@/hooks/useDatasetProfile'
+import { resetDatasetProfileJobStateForTests, useDatasetProfile } from '@/hooks/useDatasetProfile'
 import { mkProfile } from '@/test/profileFixtures'
 
 const h = vi.hoisted(() => ({
@@ -34,6 +34,7 @@ function wrapper({ children }: { children: React.ReactNode }) {
 
 describe('useDatasetProfile', () => {
   beforeEach(() => {
+    resetDatasetProfileJobStateForTests()
     vi.clearAllMocks()
     h.fetchDatasetProfileOnce.mockResolvedValue(mkProfile())
     h.getJob.mockResolvedValue({ job_id: 'j1', status: 'completed', kind: 'profile_refresh' })
@@ -67,6 +68,20 @@ describe('useDatasetProfile', () => {
     )
   })
 
+  it('keeps recently loaded profiles fresh across quick remounts', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const localWrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    )
+
+    const first = renderHook(() => useDatasetProfile('ds_1'), { wrapper: localWrapper })
+    await waitFor(() => expect(first.result.current.data).toBeDefined())
+    first.unmount()
+    renderHook(() => useDatasetProfile('ds_1'), { wrapper: localWrapper })
+
+    expect(h.fetchDatasetProfileOnce).toHaveBeenCalledTimes(1)
+  })
+
   it('refresh queues job', async () => {
     const { result } = renderHook(() => useDatasetProfile('ds_1'), { wrapper })
     await waitFor(() => expect(result.current.data).toBeDefined())
@@ -91,6 +106,62 @@ describe('useDatasetProfile', () => {
     await waitFor(() => {
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['profile', 'ds_1'] })
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['datasets'] })
+    })
+  })
+
+  it('does not spam profile refetches when the job is already completed in cache', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const localWrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    )
+    qc.setQueryData(['job', 'j-done'], {
+      job_id: 'j-done',
+      status: 'completed',
+      kind: 'dataset_prepare',
+    })
+    h.fetchDatasetProfileOnce
+      .mockRejectedValueOnce(
+        new ApiRequestError('Profiling', 'PROFILE_NOT_READY', { job_id: 'j-done' }),
+      )
+      .mockResolvedValue(mkProfile())
+
+    renderHook(
+      () => {
+        useDatasetProfile('ds_1')
+        useDatasetProfile('ds_1')
+      },
+      { wrapper: localWrapper },
+    )
+
+    await waitFor(() => expect(h.fetchDatasetProfileOnce.mock.calls.length).toBeGreaterThanOrEqual(2))
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(h.fetchDatasetProfileOnce.mock.calls.length).toBeLessThanOrEqual(3)
+  })
+
+  it('deduplicates completed job invalidations across profile consumers', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidateQueries = vi.spyOn(qc, 'invalidateQueries')
+    const localWrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    )
+    h.fetchDatasetProfileOnce.mockRejectedValue(
+      new ApiRequestError('Profiling', 'PROFILE_NOT_READY', { job_id: 'j-shared-complete' }),
+    )
+    h.getJob.mockResolvedValue({ job_id: 'j-shared-complete', status: 'completed', kind: 'dataset_prepare' })
+
+    renderHook(
+      () => {
+        useDatasetProfile('ds_1')
+        useDatasetProfile('ds_1')
+      },
+      { wrapper: localWrapper },
+    )
+
+    await waitFor(() => expect(h.getJob).toHaveBeenCalled())
+    await waitFor(() => {
+      expect(
+        invalidateQueries.mock.calls.filter(([arg]) => JSON.stringify(arg) === JSON.stringify({ queryKey: ['datasets'] })),
+      ).toHaveLength(1)
     })
   })
 

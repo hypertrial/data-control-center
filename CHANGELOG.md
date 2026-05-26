@@ -8,9 +8,12 @@ stable release. Maintainer tagging steps: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-05-26
+
 ### Fixed
 
 - GitHub Actions CI installs `python3-tk` on Ubuntu and DuckDB picker tests mock `native_pick_available` so backend jobs pass on headless Linux runners.
+- `useDatasetProfile` no longer disables the profile query while polling prepare jobs, deduplicates completion invalidations per dataset/job, and reuses already-completed jobs from cache—fixing runaway `/profile` requests after DuckDB import when multiple UI surfaces mount the hook.
 
 ## [1.1.0] - 2026-05-25
 

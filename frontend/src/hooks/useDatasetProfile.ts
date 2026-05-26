@@ -1,7 +1,34 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { ApiRequestError, api, nextJobPollIntervalMs } from '@/api/client'
 import type { DatasetProfile } from '@/api/types'
+import type { JobDetail } from '@/api/types'
+
+const PROFILE_STALE_MS = 30_000
+const handledProfileCompletions = new Set<string>()
+
+function completionKey(datasetId: string, jobId: string): string {
+  return `${datasetId}\0${jobId}`
+}
+
+function markProfileCompletionHandled(datasetId: string, jobId: string): boolean {
+  const key = completionKey(datasetId, jobId)
+  if (handledProfileCompletions.has(key)) return false
+  handledProfileCompletions.add(key)
+  return true
+}
+
+function invalidateProfileAfterJob(qc: QueryClient, datasetId: string) {
+  void qc.invalidateQueries({ queryKey: ['profile', datasetId] })
+  void qc.invalidateQueries({ queryKey: ['quality', datasetId] })
+  void qc.invalidateQueries({ queryKey: ['profile-history', datasetId] })
+  void qc.invalidateQueries({ queryKey: ['datasets'] })
+}
+
+/** @internal test helper */
+export function resetDatasetProfileJobStateForTests() {
+  handledProfileCompletions.clear()
+}
 
 export function useDatasetProfile(datasetId: string | null | undefined) {
   const qc = useQueryClient()
@@ -10,17 +37,29 @@ export function useDatasetProfile(datasetId: string | null | undefined) {
   const profileQ = useQuery({
     queryKey: ['profile', datasetId],
     queryFn: ({ signal }) => api.fetchDatasetProfileOnce(datasetId!, { signal }),
-    enabled: !!datasetId && !activeJobId,
+    enabled: !!datasetId,
     retry: false,
+    staleTime: PROFILE_STALE_MS,
   })
 
   useEffect(() => {
     const err = profileQ.error
-    if (err instanceof ApiRequestError && err.code === 'PROFILE_NOT_READY' && err.details?.job_id) {
-      const jobId = String(err.details.job_id)
-      queueMicrotask(() => setActiveJobId(jobId))
+    if (!datasetId) return
+    if (!(err instanceof ApiRequestError && err.code === 'PROFILE_NOT_READY' && err.details?.job_id)) return
+
+    const jobId = String(err.details.job_id)
+    if (handledProfileCompletions.has(completionKey(datasetId, jobId))) return
+
+    const cachedJob = qc.getQueryData<JobDetail>(['job', jobId])
+    if (cachedJob?.status === 'completed') {
+      if (markProfileCompletionHandled(datasetId, jobId)) {
+        invalidateProfileAfterJob(qc, datasetId)
+      }
+      return
     }
-  }, [profileQ.error])
+
+    queueMicrotask(() => setActiveJobId((current) => (current === jobId ? current : jobId)))
+  }, [profileQ.error, datasetId, qc])
 
   useEffect(() => {
     queueMicrotask(() => setActiveJobId(null))
@@ -41,18 +80,17 @@ export function useDatasetProfile(datasetId: string | null | undefined) {
 
   useEffect(() => {
     const status = jobQ.data?.status
-    if (!status) return
+    if (!status || !activeJobId || !datasetId) return
     if (status === 'completed') {
+      if (markProfileCompletionHandled(datasetId, activeJobId)) {
+        invalidateProfileAfterJob(qc, datasetId)
+      }
       queueMicrotask(() => setActiveJobId(null))
-      void qc.invalidateQueries({ queryKey: ['profile', datasetId] })
-      void qc.invalidateQueries({ queryKey: ['quality', datasetId] })
-      void qc.invalidateQueries({ queryKey: ['profile-history', datasetId] })
-      void qc.invalidateQueries({ queryKey: ['datasets'] })
     }
     if (status === 'failed' || status === 'canceled') {
       queueMicrotask(() => setActiveJobId(null))
     }
-  }, [jobQ.data?.status, qc, datasetId])
+  }, [activeJobId, jobQ.data?.status, qc, datasetId])
 
   const jobStatus = jobQ.data?.status
   const jobRunning = jobStatus === 'queued' || jobStatus === 'running'
@@ -60,7 +98,7 @@ export function useDatasetProfile(datasetId: string | null | undefined) {
   const isPendingProfile =
     !profileQ.isError &&
     (profileQ.isLoading ||
-      profileQ.isFetching ||
+      (profileQ.isFetching && !profileQ.data) ||
       (!!activeJobId && (jobRunning || jobQ.isLoading)))
 
   const jobProgress = jobQ.data?.progress
