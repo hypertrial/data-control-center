@@ -6,6 +6,8 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
+import duckdb
+
 from app.services.workspace_stores import JobStore, ProfileStore, SavedQueryStore
 
 
@@ -271,6 +273,21 @@ def test_sample_uses_query_count_when_registry_row_count_missing(client, tmp_pat
     res = client.get(f"/api/datasets/{did}/sample?page=1&page_size=2")
     assert res.status_code == 200
     assert res.json()["total_rows"] == 3
+
+
+def test_sample_rows_timestamptz_parquet(client, tmp_path) -> None:
+    parquet = tmp_path / "timestamptz.parquet"
+    escaped = str(parquet).replace("'", "''")
+    duckdb.connect().execute(
+        f"COPY (SELECT TIMESTAMPTZ '2026-05-19 02:00:11+02' AS ts) TO '{escaped}' (FORMAT PARQUET)"
+    )
+    did = client.post("/api/datasets/register-file", json={"path": str(parquet)}).json()["dataset_id"]
+    res = client.get(f"/api/datasets/{did}/sample?page=1&page_size=10")
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["rows"]) == 1
+    assert body["columns"] == ["ts"]
+    assert "2026-05-19" in str(body["rows"][0]["ts"])
 
 
 def test_sql_requires_view_reference(client, tmp_path):

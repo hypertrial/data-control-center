@@ -39,6 +39,7 @@ def _sample_rows_http_error(exc: Exception):
                 code=CODES.NOT_FOUND,
                 message="Dataset view is not available",
             )
+        logger.warning("sample_rows duckdb error: %s", exc)
         return to_http_error(
             status_code=400,
             code=CODES.BAD_REQUEST,
