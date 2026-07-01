@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
+import { invalidateActiveDatasetQueries } from '@/hooks/invalidateActiveDatasetQueries'
 import { useUiStore } from '@/store/uiStore'
 
 const SEM_VALUES = new Set([
@@ -34,6 +35,7 @@ function encodeColumnQuality(v: 'all' | 'has_flags' | 'critical_only'): string |
  * and auto-selects the first dataset when the workspace has data but the URL omits `ds`.
  */
 export function UiUrlSync() {
+  const qc = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const pathname = useLocation().pathname
   const dq = useQuery({ queryKey: ['datasets'], queryFn: api.listDatasets })
@@ -51,6 +53,11 @@ export function UiUrlSync() {
   const setColumnQuality = useUiStore((s) => s.setColumnQualityFilter)
   const setSelectedColumn = useUiStore((s) => s.setSelectedColumn)
   const setDrawerOpen = useUiStore((s) => s.setColumnDrawerOpen)
+
+  useEffect(() => {
+    if (!activeId) return
+    invalidateActiveDatasetQueries(qc, activeId)
+  }, [activeId, qc])
 
   useEffect(() => {
     if (dq.isLoading) return

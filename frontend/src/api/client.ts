@@ -29,14 +29,27 @@ import type {
 
 const API = '/api'
 const LOCAL_TOKEN_HEADER = 'X-DCC-Local-Token'
+const DEFAULT_FETCH_CREDENTIALS: RequestCredentials = 'include'
 
 let localSessionToken: string | null = null
 let localSessionPromise: Promise<string> | null = null
 
+function mergeFetchInit(init: RequestInit = {}): RequestInit {
+  return {
+    ...init,
+    credentials: init.credentials ?? DEFAULT_FETCH_CREDENTIALS,
+  }
+}
+
+export function clearLocalSessionCache(): void {
+  localSessionToken = null
+  localSessionPromise = null
+}
+
 async function getLocalSessionToken(): Promise<string> {
   if (localSessionToken) return localSessionToken
   if (!localSessionPromise) {
-    localSessionPromise = fetch(`${API}/local-session`)
+    localSessionPromise = fetch(`${API}/local-session`, mergeFetchInit())
       .then(async (r) => {
         if (!r.ok) throw new Error(await readApiError(r))
         return r.json() as Promise<{ token?: string }>
@@ -53,25 +66,35 @@ async function getLocalSessionToken(): Promise<string> {
   return localSessionPromise
 }
 
+/** Bootstrap check: fetch local session before protected API calls. */
+export async function validateLocalSession(): Promise<void> {
+  try {
+    await getLocalSessionToken()
+  } catch (err) {
+    clearLocalSessionCache()
+    throw err
+  }
+}
+
 function withTokenHeader(init: RequestInit, token: string): RequestInit {
-  const headers = new Headers(init.headers)
+  const merged = mergeFetchInit(init)
+  const headers = new Headers(merged.headers)
   if (token) headers.set(LOCAL_TOKEN_HEADER, token)
-  return { ...init, headers }
+  return { ...merged, headers }
 }
 
 async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const token = await getLocalSessionToken()
   const res = await fetch(input, withTokenHeader(init, token))
   if (res.status !== 403 || !token) return res
-  localSessionToken = null
+  clearLocalSessionCache()
   const refreshed = await getLocalSessionToken()
   if (!refreshed || refreshed === token) return res
   return fetch(input, withTokenHeader(init, refreshed))
 }
 
 export function resetLocalSessionTokenForTests(): void {
-  localSessionToken = null
-  localSessionPromise = null
+  clearLocalSessionCache()
 }
 
 export function setLocalSessionTokenForTests(token: string): void {
@@ -227,7 +250,7 @@ async function fetchDatasetProfile(datasetId: string, opts?: JobPollOptions): Pr
 }
 
 export const api = {
-  health: () => handle<HealthResponse>(fetch(`${API}/health`)),
+  health: () => handle<HealthResponse>(fetch(`${API}/health`, mergeFetchInit())),
 
   listLlmModels: () => handle<LlmModelsResponse>(apiFetch(`${API}/llm/models`)),
 

@@ -61,7 +61,7 @@ describe('api client', () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonOk(body))
     vi.stubGlobal('fetch', fetchMock)
     await expect(api.health()).resolves.toEqual(body)
-    expect(fetchMock).toHaveBeenCalledWith('/api/health')
+    expect(fetchMock).toHaveBeenCalledWith('/api/health', { credentials: 'include' })
   })
 
   it('listLlmModels calls /api/llm/models', async () => {
@@ -500,6 +500,7 @@ describe('api client', () => {
     vi.stubGlobal('fetch', fetchMock)
     await api.refreshProfile('ds_1')
     expect(fetchMock).toHaveBeenCalledWith('/api/datasets/ds_1/profile/refresh', {
+      credentials: 'include',
       headers: expect.any(Headers),
       method: 'POST',
     })
