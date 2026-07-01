@@ -87,6 +87,7 @@ describe('DatasetSidebar', () => {
       upload_soft_max_bytes: 1024 * 1024 * 1024,
       inspect_include_row_counts_default: false,
       native_pick_enabled: true,
+      view_import_enabled: true,
     })
     vi.mocked(api.pickLocalDuckDb).mockResolvedValue({
       source_id: 'loc_sidebar',
@@ -377,7 +378,7 @@ describe('DatasetSidebar', () => {
       ]),
     )
     await waitFor(() => expect(api.waitForJob).toHaveBeenCalledWith('job_import', { timeoutMs: 600_000 }))
-    expect(toastMock.success).toHaveBeenCalledWith('Imported 1 DuckDB table(s).')
+    expect(toastMock.success).toHaveBeenCalledWith('Imported 1 DuckDB relation(s).')
   })
 
   it('selects and clears all inspected DuckDB relations', async () => {
@@ -447,7 +448,7 @@ describe('DatasetSidebar', () => {
 
     await openDuckDbImport(user)
     await user.click(screen.getByRole('button', { name: /^Import\s*$/ }))
-    expect(toastMock.error).toHaveBeenCalledWith('Select at least one DuckDB table.')
+    expect(toastMock.error).toHaveBeenCalledWith('Select at least one DuckDB relation.')
   })
 
   it('shows DuckDB inspect errors', async () => {

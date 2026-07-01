@@ -8,6 +8,10 @@ stable release. Maintainer tagging steps: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## [Unreleased]
 
+### Added
+
+- DuckDB **view import** restored: inspect and snapshot import now lists views alongside tables. Export runs with DuckDB **`enable_external_access=false`** (and **`allowed_directories`** for the snapshot output path) so views that only reference in-catalog data import correctly while definitions that read external files, attach other databases, or access the network are blocked. Disable with **`DCC_ENABLE_DUCKDB_VIEW_IMPORT=false`** for table-only mode.
+
 ### Fixed
 
 - Frontend dependencies (`vite`, `vitest`/`@vitest/coverage-v8`, `echarts`, `react-router`/`react-router-dom`, `esbuild`, `ws`, `@babel/core`) upgraded to patched releases, resolving all `npm audit` findings (2 critical, 2 high, 1 moderate, 4 low).

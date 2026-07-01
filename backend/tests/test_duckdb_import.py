@@ -78,18 +78,20 @@ def _stage_upload(tmp_path: Path, source: Path, *, filename: str | None = None) 
     return upload_id
 
 
-def test_inspect_lists_tables_only_metadata_by_default(tmp_path: Path) -> None:
+def test_inspect_lists_importable_relations_metadata_by_default(tmp_path: Path) -> None:
     source = tmp_path / "source.duckdb"
     _source_db(source)
 
     rows = inspect_duckdb_relations(source, settings=_settings(tmp_path))
 
     by_name = {row.name: row for row in rows}
-    assert set(by_name) == {"orders"}
+    assert set(by_name) == {"orders", "high_value"}
     assert by_name["orders"].schema_name == "main"
     assert by_name["orders"].type == "table"
     assert by_name["orders"].column_count == 2
     assert by_name["orders"].row_count is None
+    assert by_name["high_value"].type == "view"
+    assert by_name["high_value"].row_count is None
 
 
 def test_inspect_include_row_counts(tmp_path: Path) -> None:
@@ -97,8 +99,9 @@ def test_inspect_include_row_counts(tmp_path: Path) -> None:
     _source_db(source)
     rows = inspect_duckdb_relations(source, settings=_settings(tmp_path), include_row_counts=True)
     by_name = {row.name: row for row in rows}
-    assert set(by_name) == {"orders"}
+    assert set(by_name) == {"orders", "high_value"}
     assert by_name["orders"].row_count == 2
+    assert by_name["high_value"].row_count == 1
 
 
 def test_count_duckdb_relation(tmp_path: Path) -> None:
@@ -108,12 +111,11 @@ def test_count_duckdb_relation(tmp_path: Path) -> None:
     assert count_duckdb_relation(source, schema_name="main", relation_name="orders", settings=settings) == 2
 
 
-def test_count_duckdb_relation_rejects_view(tmp_path: Path) -> None:
+def test_count_duckdb_relation_for_view_returns_count(tmp_path: Path) -> None:
     source = tmp_path / "source.duckdb"
     _source_db(source)
     settings = _settings(tmp_path)
-    with pytest.raises(AppError, match="not available"):
-        count_duckdb_relation(source, schema_name="main", relation_name="high_value", settings=settings)
+    assert count_duckdb_relation(source, schema_name="main", relation_name="high_value", settings=settings) == 1
 
 
 def test_pick_and_register_local_duckdb(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -594,7 +596,7 @@ def test_import_table_snapshots_to_app_owned_parquet(tmp_path: Path) -> None:
         ws.close()
 
 
-def test_import_view_with_catalog_qualified_definition_is_rejected(tmp_path: Path) -> None:
+def test_import_view_with_catalog_qualified_definition_succeeds(tmp_path: Path) -> None:
     source = tmp_path / "warehouse.duckdb"
     con = duckdb.connect(str(source))
     try:
@@ -608,15 +610,20 @@ def test_import_view_with_catalog_qualified_definition_is_rejected(tmp_path: Pat
     ws = Workspace(settings)
     try:
         reg = DatasetRegistry(ws, settings)
-        with pytest.raises(DuckDbImportError, match="not available"):
-            import_duckdb_relations(
-                source_path=source,
-                relations=[DuckDbRelationRef(schema="s", name="v")],
-                registry=reg,
-                settings=settings,
-                queue_prepare=lambda dataset_id: "job",
-            )
-        assert reg.list_all() == []
+        result = import_duckdb_relations(
+            source_path=source,
+            relations=[DuckDbRelationRef(schema="s", name="v")],
+            registry=reg,
+            settings=settings,
+            queue_prepare=lambda dataset_id: "job",
+        )
+        assert len(result["datasets"]) == 1
+        ds = reg.get(result["datasets"][0]["dataset_id"])
+        assert ds is not None
+        rows = duckdb.connect(":memory:").execute(
+            f"SELECT COUNT(*) FROM read_parquet('{str(ds.source_path).replace(chr(39), chr(39)*2)}')"
+        ).fetchone()[0]
+        assert rows == 1
     finally:
         ws.close()
 
@@ -681,14 +688,15 @@ def test_malicious_duckdb_view_reading_local_file_is_not_importable(tmp_path: Pa
 
     settings = _settings(tmp_path)
     rows = inspect_duckdb_relations(source, settings=settings)
-    assert [row.name for row in rows] == ["safe_orders"]
-    with pytest.raises(AppError, match="not available"):
-        count_duckdb_relation(source, schema_name="main", relation_name="steal", settings=settings)
+    by_name = {row.name: row for row in rows}
+    assert set(by_name) == {"safe_orders", "steal"}
+    assert by_name["steal"].type == "view"
+    assert count_duckdb_relation(source, schema_name="main", relation_name="steal", settings=settings) is None
 
     ws = Workspace(settings)
     try:
         reg = DatasetRegistry(ws, settings)
-        with pytest.raises(DuckDbImportError, match="not available"):
+        with pytest.raises(DuckDbImportError, match="could not be exported"):
             import_duckdb_relations(
                 source_path=source,
                 relations=[DuckDbRelationRef(schema="main", name="steal")],
@@ -699,6 +707,134 @@ def test_malicious_duckdb_view_reading_local_file_is_not_importable(tmp_path: Pa
         assert reg.list_all() == []
     finally:
         ws.close()
+
+
+def test_import_view_snapshots_to_parquet(tmp_path: Path) -> None:
+    source = tmp_path / "sales.duckdb"
+    _source_db(source)
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    try:
+        reg = DatasetRegistry(ws, settings)
+        result = import_duckdb_relations(
+            source_path=source,
+            relations=[DuckDbRelationRef(schema="main", name="high_value")],
+            registry=reg,
+            settings=settings,
+            queue_prepare=lambda dataset_id: "job",
+        )
+        ds = reg.get(result["datasets"][0]["dataset_id"])
+        assert ds is not None
+        escaped = str(ds.source_path).replace("'", "''")
+        rows = duckdb.connect(":memory:").execute(
+            f"SELECT id, amount FROM read_parquet('{escaped}') ORDER BY id"
+        ).fetchall()
+        assert rows == [(2, 20.0)]
+    finally:
+        ws.close()
+
+
+def test_import_nested_views_resolve_through_sandbox(tmp_path: Path) -> None:
+    source = tmp_path / "layered.duckdb"
+    con = duckdb.connect(str(source))
+    try:
+        con.execute("CREATE TABLE base AS SELECT 1 AS id, 'a' AS label")
+        con.execute("CREATE VIEW mid AS SELECT * FROM base WHERE id = 1")
+        con.execute("CREATE VIEW top AS SELECT id, upper(label) AS label FROM mid")
+    finally:
+        con.close()
+
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    try:
+        reg = DatasetRegistry(ws, settings)
+        result = import_duckdb_relations(
+            source_path=source,
+            relations=[DuckDbRelationRef(schema="main", name="top")],
+            registry=reg,
+            settings=settings,
+            queue_prepare=lambda dataset_id: "job",
+        )
+        ds = reg.get(result["datasets"][0]["dataset_id"])
+        assert ds is not None
+        escaped = str(ds.source_path).replace("'", "''")
+        rows = duckdb.connect(":memory:").execute(
+            f"SELECT * FROM read_parquet('{escaped}')"
+        ).fetchall()
+        assert rows == [(1, "A")]
+    finally:
+        ws.close()
+
+
+def test_view_import_disabled_by_settings(tmp_path: Path) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    settings = _settings(tmp_path, enable_duckdb_view_import=False)
+
+    rows = inspect_duckdb_relations(source, settings=settings)
+    assert {row.name for row in rows} == {"orders"}
+
+    with pytest.raises(AppError, match="not available"):
+        count_duckdb_relation(source, schema_name="main", relation_name="high_value", settings=settings)
+
+    ws = Workspace(settings)
+    try:
+        reg = DatasetRegistry(ws, settings)
+        with pytest.raises(DuckDbImportError, match="not available"):
+            import_duckdb_relations(
+                source_path=source,
+                relations=[DuckDbRelationRef(schema="main", name="high_value")],
+                registry=reg,
+                settings=settings,
+                queue_prepare=lambda dataset_id: "job",
+            )
+        assert reg.list_all() == []
+    finally:
+        ws.close()
+
+
+def test_import_rejects_view_at_snapshot_when_view_import_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.duckdb"
+    _source_db(source)
+    settings = _settings(tmp_path, enable_duckdb_view_import=False)
+    from app.models.api import DuckDbRelationSummary
+
+    monkeypatch.setattr(
+        "app.services.duckdb_import.inspect_duckdb_relations",
+        lambda *_args, **_kwargs: [
+            DuckDbRelationSummary(
+                schema_name="main",
+                name="high_value",
+                type="view",
+                column_count=2,
+                row_count=1,
+            )
+        ],
+    )
+
+    ws = Workspace(settings)
+    try:
+        reg = DatasetRegistry(ws, settings)
+        with pytest.raises(AppError, match="not available"):
+            import_duckdb_relations(
+                source_path=source,
+                relations=[DuckDbRelationRef(schema="main", name="high_value")],
+                registry=reg,
+                settings=settings,
+                queue_prepare=lambda dataset_id: "job",
+            )
+        assert reg.list_all() == []
+    finally:
+        ws.close()
+
+
+def test_duckdb_capabilities_reports_view_import_enabled(client) -> None:
+    r = client.get("/api/datasets/duckdb/capabilities")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["view_import_enabled"] is True
 
 
 def test_empty_import_request_fails(tmp_path: Path) -> None:

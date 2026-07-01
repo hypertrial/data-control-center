@@ -32,8 +32,8 @@ function wrap(ui: React.ReactElement) {
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
 }
 
-function relation(name: string, schema = 'main'): DuckDbRelationSummary {
-  return { schema, name, type: 'table', column_count: 1, row_count: null }
+function relation(name: string, schema = 'main', type: 'table' | 'view' = 'table'): DuckDbRelationSummary {
+  return { schema, name, type, column_count: 1, row_count: null }
 }
 
 describe('DuckDbImportDialog', () => {
@@ -153,7 +153,7 @@ describe('DuckDbImportDialog', () => {
     wrap(
       <DuckDbImportDialog session={{ sourceId: 'up_1', filename: 'big.duckdb' }} onClose={vi.fn()} onImported={vi.fn()} />,
     )
-    await waitFor(() => expect(screen.getByText(/101 of 101 table/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/101 of 101 relation/)).toBeInTheDocument())
     expect(screen.getByText('table_0')).toBeInTheDocument()
   })
 
@@ -177,7 +177,7 @@ describe('DuckDbImportDialog', () => {
     )
     await waitFor(() => expect(screen.getByText('orders')).toBeInTheDocument())
     await user.type(screen.getByLabelText('Search DuckDB tables'), 'zzznomatch')
-    expect(screen.getByText(/No tables match the current filters/)).toBeInTheDocument()
+    expect(screen.getByText(/No relations match the current filters/)).toBeInTheDocument()
   })
 
   it('filters relations by schema', async () => {
@@ -193,7 +193,7 @@ describe('DuckDbImportDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Filter by schema analytics' }))
     expect(screen.queryByText('orders')).not.toBeInTheDocument()
     expect(screen.getByText('facts')).toBeInTheDocument()
-    expect(screen.getByText(/1 of 2 table/)).toBeInTheDocument()
+    expect(screen.getByText(/1 of 2 relation/)).toBeInTheDocument()
   })
 
   it('combines schema and search filters', async () => {
@@ -237,6 +237,19 @@ describe('DuckDbImportDialog', () => {
     await waitFor(() => expect(screen.getByLabelText('Alias for main.orders')).toBeInTheDocument())
     await user.click(screen.getByLabelText('Alias for main.orders'))
     expect(screen.getByLabelText('Select main.orders')).not.toBeChecked()
+  })
+
+  it('shows view snapshot hint when catalog includes views', async () => {
+    vi.mocked(api.inspectDuckDb).mockResolvedValue([
+      relation('orders', 'main', 'table'),
+      relation('high_value', 'main', 'view'),
+    ])
+    wrap(
+      <DuckDbImportDialog session={{ sourceId: 'up_1', filename: 'source.duckdb' }} onClose={vi.fn()} onImported={vi.fn()} />,
+    )
+    await waitFor(() => expect(screen.getByText('high_value')).toBeInTheDocument())
+    expect(screen.getByText(/Views import as point-in-time snapshots/)).toBeInTheDocument()
+    expect(screen.getByText('view')).toBeInTheDocument()
   })
 
   it('selects all filtered relations', async () => {

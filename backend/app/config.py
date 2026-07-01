@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     duckdb_inspect_include_row_counts: bool = False
     duckdb_local_open_ttl_hours: float = Field(default=24.0, ge=0.0)
     duckdb_import_timeout_seconds: float = Field(default=300.0, ge=5.0, le=3600.0)
+    enable_duckdb_view_import: bool = True
 
     # Filesystem security boundaries.
     allow_arbitrary_registration_paths: bool = False

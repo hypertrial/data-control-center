@@ -1,4 +1,4 @@
-"""Inspect and snapshot tables from an external local DuckDB database."""
+"""Inspect and snapshot tables and views from an external local DuckDB database."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from app.services.registry import (
     slugify_file_stem,
 )
 from app.services.upload_validation import validate_duckdb_upload
+from app.telemetry import emit
 
 DUCKDB_SOURCES_DIR = "duckdb_sources"
 DUCKDB_LOCAL_SOURCES_DIR = "local"
@@ -238,32 +239,59 @@ def _set_timeout(con: duckdb.DuckDBPyConnection, timeout_seconds: float) -> None
             raise
 
 
-def _connect_source(source_path: Path) -> duckdb.DuckDBPyConnection:
-    return duckdb.connect(str(source_path), read_only=True)
+def _connect_source(
+    source_path: Path,
+    *,
+    allowed_dirs: list[Path] | None = None,
+) -> duckdb.DuckDBPyConnection:
+    con = duckdb.connect(str(source_path), read_only=True)
+    if allowed_dirs:
+        con.execute("SET allowed_directories = ?", [[str(d) for d in allowed_dirs]])
+    con.execute("SET enable_external_access = false")
+    return con
 
 
 def _relation_expr(schema_name: str, relation_name: str) -> str:
     return f"{_quote_ident(schema_name)}.{_quote_ident(relation_name)}"
 
 
-def _relation_is_base_table(
+def _relation_table_type(
     con: duckdb.DuckDBPyConnection,
     *,
     schema_name: str,
     relation_name: str,
-) -> bool:
+) -> str | None:
     row = con.execute(
         """
-        SELECT 1
+        SELECT table_type
         FROM information_schema.tables
         WHERE table_schema = ?
           AND table_name = ?
-          AND table_type = 'BASE TABLE'
+          AND table_type IN ('BASE TABLE', 'VIEW')
         LIMIT 1
         """,
         [schema_name, relation_name],
     ).fetchone()
-    return row is not None
+    return str(row[0]).upper() if row else None
+
+
+def _inspect_table_type_filter(settings: Settings) -> str:
+    if settings.enable_duckdb_view_import:
+        return "t.table_type IN ('BASE TABLE', 'VIEW')"
+    return "t.table_type = 'BASE TABLE'"
+
+
+def _ensure_view_import_allowed(
+    con: duckdb.DuckDBPyConnection,
+    *,
+    schema_name: str,
+    relation_name: str,
+    settings: Settings,
+) -> None:
+    if settings.enable_duckdb_view_import:
+        return
+    if _relation_table_type(con, schema_name=schema_name, relation_name=relation_name) == "VIEW":
+        raise _relation_not_importable_error()
 
 
 def _relation_not_importable_error() -> AppError:
@@ -307,8 +335,12 @@ def count_duckdb_relation(
             message="DuckDB file could not be opened.",
         ) from exc
     try:
-        if not _relation_is_base_table(con, schema_name=schema_name, relation_name=relation_name):
-            raise _relation_not_importable_error()
+        _ensure_view_import_allowed(
+            con,
+            schema_name=schema_name,
+            relation_name=relation_name,
+            settings=settings,
+        )
         return _relation_row_count(
             con,
             schema_name=schema_name,
@@ -336,14 +368,15 @@ def inspect_duckdb_relations(
             message="DuckDB file could not be opened.",
         ) from exc
     try:
+        type_filter = _inspect_table_type_filter(settings)
         rows = con.execute(
-            """
+            f"""
             SELECT t.table_schema, t.table_name, t.table_type, COUNT(c.column_name) AS column_count
             FROM information_schema.tables t
             LEFT JOIN information_schema.columns c
               ON c.table_schema = t.table_schema
              AND c.table_name = t.table_name
-            WHERE t.table_type = 'BASE TABLE'
+            WHERE {type_filter}
               AND lower(t.table_schema) NOT IN ('information_schema', 'pg_catalog')
               AND lower(t.table_schema) NOT LIKE 'duckdb_%'
             GROUP BY t.table_schema, t.table_name, t.table_type
@@ -351,7 +384,8 @@ def inspect_duckdb_relations(
             """
         ).fetchall()
         out: list[DuckDbRelationSummary] = []
-        for schema_name, name, _table_type, column_count in rows:
+        for schema_name, name, table_type, column_count in rows:
+            rel_type = "view" if str(table_type).upper() == "VIEW" else "table"
             row_count: int | None = None
             if include_row_counts:
                 row_count = _relation_row_count(
@@ -364,7 +398,7 @@ def inspect_duckdb_relations(
                 DuckDbRelationSummary(
                     schema_name=str(schema_name),
                     name=str(name),
-                    type="table",
+                    type=rel_type,
                     column_count=int(column_count or 0),
                     row_count=row_count,
                 )
@@ -419,7 +453,19 @@ def _snapshot_copy_error_message(exc: BaseException, *, label: str) -> str:
             f"Export timed out for {label}. Try fewer relations or raise "
             "DCC_DUCKDB_IMPORT_TIMEOUT_SECONDS."
         )
+    if "disabled by configuration" in detail or "permission error" in detail:
+        return (
+            f"{label} could not be exported: its definition reads external files, "
+            "attaches another database, or accesses the network, which Data Control "
+            "Center blocks for security. Materialize it as a table in the source "
+            "database, or export it manually."
+        )
     return f"Unable to copy DuckDB relation {label}."
+
+
+def _is_external_access_blocked(exc: BaseException) -> bool:
+    detail = str(exc).lower()
+    return "disabled by configuration" in detail or "permission error" in detail
 
 
 def _snapshot_relation(
@@ -438,6 +484,12 @@ def _snapshot_relation(
         con.execute(sql)
     except Exception as exc:  # noqa: BLE001
         label = (rel.alias or rel.name).strip() or rel.name
+        if _is_external_access_blocked(exc):
+            emit(
+                "security.duckdb_view_export_blocked",
+                schema=rel.schema_name,
+                name=rel.name,
+            )
         raise DuckDbImportError(_snapshot_copy_error_message(exc, label=label)) from exc
 
 
@@ -452,13 +504,14 @@ def import_duckdb_relations(
     cancel_requested: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     if not relations:
-        raise DuckDbImportError("Select at least one DuckDB table to import.")
+        raise DuckDbImportError("Select at least one DuckDB relation to import.")
 
     available = inspect_duckdb_relations(source_path, settings=settings, include_row_counts=False)
     _validate_requested_relations(available, relations)
 
     batch_dir = _upload_root(settings) / "duckdb_imports" / uuid.uuid4().hex[:16]
     batch_dir.mkdir(parents=True, exist_ok=True)
+    batch_dir = batch_dir.resolve()
     copied: list[Path] = []
     registered: list[RegisteredDataset] = []
     taken_paths: set[Path] = set()
@@ -467,8 +520,16 @@ def import_duckdb_relations(
     con: duckdb.DuckDBPyConnection | None = None
     try:
         _check_cancelled(cancel_requested)
-        con = _connect_source(source_path)
+        con = _connect_source(source_path, allowed_dirs=[batch_dir])
         _set_timeout(con, settings.duckdb_import_timeout_seconds)
+        if not settings.enable_duckdb_view_import:
+            for rel in relations:
+                _ensure_view_import_allowed(
+                    con,
+                    schema_name=rel.schema_name,
+                    relation_name=rel.name,
+                    settings=settings,
+                )
         for idx, rel in enumerate(relations):
             _check_cancelled(cancel_requested)
             stem = _export_stem(source_path, rel)
@@ -486,6 +547,10 @@ def import_duckdb_relations(
             if on_progress is not None:
                 on_progress(0.75 + (idx + 1) / max(1, len(snapshots)) * 0.25)
     except DuckDbImportError:
+        cleanup_unregistered_import_files(copied, registered)
+        _cleanup_empty_dir(batch_dir)
+        raise
+    except AppError:
         cleanup_unregistered_import_files(copied, registered)
         _cleanup_empty_dir(batch_dir)
         raise

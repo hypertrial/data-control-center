@@ -76,16 +76,17 @@ DuckDB import supports two source kinds (see **`GET /api/datasets/duckdb/capabil
 | **`POST /api/datasets/duckdb/upload`** | Stage a small **`.duckdb`** copy under **`.dcc_uploads/duckdb_sources/{source_id}/`** |
 | **`POST /api/datasets/duckdb/open-local`** | Register an on-disk **`.duckdb`** path (no copy; gated by **`DCC_ENABLE_DUCKDB_LOCAL_OPEN`**, allowed roots) |
 | **`POST /api/datasets/duckdb/pick-local`** | Native OS file picker → register path (macOS: **`osascript`**; Linux: Tk when available) |
-| **`POST /api/datasets/duckdb/inspect`** | List importable base tables (`source_id`, optional **`include_row_counts`**) |
-| **`POST /api/datasets/duckdb/relation-count`** | Lazy **`COUNT(*)`** for one importable base table |
-| **`POST /api/datasets/duckdb/import`** | Snapshot selected base tables to Parquet under **`.dcc_uploads/duckdb_imports/`** |
+| **`POST /api/datasets/duckdb/inspect`** | List importable tables and views (`source_id`, optional **`include_row_counts`**) |
+| **`POST /api/datasets/duckdb/relation-count`** | Lazy **`COUNT(*)`** for one importable table or view |
+| **`POST /api/datasets/duckdb/import`** | Snapshot selected tables and views to Parquet under **`.dcc_uploads/duckdb_imports/`** |
 
-**`POST /api/datasets/upload`** rejects **`.duckdb`** files (use the DuckDB routes). DuckDB views are not importable; imports are table snapshots, not live links.
+**`POST /api/datasets/upload`** rejects **`.duckdb`** files (use the DuckDB routes). Imports are point-in-time Parquet snapshots, not live links to the source file. View export runs with DuckDB **`enable_external_access=false`** so definitions that read external files or attach other databases are blocked.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | **`DCC_ENABLE_DUCKDB_LOCAL_OPEN`** | `true` | Allow **`open-local`** |
 | **`DCC_ENABLE_DUCKDB_NATIVE_PICK`** | `true` | Allow **`pick-local`** (web UI routes all DuckDB imports through this when local open is enabled) |
+| **`DCC_ENABLE_DUCKDB_VIEW_IMPORT`** | `true` | List and import DuckDB views (set **`false`** for table-only mode) |
 | **`DCC_DUCKDB_UPLOAD_SOFT_MAX_BYTES`** | `536870912` (512 MiB) | Soft limit for **`duckdb/upload`** fallback when native pick is off |
 | **`DCC_DUCKDB_INSPECT_INCLUDE_ROW_COUNTS`** | `false` | Default inspect omits per-table counts |
 | **`DCC_DUCKDB_LOCAL_OPEN_TTL_HOURS`** | `24` | TTL for local-open metadata under **`duckdb_sources/local/`** |

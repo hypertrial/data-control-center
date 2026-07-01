@@ -20,3 +20,11 @@ def test_default_upload_limits_are_two_gib(monkeypatch: pytest.MonkeyPatch) -> N
     settings = Settings()
     assert settings.upload_max_bytes_per_file == _TWO_GIB
     assert settings.upload_max_batch_bytes == _TWO_GIB
+
+
+def test_default_duckdb_view_import_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DCC_ENABLE_DUCKDB_VIEW_IMPORT", raising=False)
+    settings = Settings()
+    assert settings.enable_duckdb_view_import is True
+    assert settings.enable_duckdb_local_open is True
+    assert settings.enable_duckdb_native_pick is True

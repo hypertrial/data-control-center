@@ -23,6 +23,7 @@ const defaultCaps = {
   upload_soft_max_bytes: 1024 * 1024 * 1024,
   inspect_include_row_counts_default: false,
   native_pick_enabled: true,
+  view_import_enabled: true,
 }
 
 function wrapper() {

@@ -46,6 +46,7 @@ export type DuckDbCapabilities = {
   upload_soft_max_bytes: number
   inspect_include_row_counts_default: boolean
   native_pick_enabled: boolean
+  view_import_enabled: boolean
 }
 
 export type DuckDbSourceResponse = {

@@ -134,6 +134,7 @@ def validate_duckdb_upload(path: Path, settings: Settings) -> None:
         except Exception as exc:  # noqa: BLE001
             if "unrecognized configuration parameter" not in str(exc):
                 raise
+        con.execute("SET enable_external_access = false")
         con.execute(
             """
             SELECT 1

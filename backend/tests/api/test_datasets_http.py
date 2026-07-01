@@ -974,6 +974,7 @@ def test_duckdb_capabilities(client) -> None:
     assert "local_open_enabled" in body
     assert body["upload_soft_max_bytes"] > 0
     assert "native_pick_enabled" in body
+    assert body["view_import_enabled"] is True
 
 
 def test_duckdb_pick_local(client, tmp_path, monkeypatch) -> None:
@@ -999,19 +1000,20 @@ def test_duckdb_upload_inspect_and_import_http(client, tmp_path) -> None:
     inspect = client.post("/api/datasets/duckdb/inspect", json={"source_id": source_id})
     assert inspect.status_code == 200, inspect.text
     names = {row["name"]: row for row in inspect.json()}
-    assert "large_orders" not in names
+    assert set(names) == {"orders", "large_orders"}
     assert names["orders"]["schema"] == "main"
     assert names["orders"]["type"] == "table"
     assert names["orders"]["column_count"] == 2
     assert names["orders"]["row_count"] is None
+    assert names["large_orders"]["type"] == "view"
 
     inspect_counts = client.post(
         "/api/datasets/duckdb/inspect",
         json={"source_id": source_id, "include_row_counts": True},
     )
     names2 = {row["name"]: row for row in inspect_counts.json()}
-    assert "large_orders" not in names2
     assert names2["orders"]["row_count"] == 2
+    assert names2["large_orders"]["row_count"] == 1
 
     count_one = client.post(
         "/api/datasets/duckdb/relation-count",
@@ -1024,8 +1026,8 @@ def test_duckdb_upload_inspect_and_import_http(client, tmp_path) -> None:
         "/api/datasets/duckdb/relation-count",
         json={"source_id": source_id, "schema": "main", "name": "large_orders"},
     )
-    assert count_view.status_code == 400
-    assert "not available" in count_view.json()["error"]["message"]
+    assert count_view.status_code == 200
+    assert count_view.json()["row_count"] == 1
 
     started = client.post(
         "/api/datasets/duckdb/import",
@@ -1170,7 +1172,7 @@ def test_duckdb_open_local_inspect_http(client, tmp_path) -> None:
     source_id = body["source_id"]
     inspect = client.post("/api/datasets/duckdb/inspect", json={"source_id": source_id})
     assert inspect.status_code == 200
-    assert {row["name"] for row in inspect.json()} == {"orders"}
+    assert {row["name"] for row in inspect.json()} == {"orders", "large_orders"}
 
 
 def test_duckdb_import_job_failure_is_sanitized(client, tmp_path) -> None:

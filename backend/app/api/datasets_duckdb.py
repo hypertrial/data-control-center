@@ -49,6 +49,7 @@ def duckdb_capabilities(settings: SettingsDep) -> DuckDbCapabilitiesResponse:
         upload_soft_max_bytes=settings.duckdb_upload_soft_max_bytes,
         inspect_include_row_counts_default=settings.duckdb_inspect_include_row_counts,
         native_pick_enabled=settings.enable_duckdb_native_pick and native_pick_available(),
+        view_import_enabled=settings.enable_duckdb_view_import,
     )
 
 

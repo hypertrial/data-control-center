@@ -63,6 +63,7 @@ class DuckDbCapabilitiesResponse(BaseModel):
     upload_soft_max_bytes: int
     inspect_include_row_counts_default: bool
     native_pick_enabled: bool
+    view_import_enabled: bool
 
 
 class DuckDbSourceResponse(BaseModel):

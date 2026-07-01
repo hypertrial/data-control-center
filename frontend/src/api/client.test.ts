@@ -192,6 +192,8 @@ describe('api client', () => {
       local_open_enabled: true,
       upload_soft_max_bytes: 512,
       inspect_include_row_counts_default: false,
+      native_pick_enabled: true,
+      view_import_enabled: true,
     }
     const fetchMock = vi.fn().mockResolvedValue(jsonOk(caps))
     vi.stubGlobal('fetch', fetchMock)

@@ -56,6 +56,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const duckDbRelations = useMemo(() => inspectQ.data ?? [], [inspectQ.data])
+  const hasViews = useMemo(() => duckDbRelations.some((rel) => rel.type === 'view'), [duckDbRelations])
   const inspecting = staging || inspectQ.isFetching
   const inspectError = inspectQ.isError ? (inspectQ.error as Error).message : null
   const busy = inspecting || !!duckDbBusy
@@ -124,7 +125,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
 
   useEffect(() => {
     if (!inspectQ.isSuccess || !session) return
-    toast.success(`Found ${inspectQ.data.length} importable table(s) in ${session.filename}.`)
+    toast.success(`Found ${inspectQ.data.length} importable relation(s) in ${session.filename}.`)
   }, [inspectQ.isSuccess, inspectQ.data, session])
 
   useEffect(() => {
@@ -173,7 +174,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
         return { schema: rel.schema, name: rel.name, alias: alias || null }
       })
     if (!relations.length) {
-      toast.error('Select at least one DuckDB table.')
+      toast.error('Select at least one DuckDB relation.')
       return
     }
     setDuckDbBusy('import')
@@ -182,7 +183,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
       const imported = await waitForDuckDbImport(job.job_id)
       onImported(imported)
       onClose()
-      toast.success(`Imported ${imported.length} DuckDB table(s).`)
+      toast.success(`Imported ${imported.length} DuckDB relation(s).`)
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -323,8 +324,15 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
               <p className="text-sm text-[hsl(var(--status-error))]">{inspectError}</p>
             ) : null}
 
+            {hasViews ? (
+              <p className="text-xs text-fg-muted">
+                Views import as point-in-time snapshots; later changes to the source file do not
+                update imported datasets.
+              </p>
+            ) : null}
+
             {!staging && !inspecting && !inspectError && !duckDbRelations.length ? (
-              <p className="text-sm text-fg-muted">No importable tables were found in this database.</p>
+              <p className="text-sm text-fg-muted">No importable relations were found in this database.</p>
             ) : null}
 
             {duckDbRelations.length ? (
@@ -400,7 +408,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
                       : 'Select all shown'}
                   </Button>
                   <span className="text-[10px] text-fg-muted">
-                    {filteredRelations.length} of {duckDbRelations.length} table(s)
+                    {filteredRelations.length} of {duckDbRelations.length} relation(s)
                   </span>
                 </div>
               </>
@@ -447,7 +455,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
             ) : null}
 
             {duckDbRelations.length && !filteredRelations.length && hasActiveFilters ? (
-              <p className="shrink-0 text-sm text-fg-muted">No tables match the current filters.</p>
+              <p className="shrink-0 text-sm text-fg-muted">No relations match the current filters.</p>
             ) : null}
           </div>
         </div>

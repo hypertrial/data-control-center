@@ -68,7 +68,7 @@ Path-based registration, upload limits, and related **`DCC_*`** settings are doc
 **Uploads and path registration**). Implementation: [`backend/app/services/registry.py`](backend/app/services/registry.py).
 DuckDB relation import uses either app-staged uploads or **open-local** / **pick-local** references
 under allowed registration roots (same **`ensure_registration_allowed`** checks as path registration).
-Inspect/import
-APIs resolve **`source_id`** only (staged upload id or **`loc_*`** metadata); they do not grant SQL users
-permission to run `ATTACH` on arbitrary paths. Local-open metadata is stored under the app upload tree and
+Inspect/import APIs resolve **`source_id`** only (staged upload id or **`loc_*`** metadata); they do not grant SQL users
+permission to run `ATTACH` on arbitrary paths. View snapshot export runs with DuckDB **`enable_external_access=false`**
+(see **`DCC_ENABLE_DUCKDB_VIEW_IMPORT`**). Local-open metadata is stored under the app upload tree and
 expires per **`DCC_DUCKDB_LOCAL_OPEN_TTL_HOURS`**.

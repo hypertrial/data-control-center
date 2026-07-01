@@ -72,10 +72,11 @@ until **`completed`**, then retry.
   pass full file paths to the server. When native pick is unavailable, small databases may still be staged
   via **`POST /api/datasets/duckdb/upload`** (see [`backend/README.md`](../backend/README.md)). The table
   picker loads the catalog quickly (no per-table row counts by default); filter by **schema** (toggle chips),
-  search by name, and use **Load** on a row for row counts. Selected base tables are snapshotted to Parquet under **`.dcc_uploads/duckdb_imports/`**
+  search by name, and use **Load** on a row for row counts. Selected tables and views are snapshotted to Parquet under **`.dcc_uploads/duckdb_imports/`**
   and registered as normal datasets; later changes to the source file do not alter imported snapshots.
-  DuckDB views are not importable.
-  Large table exports can take several minutes; if import fails with a timeout, raise
+  Views that read external files, attach other databases, or access the network are blocked during export.
+  Disable view import entirely with **`DCC_ENABLE_DUCKDB_VIEW_IMPORT=false`** (table-only mode).
+  Large exports can take several minutes; if import fails with a timeout, raise
   **`DCC_DUCKDB_IMPORT_TIMEOUT_SECONDS`** (default 300) in [`backend/README.md`](../backend/README.md#uploads-and-path-registration).
 
 **Manual refresh:** Use **Refresh** in the dataset strip or
