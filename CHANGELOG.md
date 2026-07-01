@@ -8,6 +8,11 @@ stable release. Maintainer tagging steps: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- Frontend dependencies (`vite`, `vitest`/`@vitest/coverage-v8`, `echarts`, `react-router`/`react-router-dom`, `esbuild`, `ws`, `@babel/core`) upgraded to patched releases, resolving all `npm audit` findings (2 critical, 2 high, 1 moderate, 4 low).
+- Vite dev server pre-bundles `@tanstack/react-table`, `echarts`, and `sql-formatter` at startup (`optimizeDeps.include`) so first navigation to the lazy-loaded Columns/Charts/Query pages no longer triggers a mid-session dependency re-optimization that surfaced as `504 (Outdated Optimize Dep)` / "Failed to fetch dynamically imported module" errors.
+
 ## [1.1.1] - 2026-05-26
 
 ### Fixed

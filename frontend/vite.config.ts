@@ -21,6 +21,14 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  optimizeDeps: {
+    // Columns/Charts/Query pages are lazy-loaded (see App.tsx `lazy(() => import(...))`),
+    // so Vite's initial static-import crawl never sees these deps. Without this, the
+    // first navigation to one of those routes discovers a "new dependency" mid-session,
+    // triggers a live re-optimize, and any in-flight module fetch fails with a stale
+    // `504 (Outdated Optimize Dep)` / "Failed to fetch dynamically imported module" error.
+    include: ['@tanstack/react-table', 'echarts', 'sql-formatter'],
+  },
   server: {
     port: 5173,
     watch: {
