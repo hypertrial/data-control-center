@@ -8,14 +8,19 @@ stable release. Maintainer tagging steps: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-07-01
+
 ### Added
 
 - DuckDB **view import** restored: inspect and snapshot import now lists views alongside tables. Export runs with DuckDB **`enable_external_access=false`** (and **`allowed_directories`** for the snapshot output path) so views that only reference in-catalog data import correctly while definitions that read external files, attach other databases, or access the network are blocked. Disable with **`DCC_ENABLE_DUCKDB_VIEW_IMPORT=false`** for table-only mode.
 
 ### Fixed
 
+- Re-selecting a dataset in the sidebar now invalidates cached profile, sample, and related queries so Columns, Samples, and Charts reflect current data instead of stale TanStack Query results.
 - Frontend dependencies (`vite`, `vitest`/`@vitest/coverage-v8`, `echarts`, `react-router`/`react-router-dom`, `esbuild`, `ws`, `@babel/core`) upgraded to patched releases, resolving all `npm audit` findings (2 critical, 2 high, 1 moderate, 4 low).
 - Vite dev server pre-bundles `@tanstack/react-table`, `echarts`, and `sql-formatter` at startup (`optimizeDeps.include`) so first navigation to the lazy-loaded Columns/Charts/Query pages no longer triggers a mid-session dependency re-optimization that surfaced as `504 (Outdated Optimize Dep)` / "Failed to fetch dynamically imported module" errors.
+- Backend dependencies upgraded (`starlette`, `python-multipart`, `pydantic-settings`, and transitive `msgpack`/`pip`) so **`pip-audit`** passes in CI Security Audit.
+- Added **`pytz`** dependency so timestamp-with-timezone columns sample correctly.
 
 ## [1.1.1] - 2026-05-26
 
