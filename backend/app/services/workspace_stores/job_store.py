@@ -57,28 +57,6 @@ class JobStore:
         with self._engine.lock_db() as con:
             con.execute(f"UPDATE dcc_jobs SET {', '.join(sets)} WHERE job_id = ?", vals)
 
-    def job_finish(self, job_id: str, status: str, error: str | None = None) -> None:
-        self.job_update(
-            job_id,
-            status=status,
-            progress=1.0 if status == "completed" else None,
-            error_message=error,
-            finished=True,
-        )
-
-    def job_find_active_for_dataset(self, dataset_id: str, kind: str) -> str | None:
-        with self._engine.read_db() as con:
-            row = con.execute(
-                """
-                SELECT job_id FROM dcc_jobs
-                WHERE dataset_id = ? AND kind = ? AND status IN ('queued', 'running')
-                ORDER BY created_at DESC
-                LIMIT 1
-                """,
-                [dataset_id, kind],
-            ).fetchone()
-        return str(row[0]) if row else None
-
     def job_find_any_active_for_dataset(self, dataset_id: str) -> str | None:
         with self._engine.read_db() as con:
             row = con.execute(
@@ -173,3 +151,23 @@ class JobStore:
                 [job_id],
             ).fetchone()
         return bool(row and row[0])
+
+    def prune_finished_jobs(self, keep: int = 200) -> None:
+        """Drop oldest terminal jobs, retaining the most recent `keep` finished rows."""
+        lim = max(1, keep)
+        with self._engine.lock_db() as con:
+            con.execute(
+                """
+                DELETE FROM dcc_jobs
+                WHERE job_id IN (
+                  SELECT job_id FROM (
+                    SELECT job_id,
+                      ROW_NUMBER() OVER (ORDER BY created_at DESC) AS rn
+                    FROM dcc_jobs
+                    WHERE status IN ('completed', 'failed', 'canceled')
+                  ) sub
+                  WHERE sub.rn > ?
+                )
+                """,
+                [lim],
+            )

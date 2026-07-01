@@ -24,7 +24,7 @@ const minimalProfile: DatasetProfile = {
   narrative: '',
   likely_grain: null,
   main_numeric_measures: [],
-  structure_version: 'v4',
+  structure_version: 'v6',
   temporal_columns: [],
   entity_id_columns: [{ name: 'id', confidence: 'high' }],
   grain_key_candidates: [],

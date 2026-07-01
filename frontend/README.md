@@ -66,13 +66,13 @@ before invalidating profile-related keys.
 **Ask** uses **`askAgentStream`** (SSE) only. The Codex-inspired Ask workspace,
 first-run **AskHero**, **AskContextBar**, collapsible conversation rail search/auto-title,
 per-turn actions, and **SqlResultsGrid** for in-turn previews live under `src/features/ask/`.
-Profiles are **v4**-shaped (`entity_id_columns`,
+Profiles are **v6**-shaped (`entity_id_columns`,
 `primary_grain_key_columns`, `primary_temporal_column`, etc.).
 
 ## Tests and coverage
 
 Tests live next to sources as `*.test.ts(x)`. Thresholds in [`vitest.config.ts`](vitest.config.ts):
-**`COVERAGE_BASELINE`** is **92** for lines and statements (excludes such as `main.tsx` and
+**`COVERAGE_BASELINE`** is **94** for lines and statements (excludes such as `main.tsx` and
 `types.ts`). CI runs coverage via **`make check`** — see [`CONTRIBUTING.md`](../CONTRIBUTING.md#coverage).
 
 [`src/api/types.ts`](src/api/types.ts) is validated by [`types.test.ts`](src/api/types.test.ts)

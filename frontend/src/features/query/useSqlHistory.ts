@@ -13,5 +13,9 @@ export function loadSqlHistory(): string[] {
 }
 
 export function saveSqlHistory(entries: string[]) {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, SQL_HISTORY_CAP)))
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, SQL_HISTORY_CAP)))
+  } catch {
+    // ponytail: non-critical convenience; match loadSqlHistory resilience
+  }
 }

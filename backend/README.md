@@ -100,7 +100,8 @@ DuckDB import supports two source kinds (see **`GET /api/datasets/duckdb/capabil
 | **`DCC_DB_READER_POOL_SIZE`** | `4` | Reader connection pool size (1–16) |
 
 Holds cached profiles (**`structure_version: "v6"`**), profile history, **`dcc_jobs`**,
-saved SQL, and Ask tables. Implementation: [`app/services/workspace.py`](app/services/workspace.py),
+saved SQL, and Ask tables. Finished jobs are pruned to the **200** most recent terminal rows
+(**`completed`**, **`failed`**, **`canceled`**) after each background job completes. Implementation: [`app/services/workspace.py`](app/services/workspace.py),
 [`workspace_engine.py`](app/services/workspace_engine.py),
 [`workspace_schema.py`](app/services/workspace_schema.py),
 [`workspace_stores/`](app/services/workspace_stores/).

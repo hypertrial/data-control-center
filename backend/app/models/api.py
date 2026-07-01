@@ -60,7 +60,10 @@ class RegisterFolderRequest(BaseModel):
 
 class DuckDbCapabilitiesResponse(BaseModel):
     local_open_enabled: bool
-    upload_soft_max_bytes: int
+    upload_soft_max_bytes: int = Field(
+        ...,
+        description="UI guidance for browser upload; not enforced by duckdb/upload.",
+    )
     inspect_include_row_counts_default: bool
     native_pick_enabled: bool
     view_import_enabled: bool

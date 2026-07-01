@@ -58,6 +58,7 @@ async def upload_duckdb(
     settings: SettingsDep,
     file: Annotated[UploadFile | None, File()] = None,
 ) -> DuckDbSourceResponse:
+    """Accept a DuckDB file upload; enforces upload_max_bytes_per_file, not the soft UI cap."""
     if file is None:
         raise to_http_error(status_code=400, code=CODES.BAD_REQUEST, message="No DuckDB file uploaded")
     raw_name = file.filename or ""

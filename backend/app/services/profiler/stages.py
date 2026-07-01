@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import polars as pl
+
 from app.models.api import (
     ColumnProfile,
     EntityIdCandidate,
@@ -20,8 +22,8 @@ from app.services.profiler.full_metrics import FullProfileMetrics
 @dataclass
 class ProfileInputs:
     names: list[str]
-    dtypes: dict[str, str]
-    stats: dict[str, Any]
+    dtypes: list[pl.DataType]
+    stats: pl.DataFrame
     row_count: int
     col_count: int
     df_sample: Any

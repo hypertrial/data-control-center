@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     # DuckDB import: browser upload vs open-from-disk for large local files.
     enable_duckdb_local_open: bool = True
     enable_duckdb_native_pick: bool = True
+    # UI guidance only; duckdb/upload does not enforce this (see upload_max_bytes_per_file).
     duckdb_upload_soft_max_bytes: int = 512 * 1024 * 1024
     duckdb_inspect_include_row_counts: bool = False
     duckdb_local_open_ttl_hours: float = Field(default=24.0, ge=0.0)

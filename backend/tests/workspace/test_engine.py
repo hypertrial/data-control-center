@@ -128,19 +128,6 @@ def test_drop_view_if_exists(tmp_path: Path) -> None:
         ws.close()
 
 
-def test_job_find_active_for_dataset(tmp_path: Path) -> None:
-    settings = _settings(tmp_path)
-    ws = Workspace(settings)
-    try:
-        assert ws.jobs.job_find_active_for_dataset("ds_001", "profile_refresh") is None
-        ws.jobs.job_insert("j1", "profile_refresh", "ds_001", "queued")
-        assert ws.jobs.job_find_active_for_dataset("ds_001", "profile_refresh") == "j1"
-        ws.jobs.job_finish("j1", "completed")
-        assert ws.jobs.job_find_active_for_dataset("ds_001", "profile_refresh") is None
-    finally:
-        ws.close()
-
-
 def test_job_find_any_active_for_dataset(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     ws = Workspace(settings)
@@ -148,7 +135,7 @@ def test_job_find_any_active_for_dataset(tmp_path: Path) -> None:
         assert ws.jobs.job_find_any_active_for_dataset("ds_001") is None
         ws.jobs.job_insert("j1", "dataset_prepare", "ds_001", "running")
         assert ws.jobs.job_find_any_active_for_dataset("ds_001") == "j1"
-        ws.jobs.job_finish("j1", "completed")
+        ws.jobs.job_update("j1", status="completed", progress=1.0, finished=True)
         assert ws.jobs.job_find_any_active_for_dataset("ds_001") is None
     finally:
         ws.close()
@@ -159,12 +146,33 @@ def test_jobs_insert_and_finish(tmp_path: Path) -> None:
     ws = Workspace(settings)
     try:
         ws.jobs.job_insert("jid", "profile_refresh", "ds_001", "running")
-        ws.jobs.job_finish("jid", "failed", "oops")
+        ws.jobs.job_update("jid", status="failed", error_message="oops", finished=True)
         row = ws.connection.execute(
             "SELECT status, error_message FROM dcc_jobs WHERE job_id = ?",
             ["jid"],
         ).fetchone()
         assert row == ("failed", "oops")
+    finally:
+        ws.close()
+
+
+def test_jobs_finished_pruned_to_keep(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    try:
+        keep = 5
+        for i in range(keep + 3):
+            jid = f"j{i:03d}"
+            ws.jobs.job_insert(jid, "profile_refresh", "ds_x", "completed")
+            ws.jobs.job_update(jid, status="completed", progress=1.0, finished=True)
+        ws.jobs.prune_finished_jobs(keep=keep)
+        count = ws.connection.execute(
+            """
+            SELECT COUNT(*) FROM dcc_jobs
+            WHERE status IN ('completed', 'failed', 'canceled')
+            """
+        ).fetchone()[0]
+        assert count == keep
     finally:
         ws.close()
 
@@ -940,8 +948,8 @@ def test_workspace_facade_delegates_to_engine_and_stores(
         def job_update(self, job_id: str, **kwargs: Any) -> None:
             calls["job_update"] = (job_id, kwargs)
 
-        def job_finish(self, job_id: str, status: str, error: str | None = None) -> None:
-            calls["job_finish"] = (job_id, status, error)
+        def prune_finished_jobs(self, keep: int = 200) -> None:
+            calls["prune_finished_jobs"] = keep
 
         def job_get(self, job_id: str) -> dict[str, Any] | None:
             calls["job_get"] = job_id
@@ -993,14 +1001,12 @@ def test_workspace_facade_delegates_to_engine_and_stores(
     ws.jobs.job_insert("job-1", "profile", "ds_1", "queued")
     ws.jobs.job_update(
         "job-1",
-        status="running",
-        progress=0.5,
-        error_code="E1",
-        error_message="boom",
+        status="completed",
+        progress=1.0,
         result_json={"ok": True},
         finished=True,
     )
-    ws.jobs.job_finish("job-1", "completed", None)
+    ws.jobs.prune_finished_jobs()
     assert ws.jobs.job_get("job-1") == {"job_id": "job-1"}
     assert ws.jobs.jobs_list(8, "queued") == [{"job_id": "j1"}]
     assert ws.jobs.job_request_cancel("job-1") is True
@@ -1016,15 +1022,13 @@ def test_workspace_facade_delegates_to_engine_and_stores(
     assert calls["job_update"] == (
         "job-1",
         {
-            "status": "running",
-            "progress": 0.5,
-            "error_code": "E1",
-            "error_message": "boom",
+            "status": "completed",
+            "progress": 1.0,
             "result_json": {"ok": True},
             "finished": True,
         },
     )
-    assert calls["job_finish"] == ("job-1", "completed", None)
+    assert calls["prune_finished_jobs"] == 200
     assert calls["jobs_list"] == (8, "queued")
     assert calls["sleep_poll"] == 0.25
     assert calls["close"] is True

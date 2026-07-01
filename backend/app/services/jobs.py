@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -38,7 +37,6 @@ class JobService:
         self._redact_paths = _redact_path_fragments(workspace.path)
         self._redact_secrets = redact_secrets
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="dcc-job")
-        self._lock = threading.Lock()
 
     def submit(self, *, kind: str, dataset_id: str | None, fn: JobFn) -> str:
         job_id = uuid.uuid4().hex
@@ -55,6 +53,7 @@ class JobService:
                         progress=1.0,
                         finished=True,
                     )
+                    self._workspace.jobs.prune_finished_jobs()
                     emit("job.complete", job_id=job_id, kind=kind, status="canceled")
                     return
 
@@ -65,6 +64,7 @@ class JobService:
                     result_json=result,
                     finished=True,
                 )
+                self._workspace.jobs.prune_finished_jobs()
                 emit("job.complete", job_id=job_id, kind=kind, status="completed")
             except Exception as exc:  # noqa: BLE001
                 if self._workspace.jobs.job_cancel_requested(job_id):
@@ -74,6 +74,7 @@ class JobService:
                         progress=1.0,
                         finished=True,
                     )
+                    self._workspace.jobs.prune_finished_jobs()
                     emit("job.complete", job_id=job_id, kind=kind, status="canceled")
                     return
 
@@ -90,6 +91,7 @@ class JobService:
                     error_message=error_message,
                     finished=True,
                 )
+                self._workspace.jobs.prune_finished_jobs()
                 emit(
                     "job.complete",
                     job_id=job_id,
