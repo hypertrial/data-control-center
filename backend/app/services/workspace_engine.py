@@ -13,6 +13,7 @@ from pathlib import Path
 import duckdb
 
 from app.config import Settings
+from app.services.duckdb_timeout import apply_statement_timeout
 
 
 def sanitize_sql_identifier(raw: str) -> str:
@@ -191,11 +192,7 @@ class WorkspaceEngine:
         safe = sanitize_sql_identifier(view_name)
         with self.read_db() as con:
             con.execute("PRAGMA disable_progress_bar")
-            try:
-                con.execute(f"SET statement_timeout='{max(1, int(timeout_seconds * 1000))}ms'")
-            except Exception as exc:  # noqa: BLE001
-                if "unrecognized configuration parameter" not in str(exc):
-                    raise
+            apply_statement_timeout(con, timeout_seconds, min_ms=1)
             try:
                 row = con.execute(f"SELECT COUNT(*) AS c FROM {safe}").fetchone()
             except Exception:

@@ -14,6 +14,7 @@ import duckdb
 from app.config import Settings
 from app.errors import AppError, CODES
 from app.models.api import DuckDbRelationRef, DuckDbRelationSummary, DuckDbSourceResponse
+from app.services.duckdb_timeout import apply_statement_timeout
 from app.services.registry import (
     DatasetRegistry,
     RegisteredDataset,
@@ -231,14 +232,6 @@ def _quote_string(raw: str) -> str:
     return "'" + raw.replace("'", "''") + "'"
 
 
-def _set_timeout(con: duckdb.DuckDBPyConnection, timeout_seconds: float) -> None:
-    try:
-        con.execute(f"SET statement_timeout='{max(100, int(timeout_seconds * 1000))}ms'")
-    except Exception as exc:  # noqa: BLE001
-        if "unrecognized configuration parameter" not in str(exc):
-            raise
-
-
 def _connect_source(
     source_path: Path,
     *,
@@ -310,7 +303,7 @@ def _relation_row_count(
     settings: Settings,
 ) -> int | None:
     try:
-        _set_timeout(con, settings.registration_count_timeout_seconds)
+        apply_statement_timeout(con, settings.registration_count_timeout_seconds)
         row = con.execute(
             f"SELECT COUNT(*) AS c FROM {_relation_expr(schema_name, relation_name)}"
         ).fetchone()
@@ -521,7 +514,7 @@ def import_duckdb_relations(
     try:
         _check_cancelled(cancel_requested)
         con = _connect_source(source_path, allowed_dirs=[batch_dir])
-        _set_timeout(con, settings.duckdb_import_timeout_seconds)
+        apply_statement_timeout(con, settings.duckdb_import_timeout_seconds)
         if not settings.enable_duckdb_view_import:
             for rel in relations:
                 _ensure_view_import_allowed(
@@ -540,22 +533,24 @@ def import_duckdb_relations(
             if on_progress is not None:
                 on_progress((idx + 1) / max(1, len(relations)) * 0.75)
         _check_cancelled(cancel_requested)
-        for idx, export_path in enumerate(snapshots):
+        for export_path in snapshots:
             ds = registry.register_path(export_path, compute_counts=False)
             registered.append(ds)
+        _check_cancelled(cancel_requested)
+        for idx, ds in enumerate(registered):
             queue_prepare(ds.dataset_id)
             if on_progress is not None:
                 on_progress(0.75 + (idx + 1) / max(1, len(snapshots)) * 0.25)
     except DuckDbImportError:
-        cleanup_unregistered_import_files(copied, registered)
+        rollback_imported_datasets(registry, copied, registered)
         _cleanup_empty_dir(batch_dir)
         raise
     except AppError:
-        cleanup_unregistered_import_files(copied, registered)
+        rollback_imported_datasets(registry, copied, registered)
         _cleanup_empty_dir(batch_dir)
         raise
     except Exception as exc:  # noqa: BLE001
-        cleanup_unregistered_import_files(copied, registered)
+        rollback_imported_datasets(registry, copied, registered)
         _cleanup_empty_dir(batch_dir)
         raise DuckDbImportError("DuckDB import failed.") from exc
     finally:
@@ -572,6 +567,19 @@ def _cleanup_empty_dir(path: Path) -> None:
             path.rmdir()
     except OSError:
         pass
+
+
+def rollback_imported_datasets(
+    registry: DatasetRegistry,
+    copied: list[Path],
+    registered: list[RegisteredDataset],
+) -> None:
+    for ds in reversed(registered):
+        try:
+            registry.unregister(ds.dataset_id)
+        except Exception:  # noqa: BLE001
+            pass
+    cleanup_unregistered_import_files(copied, [])
 
 
 def cleanup_unregistered_import_files(copied: list[Path], registered: list[RegisteredDataset]) -> None:

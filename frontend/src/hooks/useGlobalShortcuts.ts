@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
+import { invalidateActiveDatasetQueries } from '@/hooks/invalidateActiveDatasetQueries'
 import { useUiStore } from '@/store/uiStore'
 
 function targetIsEditable(el: EventTarget | null): boolean {
@@ -99,7 +100,7 @@ export function useGlobalShortcuts() {
         e.preventDefault()
         void qc.invalidateQueries()
         if (activeId) {
-          void qc.invalidateQueries({ queryKey: ['profile', activeId] })
+          invalidateActiveDatasetQueries(qc, activeId, { includeDatasets: true })
         }
         clearG()
       }

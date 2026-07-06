@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 import sqlglot
 from sqlglot import exp
@@ -27,21 +28,6 @@ FORBIDDEN_SOURCE_FUNCTIONS = re.compile(
 # disclose process/filesystem details outside registered dataset views.
 FORBIDDEN_DUCKDB_ESCAPE_FUNCTIONS = re.compile(
     r"\b(query|query_table|current_setting|current_settings|getenv|duckdb_[a-z0-9_]*|pragma_[a-z0-9_]*)\s*\(",
-    re.IGNORECASE,
-)
-
-FROM_JOIN_PATTERN = re.compile(
-    r"\b(?:FROM|JOIN)\s+([A-Za-z_][A-Za-z0-9_\.]*)",
-    re.IGNORECASE,
-)
-
-QUOTED_FROM_JOIN_PATTERN = re.compile(
-    r"\b(?:FROM|JOIN)\s+\"([A-Za-z0-9_]+)\"",
-    re.IGNORECASE,
-)
-
-CTE_NAME_PATTERN = re.compile(
-    r'(?:^|,)\s*(?:"([A-Za-z0-9_]+)"|([A-Za-z_][A-Za-z0-9_]*))\s+AS\s*\(',
     re.IGNORECASE,
 )
 
@@ -78,6 +64,13 @@ FORBIDDEN_DUCKDB_FUNCTIONS = {
     "query",
     "query_table",
 }
+
+
+@dataclass(frozen=True)
+class SqlValidationResult:
+    error: str | None
+    normalized_sql: str | None
+    relation_refs: set[str]
 
 
 def strip_sql_comments(sql: str) -> str:
@@ -201,32 +194,6 @@ def blank_string_literals(sql: str) -> str:
     return "".join(out)
 
 
-def extract_relations(sql: str) -> set[str]:
-    refs: set[str] = set()
-    for m in FROM_JOIN_PATTERN.finditer(sql):
-        token = m.group(1).strip()
-        if token:
-            refs.add(token.split(".")[-1])
-    for m in QUOTED_FROM_JOIN_PATTERN.finditer(sql):
-        token = m.group(1).strip()
-        if token:
-            refs.add(token)
-    return refs
-
-
-def extract_cte_names(sql: str) -> set[str]:
-    stripped = sql.lstrip()
-    if not stripped[:4].upper().startswith("WITH"):
-        return set()
-    body = stripped[4:]
-    names: set[str] = set()
-    for match in CTE_NAME_PATTERN.finditer(body):
-        name = match.group(1) or match.group(2)
-        if name:
-            names.add(name)
-    return names
-
-
 def _ast_function_name(node: exp.Expression) -> str | None:
     if isinstance(node, exp.Anonymous):
         return str(node.name).lower()
@@ -277,40 +244,59 @@ def _validate_readonly_ast(sql: str) -> tuple[str | None, set[str], set[str]]:
     return None, refs, ctes
 
 
-def validate_workspace_sql(sql: str, view_names: set[str] | None = None) -> tuple[str | None, str | None]:
+def validate_workspace_sql_details(
+    sql: str,
+    view_names: set[str] | None = None,
+) -> SqlValidationResult:
     if not sql or not sql.strip():
-        return ("SQL must not be empty.", None)
+        return SqlValidationResult("SQL must not be empty.", None, set())
 
     stripped = strip_sql_comments(sql)
     statements = split_sql_statements(stripped)
     if len(statements) != 1:
-        return ("Only a single SQL statement is allowed.", None)
+        return SqlValidationResult("Only a single SQL statement is allowed.", None, set())
 
     stmt = statements[0].strip()
     blanked = blank_string_literals(stmt)
 
     if FORBIDDEN_KEYWORDS.search(blanked):
-        return ("SQL contains forbidden keywords for this workspace.", None)
+        return SqlValidationResult("SQL contains forbidden keywords for this workspace.", None, set())
     if FORBIDDEN_SOURCE_FUNCTIONS.search(blanked):
-        return ("SQL contains forbidden file-reading or external source functions.", None)
+        return SqlValidationResult("SQL contains forbidden file-reading or external source functions.", None, set())
     if FORBIDDEN_DUCKDB_ESCAPE_FUNCTIONS.search(blanked):
-        return ("SQL contains forbidden DuckDB system or dynamic SQL functions.", None)
+        return SqlValidationResult("SQL contains forbidden DuckDB system or dynamic SQL functions.", None, set())
 
     upper_head = stmt.lstrip().upper()
     if not (upper_head.startswith("SELECT") or upper_head.startswith("WITH")):
-        return ("Only read-only SELECT queries (optionally starting with WITH) are allowed.", None)
+        return SqlValidationResult(
+            "Only read-only SELECT queries (optionally starting with WITH) are allowed.",
+            None,
+            set(),
+        )
 
     ast_err, refs, cte_names = _validate_readonly_ast(stmt)
     if ast_err:
-        return (ast_err, None)
+        return SqlValidationResult(ast_err, None, set())
+    relation_refs = refs - cte_names
+    registered_refs = {r for r in relation_refs if view_names is None or r in view_names}
     if view_names and refs:
         unknown = {r for r in refs if r not in view_names and r not in cte_names}
         if unknown:
-            return (
+            return SqlValidationResult(
                 f"SQL references non-registered relations: {', '.join(sorted(unknown)[:5])}.",
                 None,
+                registered_refs,
             )
     if view_names and not refs:
-        return ("SQL must reference at least one registered dataset view.", None)
+        return SqlValidationResult(
+            "SQL must reference at least one registered dataset view.",
+            None,
+            set(),
+        )
 
-    return (None, stmt)
+    return SqlValidationResult(None, stmt, registered_refs)
+
+
+def validate_workspace_sql(sql: str, view_names: set[str] | None = None) -> tuple[str | None, str | None]:
+    result = validate_workspace_sql_details(sql, view_names)
+    return result.error, result.normalized_sql

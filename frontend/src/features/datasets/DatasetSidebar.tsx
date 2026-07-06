@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { DatasetDropzone } from '@/features/datasets/DatasetDropzone'
 import { useDatasetIngestionContext } from '@/features/datasets/DatasetIngestionProvider'
 import { TABULAR_ACCEPT_ATTR } from '@/features/datasets/uploadFiles'
+import { removeActiveDatasetQueries } from '@/hooks/invalidateActiveDatasetQueries'
 import { Dialog, DialogContent, DialogFooter } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
@@ -61,11 +62,7 @@ export function DatasetSidebar() {
       try {
         await api.deleteDataset(datasetId)
         qc.setQueryData<DatasetSummary[]>(['datasets'], (old) => (old ?? []).filter((d) => d.dataset_id !== datasetId))
-        qc.removeQueries({ queryKey: ['profile', datasetId] })
-        qc.removeQueries({ queryKey: ['profile-history', datasetId] })
-        qc.removeQueries({ queryKey: ['quality', datasetId] })
-        qc.removeQueries({ queryKey: ['sample', datasetId] })
-        qc.removeQueries({ queryKey: ['profile-diff', datasetId] })
+        removeActiveDatasetQueries(qc, datasetId)
         if (searchParams.get('ds') === datasetId) {
           const next = new URLSearchParams(searchParams)
           next.delete('ds')

@@ -99,12 +99,13 @@ dependencies.
 
 ### Chart SQL fixtures
 
-Charts SQL is generated in the frontend (`chartSql.ts` / `chartUtils` barrel) and executed by the backend query API. When you change chart SQL builders, update **both**:
+Charts SQL is generated in the frontend (`chartSql.ts` / `chartUtils` barrel) and executed by the backend query API. When you change chart SQL builders, regenerate the shared fixture:
 
-- frontend tests in [`frontend/src/features/charts/chartSql.test.ts`](frontend/src/features/charts/chartSql.test.ts), and
-- backend execution tests in [`backend/tests/test_chart_sql_execute.py`](backend/tests/test_chart_sql_execute.py)
+```bash
+cd frontend && npm run fixtures:chart-sql
+```
 
-Each golden SQL block in the backend file includes a `mirrors frontend …` comment naming the matching frontend test. Use the same dataset column names as [`backend/tests/fixtures/chart_orders.csv`](backend/tests/fixtures/chart_orders.csv).
+The generator writes [`backend/tests/fixtures/chart_sql_cases.json`](backend/tests/fixtures/chart_sql_cases.json). Frontend SQL tests assert `buildChartSql` still matches that JSON, and backend execution tests run the same SQL against [`backend/tests/fixtures/chart_orders.csv`](backend/tests/fixtures/chart_orders.csv).
 
 ### Coverage
 

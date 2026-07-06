@@ -10,6 +10,7 @@ import polars as pl
 
 from app.config import Settings
 from app.models.api import GrainKeyCandidate, StructureConfidence
+from app.services.duckdb_timeout import apply_statement_timeout
 from app.services.workspace import Workspace, sanitize_sql_identifier
 
 
@@ -31,15 +32,6 @@ class FullProfileMetrics:
 
 def _quote_ident(raw: str) -> str:
     return '"' + raw.replace('"', '""') + '"'
-
-
-def _apply_statement_timeout(con: object, timeout_seconds: float) -> None:
-    timeout_ms = max(100, int(timeout_seconds * 1000))
-    try:
-        con.execute(f"SET statement_timeout='{timeout_ms}ms'")
-    except Exception as exc:  # noqa: BLE001
-        if "unrecognized configuration parameter" not in str(exc):
-            raise
 
 
 def _confidence_from_ratio(
@@ -83,7 +75,7 @@ class _FullMetricReader:
             raise TimeoutError("full profile metric budget exhausted")
         with self.workspace.read_db() as con:
             con.execute("PRAGMA disable_progress_bar")
-            _apply_statement_timeout(con, min(self.settings.profile_full_metrics_timeout_seconds, remaining))
+            apply_statement_timeout(con, min(self.settings.profile_full_metrics_timeout_seconds, remaining))
             return con.execute(sql).fetchone()
 
     def _execute_all(self, sql: str):
@@ -92,7 +84,7 @@ class _FullMetricReader:
             raise TimeoutError("full profile metric budget exhausted")
         with self.workspace.read_db() as con:
             con.execute("PRAGMA disable_progress_bar")
-            _apply_statement_timeout(con, min(self.settings.profile_full_metrics_timeout_seconds, remaining))
+            apply_statement_timeout(con, min(self.settings.profile_full_metrics_timeout_seconds, remaining))
             return con.execute(sql).fetchall()
 
     def duplicate_row_pct(self, names: list[str]) -> float | None:

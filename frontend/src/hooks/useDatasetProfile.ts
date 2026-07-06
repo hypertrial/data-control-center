@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiRequestError, api, nextJobPollIntervalMs } from '@/api/client'
 import type { DatasetProfile } from '@/api/types'
 import type { JobDetail } from '@/api/types'
+import { invalidateActiveDatasetQueries } from '@/hooks/invalidateActiveDatasetQueries'
 
 const PROFILE_STALE_MS = 30_000
 const handledProfileCompletions = new Set<string>()
@@ -16,13 +17,6 @@ function markProfileCompletionHandled(datasetId: string, jobId: string): boolean
   if (handledProfileCompletions.has(key)) return false
   handledProfileCompletions.add(key)
   return true
-}
-
-function invalidateProfileAfterJob(qc: QueryClient, datasetId: string) {
-  void qc.invalidateQueries({ queryKey: ['profile', datasetId] })
-  void qc.invalidateQueries({ queryKey: ['quality', datasetId] })
-  void qc.invalidateQueries({ queryKey: ['profile-history', datasetId] })
-  void qc.invalidateQueries({ queryKey: ['datasets'] })
 }
 
 /** @internal test helper */
@@ -53,7 +47,7 @@ export function useDatasetProfile(datasetId: string | null | undefined) {
     const cachedJob = qc.getQueryData<JobDetail>(['job', jobId])
     if (cachedJob?.status === 'completed') {
       if (markProfileCompletionHandled(datasetId, jobId)) {
-        invalidateProfileAfterJob(qc, datasetId)
+        invalidateActiveDatasetQueries(qc, datasetId, { includeDatasets: true })
       }
       return
     }
@@ -83,7 +77,7 @@ export function useDatasetProfile(datasetId: string | null | undefined) {
     if (!status || !activeJobId || !datasetId) return
     if (status === 'completed') {
       if (markProfileCompletionHandled(datasetId, activeJobId)) {
-        invalidateProfileAfterJob(qc, datasetId)
+        invalidateActiveDatasetQueries(qc, datasetId, { includeDatasets: true })
       }
       queueMicrotask(() => setActiveJobId(null))
     }

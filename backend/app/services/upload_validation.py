@@ -9,6 +9,7 @@ from typing import Any
 import duckdb
 
 from app.config import Settings
+from app.services.duckdb_timeout import apply_statement_timeout
 
 SAMPLE_BYTES = 64 * 1024
 JSONL_SAMPLE_LINES = 100
@@ -36,11 +37,7 @@ def _decode_text_sample(path: Path) -> str:
 def _probe_duckdb(sql: str, timeout_seconds: float) -> None:
     con = duckdb.connect(":memory:")
     try:
-        try:
-            con.execute(f"SET statement_timeout='{max(100, int(timeout_seconds * 1000))}ms'")
-        except Exception as exc:  # noqa: BLE001
-            if "unrecognized configuration parameter" not in str(exc):
-                raise
+        apply_statement_timeout(con, timeout_seconds)
         con.execute(sql).fetchone()
     finally:
         con.close()
@@ -127,13 +124,7 @@ def validate_duckdb_upload(path: Path, settings: Settings) -> None:
     except Exception as exc:  # noqa: BLE001
         raise UploadValidationError("DuckDB file could not be opened.") from exc
     try:
-        try:
-            con.execute(
-                f"SET statement_timeout='{max(100, int(settings.registration_count_timeout_seconds * 1000))}ms'"
-            )
-        except Exception as exc:  # noqa: BLE001
-            if "unrecognized configuration parameter" not in str(exc):
-                raise
+        apply_statement_timeout(con, settings.registration_count_timeout_seconds)
         con.execute("SET enable_external_access = false")
         con.execute(
             """

@@ -105,6 +105,10 @@ describe('useDatasetProfile', () => {
 
     await waitFor(() => {
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['profile', 'ds_1'] })
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['quality', 'ds_1'] })
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['profile-history', 'ds_1'] })
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['profile-diff', 'ds_1'] })
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['sample', 'ds_1'] })
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['datasets'] })
     })
   })

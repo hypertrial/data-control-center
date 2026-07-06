@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   buildBarChartSql,
@@ -7,6 +9,18 @@ import {
   buildScatterChartSql,
 } from '@/features/charts/chartSql'
 import type { ChartSpec } from '@/features/charts/chartSpec'
+
+type ChartSqlFixtureCase = {
+  case_id: string
+  view_name: string
+  spec: ChartSpec
+  sql: string
+  min_rows: number
+}
+
+const fixtureCases = JSON.parse(
+  readFileSync(resolve(process.cwd(), '../backend/tests/fixtures/chart_sql_cases.json'), 'utf8'),
+) as ChartSqlFixtureCase[]
 
 function baseSpec(overrides: Partial<ChartSpec> = {}): ChartSpec {
   return {
@@ -42,6 +56,12 @@ function baseSpec(overrides: Partial<ChartSpec> = {}): ChartSpec {
 }
 
 describe('chartSql', () => {
+  for (const fixtureCase of fixtureCases) {
+    it(`matches shared SQL fixture ${fixtureCase.case_id}`, () => {
+      expect(buildChartSql(fixtureCase.spec, fixtureCase.view_name)).toBe(fixtureCase.sql)
+    })
+  }
+
   it('builds quoted aggregate SQL with bucketing', () => {
     const sql = buildLineChartSql(baseSpec(), 'sales orders')
     expect(sql).toContain("date_trunc('month', \"order date\") as x")

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Query, Response
 from app.api.deps import RegistryDep, SettingsDep, WorkspaceDep
 from app.errors import CODES, to_http_error
 from app.models.api import DatasetSummary
+from app.services.duckdb_timeout import apply_statement_timeout
 from app.services.source_errors import MISSING_DATASET_SOURCE_MESSAGE, is_missing_dataset_source_error
 from app.services.workspace import sanitize_sql_identifier
 
@@ -110,12 +111,7 @@ def sample_rows(
 
     try:
         with registry.workspace.read_db() as con:
-            try:
-                timeout_ms = max(100, int(settings.query_timeout_seconds * 1000))
-                con.execute(f"SET statement_timeout='{timeout_ms}ms'")
-            except Exception as exc:  # noqa: BLE001
-                if "unrecognized configuration parameter" not in str(exc):
-                    raise
+            apply_statement_timeout(con, settings.query_timeout_seconds)
             res = con.execute(f"SELECT * FROM {safe_view} LIMIT {int(ps)} OFFSET {int(offset)}")
             cols_meta = res.description or []
             colnames = [c[0] for c in cols_meta]

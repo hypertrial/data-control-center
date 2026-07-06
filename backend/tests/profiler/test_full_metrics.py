@@ -49,11 +49,6 @@ def test_sample_duplicate_pct_empty_sample_branch() -> None:
     assert _sample_duplicate_row_pct(0, 1, []) is None
 
 
-def test_apply_statement_timeout_reraises_unknown_error() -> None:
-    with pytest.raises(RuntimeError, match="boom"):
-        full_metrics._apply_statement_timeout(_Con(RuntimeError("boom")), 1.0)
-
-
 def test_reader_execute_budget_exhaustion_branches() -> None:
     reader = full_metrics._FullMetricReader(_Workspace(), Settings(), "valid_view", 1)
     reader.deadline = 0

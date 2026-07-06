@@ -10,11 +10,10 @@ from app.services.sql_validate import (
     _ast_function_name,
     _validate_readonly_ast,
     blank_string_literals,
-    extract_cte_names,
-    extract_relations,
     split_sql_statements,
     strip_sql_comments,
     validate_workspace_sql,
+    validate_workspace_sql_details,
 )
 
 
@@ -77,25 +76,6 @@ def test_validate_workspace_sql_accepts_with_cte() -> None:
     assert err is None
     assert norm is not None
     assert "WITH" in norm.upper()
-
-
-def test_extract_relations_supports_quoted_names() -> None:
-    assert extract_relations('SELECT * FROM "my_table"') == {"my_table"}
-
-
-def test_extract_relations_supports_unquoted_schema_names() -> None:
-    assert extract_relations("SELECT * FROM main.real JOIN other.next_table") == {
-        "real",
-        "next_table",
-    }
-
-
-def test_extract_cte_names_handles_named_ctes() -> None:
-    assert extract_cte_names('WITH "a" AS (SELECT 1), b AS (SELECT 2) SELECT * FROM b') == {"a", "b"}
-
-
-def test_extract_cte_names_ignores_non_with_sql() -> None:
-    assert extract_cte_names("SELECT 1") == set()
 
 
 @pytest.mark.parametrize(
@@ -237,3 +217,24 @@ def test_validate_workspace_sql_allows_common_safe_functions() -> None:
     )
     assert err is None
     assert norm is not None
+
+
+def test_validate_workspace_sql_details_returns_registered_relation_refs() -> None:
+    result = validate_workspace_sql_details(
+        "WITH local AS (SELECT * FROM main.real) SELECT * FROM local JOIN other.next_table ON true",
+        {"real", "next_table"},
+    )
+
+    assert result.error is None
+    assert result.normalized_sql is not None
+    assert result.relation_refs == {"real", "next_table"}
+
+
+def test_validate_workspace_sql_details_excludes_cte_refs_from_unknowns() -> None:
+    result = validate_workspace_sql_details(
+        "WITH local AS (SELECT * FROM real) SELECT * FROM local",
+        {"real"},
+    )
+
+    assert result.error is None
+    assert result.relation_refs == {"real"}

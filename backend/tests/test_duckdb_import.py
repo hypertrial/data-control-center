@@ -17,7 +17,6 @@ from app.services.duckdb_import import (
     _local_metadata_path,
     _cleanup_empty_dir,
     _relation_row_count,
-    _set_timeout,
     _snapshot_relation,
     _upload_root,
     _workspace_path,
@@ -30,9 +29,10 @@ from app.services.duckdb_import import (
     reject_workspace_duckdb_upload,
     resolve_duckdb_source,
     resolve_staged_duckdb_upload,
+    rollback_imported_datasets,
 )
+from app.services.registry import DatasetRegistry, RegisteredDataset
 from app.services.upload_validation import UploadValidationError, validate_duckdb_upload
-from app.services.registry import DatasetRegistry
 from app.services.workspace import Workspace
 
 
@@ -496,21 +496,12 @@ def test_relative_workspace_and_upload_paths_resolve_from_cwd(
     assert _upload_root(settings) == tmp_path / "up"
 
 
-def test_set_timeout_reraises_unexpected_errors() -> None:
-    class Con:
-        def execute(self, _sql: str):  # noqa: ANN201
-            raise RuntimeError("different failure")
-
-    with pytest.raises(RuntimeError, match="different failure"):
-        _set_timeout(Con(), 1.0)  # type: ignore[arg-type]
-
-
 def test_relation_row_count_returns_none_on_count_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     con = duckdb.connect(":memory:")
     monkeypatch.setattr(
-        "app.services.duckdb_import._set_timeout",
+        "app.services.duckdb_import.apply_statement_timeout",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("timeout setup failed")),
     )
     try:
@@ -896,15 +887,15 @@ def test_import_uses_duckdb_import_timeout(
     )
     ws = Workspace(settings)
     timeouts: list[float] = []
-    real_set_timeout = duckdb_import._set_timeout
+    real_apply_timeout = duckdb_import.apply_statement_timeout
 
     def capture_timeout(con, seconds: float) -> None:  # noqa: ANN001
         timeouts.append(seconds)
-        real_set_timeout(con, seconds)
+        real_apply_timeout(con, seconds)
 
     try:
         reg = DatasetRegistry(ws, settings)
-        monkeypatch.setattr(duckdb_import, "_set_timeout", capture_timeout)
+        monkeypatch.setattr(duckdb_import, "apply_statement_timeout", capture_timeout)
         import_duckdb_relations(
             source_path=source,
             relations=[DuckDbRelationRef(schema="main", name="orders")],
@@ -1018,6 +1009,49 @@ def test_duckdb_import_snapshots_all_relations_before_registration(
         ws.close()
 
 
+def test_duckdb_import_queues_prepare_only_after_all_registrations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "sales.duckdb"
+    _source_db(source)
+    _add_duckdb_table(source)
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    registered_count = 0
+    queued: list[str] = []
+
+    try:
+        reg = DatasetRegistry(ws, settings)
+        real_register = reg.register_path
+
+        def track_register(path: Path, *, compute_counts: bool = True):  # noqa: ANN202
+            nonlocal registered_count
+            ds = real_register(path, compute_counts=compute_counts)
+            registered_count += 1
+            return ds
+
+        def queue_prepare(dataset_id: str) -> str:
+            assert registered_count == 2
+            queued.append(dataset_id)
+            return "job"
+
+        monkeypatch.setattr(reg, "register_path", track_register)
+        result = import_duckdb_relations(
+            source_path=source,
+            relations=[
+                DuckDbRelationRef(schema="main", name="orders"),
+                DuckDbRelationRef(schema="main", name="refunds"),
+            ],
+            registry=reg,
+            settings=settings,
+            queue_prepare=queue_prepare,
+        )
+        assert queued == [row["dataset_id"] for row in result["datasets"]]
+    finally:
+        ws.close()
+
+
 def test_generic_import_failure_is_sanitized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import app.services.duckdb_import as duckdb_import
 
@@ -1076,6 +1110,95 @@ def test_register_failure_cleans_unregistered_parquet(tmp_path: Path, monkeypatc
         ws.close()
 
 
+def test_second_registration_failure_rolls_back_first_dataset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "sales.duckdb"
+    _source_db(source)
+    _add_duckdb_table(source)
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    registered_view: str | None = None
+    registered = 0
+    queued: list[str] = []
+
+    try:
+        reg = DatasetRegistry(ws, settings)
+        real_register = reg.register_path
+
+        def fail_second_register(path: Path, *, compute_counts: bool = True):  # noqa: ANN202
+            nonlocal registered, registered_view
+            registered += 1
+            if registered == 2:
+                raise RuntimeError("second registration failed")
+            ds = real_register(path, compute_counts=compute_counts)
+            registered_view = ds.view_name
+            return ds
+
+        monkeypatch.setattr(reg, "register_path", fail_second_register)
+        with pytest.raises(DuckDbImportError, match="failed"):
+            import_duckdb_relations(
+                source_path=source,
+                relations=[
+                    DuckDbRelationRef(schema="main", name="orders"),
+                    DuckDbRelationRef(schema="main", name="refunds"),
+                ],
+                registry=reg,
+                settings=settings,
+                queue_prepare=lambda dataset_id: queued.append(dataset_id) or "job",
+            )
+
+        assert queued == []
+        assert reg.list_all() == []
+        assert list((tmp_path / "uploads").rglob("*.parquet")) == []
+        if registered_view is not None:
+            row = ws.connection.execute(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?",
+                [registered_view],
+            ).fetchone()
+            assert row and row[0] == 0
+        jobs = ws.connection.execute("SELECT COUNT(*) FROM dcc_jobs").fetchone()
+        assert jobs and jobs[0] == 0
+    finally:
+        ws.close()
+
+
+def test_prepare_queue_failure_rolls_back_registered_datasets(tmp_path: Path) -> None:
+    source = tmp_path / "sales.duckdb"
+    _source_db(source)
+    _add_duckdb_table(source)
+    settings = _settings(tmp_path)
+    ws = Workspace(settings)
+    queued: list[str] = []
+
+    def fail_queue(dataset_id: str) -> str:
+        queued.append(dataset_id)
+        raise RuntimeError("queue failed")
+
+    try:
+        reg = DatasetRegistry(ws, settings)
+        with pytest.raises(DuckDbImportError, match="failed"):
+            import_duckdb_relations(
+                source_path=source,
+                relations=[
+                    DuckDbRelationRef(schema="main", name="orders"),
+                    DuckDbRelationRef(schema="main", name="refunds"),
+                ],
+                registry=reg,
+                settings=settings,
+                queue_prepare=fail_queue,
+            )
+
+        assert len(queued) == 1
+        assert reg.list_all() == []
+        assert list((tmp_path / "uploads").rglob("*.parquet")) == []
+        jobs = ws.connection.execute("SELECT COUNT(*) FROM dcc_jobs").fetchone()
+        assert jobs and jobs[0] == 0
+    finally:
+        ws.close()
+
+
 def test_cleanup_helpers_ignore_os_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     empty_dir = tmp_path / "empty"
     empty_dir.mkdir()
@@ -1095,6 +1218,29 @@ def test_cleanup_helpers_ignore_os_errors(tmp_path: Path, monkeypatch: pytest.Mo
     monkeypatch.setattr(Path, "unlink", fail_unlink)
     cleanup_unregistered_import_files([p], [])
     assert p.exists()
+
+
+def test_rollback_imported_datasets_continues_after_unregister_error(tmp_path: Path) -> None:
+    p = tmp_path / "leftover.parquet"
+    p.write_text("x")
+    ds = RegisteredDataset(
+        dataset_id="ds_001",
+        source_path=p,
+        source_label=p.name,
+        view_name="leftover",
+        format="parquet",
+        row_count=None,
+        column_count=None,
+        file_size_bytes=1,
+    )
+
+    class Registry:
+        def unregister(self, _dataset_id: str) -> bool:
+            raise RuntimeError("unregister failed")
+
+    rollback_imported_datasets(Registry(), [p], [ds])  # type: ignore[arg-type]
+
+    assert not p.exists()
 
 
 def test_duckdb_import_route_job_honors_preexisting_cancel(tmp_path: Path) -> None:

@@ -8,7 +8,7 @@ import pytest
 
 from app.config import Settings
 from app.models.api import QueryRequest
-from app.services.query import _apply_statement_timeout, execute_query
+from app.services.query import execute_query
 from app.services.query_errors import MSG_BINDER_GROUPING, MSG_CATALOG, MSG_CONVERSION
 from app.services.registry import DatasetRegistry
 from app.services.workspace import Workspace
@@ -207,15 +207,6 @@ def test_empty_registry_allows_select(registry_with_view: DatasetRegistry, monke
     assert out.rows == [{"x": 1}]
 
 
-def test_apply_statement_timeout_reraises_unknown_errors() -> None:
-    class Con:
-        def execute(self, _sql: str) -> None:
-            raise RuntimeError("different failure")
-
-    with pytest.raises(RuntimeError, match="different failure"):
-        _apply_statement_timeout(Con(), 1.0)
-
-
 def test_execute_query_timeout_error_message(
     registry_with_view: DatasetRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -309,3 +300,26 @@ def test_execute_query_catalog_error_message(
     vw = registry_with_view.list_all()[0].view_name
     out = execute_query(registry_with_view, Settings(), QueryRequest(sql=f"SELECT * FROM {vw}"))
     assert out.error == MSG_CATALOG
+
+
+def test_execute_query_emits_ast_relation_count(
+    registry_with_view: DatasetRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[dict[str, object]] = []
+    vw = registry_with_view.list_all()[0].view_name
+
+    monkeypatch.setattr(
+        "app.services.query.emit",
+        lambda name, **payload: events.append({"name": name, **payload}),
+    )
+
+    out = execute_query(
+        registry_with_view,
+        Settings(),
+        QueryRequest(sql=f"WITH local AS (SELECT * FROM {vw}) SELECT * FROM local"),
+    )
+
+    assert not out.error
+    assert events[-1]["name"] == "query.execute"
+    assert events[-1]["relation_count"] == 1
