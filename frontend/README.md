@@ -18,7 +18,7 @@ From `frontend/`:
 | `npm install` | Install dependencies |
 | `npm run dev` | Dev server on port **5173** |
 | `npm run build` | Production build |
-| `npm run lint` | ESLint |
+| `npm run lint` | ESLint (zero warnings) |
 | `npm test` | Vitest (happy-dom) |
 | `npm run test:coverage` | Vitest with **v8** coverage thresholds |
 
@@ -74,6 +74,8 @@ Profiles are **v6**-shaped (`entity_id_columns`,
 Tests live next to sources as `*.test.ts(x)`. Thresholds in [`vitest.config.ts`](vitest.config.ts):
 **`COVERAGE_BASELINE`** is **94** for lines and statements (excludes such as `main.tsx` and
 `types.ts`). CI runs coverage via **`make check`** — see [`CONTRIBUTING.md`](../CONTRIBUTING.md#coverage).
+Unexpected `console.error` and `console.warn` output fails tests; mock missing API calls
+instead of allowing happy-dom network errors.
 
 [`src/api/types.ts`](src/api/types.ts) is validated by [`types.test.ts`](src/api/types.test.ts)
 using fixtures in [`src/api/__fixtures__/`](src/api/__fixtures__/); keep fixtures aligned with

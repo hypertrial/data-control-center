@@ -109,11 +109,19 @@ describe('QueryPage', () => {
   beforeEach(() => {
     mockSelection = ''
     h.runQuery.mockReset()
+    h.runQuery.mockResolvedValue({
+      columns: [],
+      rows: [],
+      row_count: 0,
+      truncated: false,
+      error: null,
+    })
     h.listDatasets.mockResolvedValue([])
     h.listSavedQueries.mockResolvedValue([])
     h.createSavedQuery.mockReset()
     h.deleteSavedQuery.mockResolvedValue(undefined)
     h.fetchDatasetProfileOnce.mockReset()
+    h.fetchDatasetProfileOnce.mockResolvedValue({ rows: 0, columns: 0, column_profiles: [] })
     toastMock.success.mockReset()
     toastMock.error.mockReset()
     localStorage.clear()

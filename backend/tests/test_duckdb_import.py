@@ -480,7 +480,7 @@ def test_resolve_staged_empty_batch_and_workspace_match(
     upload_id = _stage_upload(tmp_path, source)
     resolved = resolve_staged_duckdb_upload(upload_id, settings=settings)
     monkeypatch.setattr(
-        "app.services.duckdb_import._workspace_path",
+        "app.services.duckdb_sources._workspace_path",
         lambda _settings: resolved,
     )
     with pytest.raises(AppError, match="active Data Control Center workspace"):

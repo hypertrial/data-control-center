@@ -85,6 +85,10 @@ cd frontend && npm run test:coverage
 cd frontend && npm run build
 ```
 
+Frontend lint fails on warnings, and Vitest fails on unexpected `console.error` /
+`console.warn` output. Fix noisy tests by mocking the missing local API call or by using
+the explicit test helper for intentionally asserted console output.
+
 ### CI (GitHub Actions)
 
 **Primary CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on push and

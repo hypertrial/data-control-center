@@ -1,11 +1,10 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
-import { afterEach, beforeEach } from 'vitest'
+import { beforeEach } from 'vitest'
+import { installConsoleFailGuard } from '@/test/console'
 import { useUiStore } from '@/store/uiStore'
 
-afterEach(() => {
-  cleanup()
-})
+installConsoleFailGuard(cleanup)
 
 beforeEach(() => {
   useUiStore.setState({

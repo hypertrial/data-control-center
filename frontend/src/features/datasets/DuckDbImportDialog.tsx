@@ -8,7 +8,7 @@ import { formatCount } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useQuery } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 const DUCKDB_IMPORT_TIMEOUT_MS = 600_000
@@ -35,6 +35,71 @@ function duckDbRelationKey(rel: Pick<DuckDbRelationSummary, 'schema' | 'name'>):
 
 type RowCountState = number | null | 'loading'
 
+function DuckDbRelationsTable({
+  relations,
+  renderRow,
+}: {
+  relations: DuckDbRelationSummary[]
+  renderRow: (rel: DuckDbRelationSummary) => ReactNode
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const useVirtual = relations.length > VIRTUALIZE_THRESHOLD
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual exposes mutable helpers; this component contains them.
+  const virtualizer = useVirtualizer({
+    count: useVirtual ? relations.length : 0,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_HEIGHT_PX,
+    overscan: 8,
+  })
+  const virtualItems = useVirtual ? virtualizer.getVirtualItems() : []
+  const paddingTop = virtualItems.length > 0 ? virtualItems[0]!.start : 0
+  const paddingBottom =
+    useVirtual && virtualItems.length > 0
+      ? virtualizer.getTotalSize() - virtualItems[virtualItems.length - 1]!.end
+      : 0
+  const visibleRelations = useVirtual
+    ? virtualItems.map((vi) => relations[vi.index]!)
+    : relations
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border-default">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
+        <table className="w-full min-w-[880px] table-fixed text-left text-xs">
+          <colgroup>
+            <col style={{ width: 40 }} />
+            <col style={{ width: '32%' }} />
+            <col style={{ width: 56 }} />
+            <col style={{ width: 72 }} />
+            <col style={{ width: '44%' }} />
+          </colgroup>
+          <thead className="sticky top-0 z-10 bg-surface-2 text-fg-muted">
+            <tr>
+              <th className="px-2 py-2"> </th>
+              <th className="max-w-0 px-2 py-2 font-medium">Table</th>
+              <th className="px-2 py-2 font-medium">Type</th>
+              <th className="px-2 py-2 font-medium">Rows</th>
+              <th className="max-w-0 px-2 py-2 font-medium">Alias</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-default">
+            {useVirtual && paddingTop > 0 ? (
+              <tr aria-hidden>
+                <td colSpan={5} style={{ height: paddingTop, padding: 0, border: 0 }} />
+              </tr>
+            ) : null}
+            {visibleRelations.map((rel) => renderRow(rel))}
+            {useVirtual && paddingBottom > 0 ? (
+              <tr aria-hidden>
+                <td colSpan={5} style={{ height: paddingBottom, padding: 0, border: 0 }} />
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
   const open = session !== null
   const sourceId = session?.sourceId ?? ''
@@ -53,7 +118,6 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
   const [duckDbAliases, setDuckDbAliases] = useState<Record<string, string>>({})
   const [rowCounts, setRowCounts] = useState<Record<string, RowCountState>>({})
   const [duckDbBusy, setDuckDbBusy] = useState<DuckDbBusyState>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
 
   const duckDbRelations = useMemo(() => inspectQ.data ?? [], [inspectQ.data])
   const hasViews = useMemo(() => duckDbRelations.some((rel) => rel.type === 'view'), [duckDbRelations])
@@ -96,30 +160,15 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
 
   const hasActiveFilters = activeSchemas.size > 0 || search.trim().length > 0
 
-  const useVirtual = filteredRelations.length > VIRTUALIZE_THRESHOLD
-  const virtualizer = useVirtualizer({
-    count: useVirtual ? filteredRelations.length : 0,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT_PX,
-    overscan: 8,
-  })
-  const virtualItems = useVirtual ? virtualizer.getVirtualItems() : []
-  const paddingTop = virtualItems.length > 0 ? virtualItems[0]!.start : 0
-  const paddingBottom =
-    useVirtual && virtualItems.length > 0
-      ? virtualizer.getTotalSize() - virtualItems[virtualItems.length - 1]!.end
-      : 0
-  const visibleRelations = useVirtual
-    ? virtualItems.map((vi) => filteredRelations[vi.index]!)
-    : filteredRelations
-
   useEffect(() => {
     if (!open) {
-      setSearch('')
-      setActiveSchemas(new Set())
-      setDuckDbSelected(new Set())
-      setDuckDbAliases({})
-      setRowCounts({})
+      queueMicrotask(() => {
+        setSearch('')
+        setActiveSchemas(new Set())
+        setDuckDbSelected(new Set())
+        setDuckDbAliases({})
+        setRowCounts({})
+      })
     }
   }, [open, sourceId])
 
@@ -127,20 +176,6 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
     if (!inspectQ.isSuccess || !session) return
     toast.success(`Found ${inspectQ.data.length} importable relation(s) in ${session.filename}.`)
   }, [inspectQ.isSuccess, inspectQ.data, session])
-
-  useEffect(() => {
-    if (!inspectQ.isSuccess || !filename) return
-    setDuckDbAliases((current) => {
-      const next = { ...current }
-      for (const rel of inspectQ.data) {
-        const key = duckDbRelationKey(rel)
-        if (!(key in next)) {
-          next[key] = defaultDuckDbExportAlias(filename, rel)
-        }
-      }
-      return next
-    })
-  }, [inspectQ.isSuccess, inspectQ.data, filename])
 
   const loadRowCount = useCallback(
     async (rel: DuckDbRelationSummary) => {
@@ -170,7 +205,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
       .filter((rel) => duckDbSelected.has(duckDbRelationKey(rel)))
       .map((rel) => {
         const key = duckDbRelationKey(rel)
-        const alias = (duckDbAliases[key] || '').trim()
+        const alias = (duckDbAliases[key] ?? defaultDuckDbExportAlias(filename, rel)).trim()
         return { schema: rel.schema, name: rel.name, alias: alias || null }
       })
     if (!relations.length) {
@@ -193,6 +228,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
     duckDbAliases,
     duckDbRelations,
     duckDbSelected,
+    filename,
     onClose,
     onImported,
     sourceId,
@@ -417,41 +453,7 @@ export function DuckDbImportDialog({ session, onClose, onImported }: Props) {
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {filteredRelations.length ? (
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border-default">
-                <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
-                <table className="w-full min-w-[880px] table-fixed text-left text-xs">
-                  <colgroup>
-                    <col style={{ width: 40 }} />
-                    <col style={{ width: '32%' }} />
-                    <col style={{ width: 56 }} />
-                    <col style={{ width: 72 }} />
-                    <col style={{ width: '44%' }} />
-                  </colgroup>
-                  <thead className="sticky top-0 z-10 bg-surface-2 text-fg-muted">
-                    <tr>
-                      <th className="px-2 py-2"> </th>
-                      <th className="max-w-0 px-2 py-2 font-medium">Table</th>
-                      <th className="px-2 py-2 font-medium">Type</th>
-                      <th className="px-2 py-2 font-medium">Rows</th>
-                      <th className="max-w-0 px-2 py-2 font-medium">Alias</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border-default">
-                    {useVirtual && paddingTop > 0 ? (
-                      <tr aria-hidden>
-                        <td colSpan={5} style={{ height: paddingTop, padding: 0, border: 0 }} />
-                      </tr>
-                    ) : null}
-                    {visibleRelations.map((rel) => renderRow(rel))}
-                    {useVirtual && paddingBottom > 0 ? (
-                      <tr aria-hidden>
-                        <td colSpan={5} style={{ height: paddingBottom, padding: 0, border: 0 }} />
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-                </div>
-              </div>
+              <DuckDbRelationsTable relations={filteredRelations} renderRow={renderRow} />
             ) : null}
 
             {duckDbRelations.length && !filteredRelations.length && hasActiveFilters ? (

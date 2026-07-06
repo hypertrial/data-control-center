@@ -1,32 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, Copy, History, Save, X } from 'lucide-react'
+import { Copy, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
-import type { DatasetSummary } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { PageContainer } from '@/components/ui/section'
 import { QueryErrorBanner } from '@/components/ui/query-error-banner'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Tooltip } from '@/components/ui/tooltip'
 import { formatAnalyticsSql, quoteIdent } from '@/lib/sql'
 import { formatCount } from '@/lib/format'
 import { useResizableSplit } from '@/hooks/useResizableSplit'
 import { useUiStore } from '@/store/uiStore'
-import { SchemaDatasetBlock } from '@/features/query/SchemaDatasetBlock'
+import { QuerySchemaRail } from '@/features/query/QuerySchemaRail'
+import { QuerySnippetsMenu } from '@/features/query/QuerySnippetsMenu'
 import { SqlActiveDatasetChip } from '@/features/query/SqlActiveDatasetChip'
 import { SqlEditor, type SqlEditorHandle } from '@/features/query/SqlEditor'
 import { SqlResultsGrid } from '@/features/query/SqlResultsGrid'
 import { useDefaultSqlTemplate } from '@/features/query/useDefaultSqlTemplate'
+import { formatRunDuration, useQueryRunner } from '@/features/query/useQueryRunner'
 import { loadSqlHistory, saveSqlHistory, SQL_HISTORY_CAP } from '@/features/query/useSqlHistory'
-
-function formatRunDuration(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`
-  return `${(ms / 1000).toFixed(1)}s`
-}
 
 export function QueryPage() {
   const qc = useQueryClient()
@@ -40,15 +35,10 @@ export function QueryPage() {
   const [sqlText, setSqlText] = useState(() => 'select 1;')
   const [maxRows, setMaxRows] = useState(1000)
   const [history, setHistory] = useState<string[]>(() => loadSqlHistory())
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [otherDatasetsOpen, setOtherDatasetsOpen] = useState(false)
   const [saveOpen, setSaveOpen] = useState(false)
   const [saveName, setSaveName] = useState('')
   const [saveDescription, setSaveDescription] = useState('')
   const [selectedSql, setSelectedSql] = useState('')
-  const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
-  const [runFinishedAt, setRunFinishedAt] = useState<number | null>(null)
-  const [runElapsedMs, setRunElapsedMs] = useState<number | null>(null)
 
   const cmRef = useRef<ReactCodeMirrorRef>(null)
   const sqlEditorHandleRef = useRef<SqlEditorHandle>(null)
@@ -83,25 +73,6 @@ export function QueryPage() {
     })
     view.focus()
   }, [])
-
-  const runStartedAtRef = useRef<number | null>(null)
-
-  const runMutation = useMutation({
-    mutationFn: api.runQuery,
-    onMutate: () => {
-      const started = Date.now()
-      runStartedAtRef.current = started
-      setRunStartedAt(started)
-      setRunFinishedAt(null)
-      setRunElapsedMs(0)
-    },
-    onSettled: () => {
-      const finished = Date.now()
-      const started = runStartedAtRef.current
-      setRunFinishedAt(finished)
-      setRunElapsedMs(started != null ? finished - started : null)
-    },
-  })
 
   const deleteSaved = useMutation({
     mutationFn: (savedId: string) => api.deleteSavedQuery(savedId),
@@ -145,12 +116,14 @@ export function QueryPage() {
     })
   }, [])
 
-  const execRun = useCallback(() => {
-    const sql =
-      selectedSql.trim() || sqlEditorHandleRef.current?.getSelectedText().trim() || sqlText
-    runMutation.mutate({ sql, max_rows: maxRows > 0 ? maxRows : null })
-    pushHistory(sql)
-  }, [runMutation, selectedSql, sqlText, maxRows, pushHistory])
+  const getSelectedText = useCallback(() => sqlEditorHandleRef.current?.getSelectedText() ?? '', [])
+  const { execRun, runElapsedMs, runFinishedAt, runMutation } = useQueryRunner({
+    sqlText,
+    selectedSql,
+    maxRows,
+    getSelectedText,
+    pushHistory,
+  })
 
   const hasSelection = selectedSql.trim().length > 0
 
@@ -172,12 +145,6 @@ export function QueryPage() {
     if (saveOpen) saveNameRef.current?.focus()
   }, [saveOpen])
 
-  useEffect(() => {
-    if (!runMutation.isPending || runStartedAt == null) return
-    const id = window.setInterval(() => setRunElapsedMs(Date.now() - runStartedAt), 200)
-    return () => window.clearInterval(id)
-  }, [runMutation.isPending, runStartedAt])
-
   const templates = useMemo(() => {
     const view = activeViewName ? quoteIdent(activeViewName) : '<dataset_table>'
     return [
@@ -187,13 +154,6 @@ export function QueryPage() {
     ]
   }, [activeViewName])
 
-  const otherDatasets = useMemo(
-    () => (dq.data ?? []).filter((d) => d.dataset_id !== activeId),
-    [dq.data, activeId],
-  )
-
-  const toggleDs = (id: string) => setExpanded((e) => ({ ...e, [id]: !e[id] }))
-
   const runStatusChip = (() => {
     if (runMutation.isPending) {
       return (
@@ -202,7 +162,13 @@ export function QueryPage() {
         </span>
       )
     }
-    if (runMutation.isSuccess && runFinishedAt != null && runElapsedMs != null && !runMutation.data?.error) {
+    if (
+      runMutation.isSuccess &&
+      runFinishedAt != null &&
+      runElapsedMs != null &&
+      runMutation.data &&
+      !runMutation.data.error
+    ) {
       return (
         <span className="rounded-full border border-border-default bg-black/20 px-2 py-0.5 font-mono text-[10px] text-fg-muted">
           {formatRunDuration(runElapsedMs)} · {formatCount(runMutation.data.row_count)} rows
@@ -211,8 +177,6 @@ export function QueryPage() {
     }
     return null
   })()
-
-  const activeSchemaExpanded = activeId ? (expanded[activeId] ?? true) : false
 
   return (
     <PageContainer className="flex h-full min-h-0 flex-col gap-3">
@@ -227,93 +191,14 @@ export function QueryPage() {
             <Button type="button" variant="outline" onClick={formatSql}>
               Format
             </Button>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button type="button" variant="outline" className="gap-1">
-                  <History className="h-3.5 w-3.5" />
-                  Snippets ▾
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="max-h-96 w-96 overflow-y-auto p-0" align="start">
-                <div className="border-b border-border-default px-3 py-2 text-[10px] font-medium uppercase tracking-wide text-fg-muted">
-                  Templates
-                </div>
-                <ul className="p-1">
-                  {templates.map((t) => (
-                    <li key={t.label}>
-                      <button
-                        type="button"
-                        className="w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-white/10"
-                        onClick={() => setSqlText(t.sql)}
-                      >
-                        {t.label}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <div className="border-b border-t border-border-default px-3 py-2 text-[10px] font-medium uppercase tracking-wide text-fg-muted">
-                  Recent
-                </div>
-                <ul className="p-1">
-                  {history.length === 0 ? (
-                    <li className="px-2 py-2 text-xs text-fg-muted">No local history yet.</li>
-                  ) : (
-                    history.map((h, i) => (
-                      <li key={i} className="group flex items-start gap-1">
-                        <button
-                          type="button"
-                          className="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-xs hover:bg-white/10"
-                          onClick={() => setSqlText(h)}
-                        >
-                          {h.slice(0, 120)}
-                          {h.length > 120 ? '…' : ''}
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded p-1 text-fg-muted opacity-0 hover:bg-white/10 hover:text-fg group-hover:opacity-100"
-                          aria-label="Remove from recent"
-                          onClick={() => removeHistory(h)}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </li>
-                    ))
-                  )}
-                </ul>
-                <div className="border-b border-t border-border-default px-3 py-2 text-[10px] font-medium uppercase tracking-wide text-fg-muted">
-                  Saved
-                </div>
-                <ul className="p-1">
-                  {(savedQ.data ?? []).length === 0 ? (
-                    <li className="px-2 py-2 text-xs text-fg-muted">None yet — use Save.</li>
-                  ) : (
-                    (savedQ.data ?? []).map((q) => (
-                      <li key={q.saved_id} className="group flex items-start gap-1">
-                        <button
-                          type="button"
-                          className="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-xs hover:bg-white/10"
-                          onClick={() => setSqlText(q.sql)}
-                        >
-                          <span className="font-medium text-fg">{q.name}</span>
-                          <span className="mt-0.5 block truncate font-mono text-[10px] text-fg-muted">
-                            {q.sql.slice(0, 96)}
-                            {q.sql.length > 96 ? '…' : ''}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded p-1 text-fg-muted opacity-0 hover:bg-white/10 hover:text-fg group-hover:opacity-100"
-                          aria-label={`Delete saved query ${q.name}`}
-                          onClick={() => deleteSaved.mutate(q.saved_id)}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </li>
-                    ))
-                  )}
-                </ul>
-              </PopoverContent>
-            </Popover>
+            <QuerySnippetsMenu
+              templates={templates}
+              history={history}
+              savedQueries={savedQ.data ?? []}
+              onSetSql={setSqlText}
+              onRemoveHistory={removeHistory}
+              onDeleteSaved={(savedId) => deleteSaved.mutate(savedId)}
+            />
             <Tooltip content="Save query (⌘S in editor)">
               <Button type="button" variant="secondary" size="icon" aria-label="Save query" onClick={() => setSaveOpen(true)}>
                 <Save className="h-4 w-4" />
@@ -371,74 +256,13 @@ export function QueryPage() {
           </div>
         </div>
 
-        <div
-          className={
-            schemaCollapsed
-              ? 'relative flex w-9 shrink-0 flex-col items-center border-l border-border-default bg-black/20 py-2'
-              : 'relative flex w-[280px] shrink-0 flex-col border-l border-border-default bg-black/20 p-2'
-          }
-          data-testid="sql-schema-rail"
-          data-collapsed={schemaCollapsed ? 'true' : 'false'}
-        >
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 shrink-0"
-            aria-label={schemaCollapsed ? 'Expand schema rail' : 'Collapse schema rail'}
-            onClick={() => setSchemaCollapsed(!schemaCollapsed)}
-          >
-            {schemaCollapsed ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </Button>
-          {schemaCollapsed ? (
-            <span
-              className="mt-4 select-none text-[10px] font-semibold uppercase tracking-widest text-fg-muted [writing-mode:vertical-rl]"
-              aria-hidden
-            >
-              Schema
-            </span>
-          ) : (
-            <>
-              <div className="text-xs font-semibold text-fg-muted">Schema</div>
-              <div className="mt-2 min-h-0 flex-1 space-y-2 overflow-auto text-xs">
-                {activeSummary ? (
-                  <SchemaDatasetBlock
-                    key={activeSummary.dataset_id}
-                    summary={activeSummary}
-                    expanded={activeSchemaExpanded}
-                    onToggle={() => toggleDs(activeSummary.dataset_id)}
-                    onInsert={(frag) => insertAtCursor(frag)}
-                  />
-                ) : (
-                  <div className="text-fg-muted">Select a dataset to browse schema.</div>
-                )}
-                {otherDatasets.length > 0 ? (
-                  <div>
-                    <button
-                      type="button"
-                      className="mb-1 text-[10px] font-medium uppercase tracking-wide text-fg-muted hover:text-fg"
-                      onClick={() => setOtherDatasetsOpen((v) => !v)}
-                    >
-                      {otherDatasetsOpen ? 'Hide other datasets' : 'Other datasets'}
-                    </button>
-                    {otherDatasetsOpen
-                      ? otherDatasets.map((ds: DatasetSummary) => (
-                          <SchemaDatasetBlock
-                            key={ds.dataset_id}
-                            summary={ds}
-                            expanded={!!expanded[ds.dataset_id]}
-                            onToggle={() => toggleDs(ds.dataset_id)}
-                            onInsert={(frag) => insertAtCursor(frag)}
-                          />
-                        ))
-                      : null}
-                  </div>
-                ) : null}
-                {dq.data?.length === 0 ? <div className="text-fg-muted">No datasets.</div> : null}
-              </div>
-            </>
-          )}
-        </div>
+        <QuerySchemaRail
+          activeSummary={activeSummary}
+          datasets={dq.data ?? []}
+          collapsed={schemaCollapsed}
+          onCollapsedChange={setSchemaCollapsed}
+          onInsert={insertAtCursor}
+        />
       </div>
 
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>

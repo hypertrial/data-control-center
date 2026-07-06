@@ -34,6 +34,7 @@ vi.mock('@/api/client', async (importOriginal) => {
       listSavedQueries: vi.fn(),
       listAskConversations: vi.fn(),
       listLlmModels: vi.fn(),
+      duckDbCapabilities: vi.fn(),
       health: vi.fn(),
       getJob: vi.fn(),
       refreshProfile: vi.fn(),
@@ -93,6 +94,13 @@ describe('App', () => {
       models: [{ name: 'qwen3:4b', modified_at: null, size: null }],
       reachable: true,
       detail: null,
+    })
+    vi.mocked(api.duckDbCapabilities).mockResolvedValue({
+      local_open_enabled: true,
+      upload_soft_max_bytes: 512,
+      inspect_include_row_counts_default: false,
+      native_pick_enabled: true,
+      view_import_enabled: true,
     })
     vi.mocked(api.health).mockResolvedValue({
       status: 'ok',
