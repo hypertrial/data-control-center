@@ -6,7 +6,10 @@ export const ACTIVE_DATASET_QUERY_KEYS = [
   'profile-history',
   'profile-diff',
   'sample',
+  'relationships',
 ] as const
+
+const DELETED_DATASET_QUERY_KEYS = ['saved-charts', 'dataset-dependencies'] as const
 
 type CacheOptions = {
   includeDatasets?: boolean
@@ -29,6 +32,9 @@ export function invalidateActiveDatasetQueries(
 /** Remove per-dataset TanStack Query caches after the dataset is deleted. */
 export function removeActiveDatasetQueries(qc: QueryClient, datasetId: string): void {
   for (const key of ACTIVE_DATASET_QUERY_KEYS) {
+    qc.removeQueries({ queryKey: [key, datasetId] })
+  }
+  for (const key of DELETED_DATASET_QUERY_KEYS) {
     qc.removeQueries({ queryKey: [key, datasetId] })
   }
 }

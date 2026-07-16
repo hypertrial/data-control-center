@@ -34,6 +34,9 @@ type UiState = {
   pendingQuery: string | null
   setPendingQuery: (q: string | null) => void
   takePendingQuery: () => string | null
+  pendingAskQuestion: string | null
+  setPendingAskQuestion: (question: string | null) => void
+  takePendingAskQuestion: () => string | null
   /** Bumps when a non-null SQL snippet is queued for the editor (same-route navigation). */
   sqlInjectTick: number
   commandPaletteOpen: boolean
@@ -91,6 +94,13 @@ export const useUiStore = create<UiState>((set, get) => ({
     return q
   },
   sqlInjectTick: 0,
+  pendingAskQuestion: null,
+  setPendingAskQuestion: (question) => set({ pendingAskQuestion: question }),
+  takePendingAskQuestion: () => {
+    const question = get().pendingAskQuestion
+    set({ pendingAskQuestion: null })
+    return question
+  },
   commandPaletteOpen: false,
   setCommandPaletteOpen: (v) => set({ commandPaletteOpen: v }),
   shortcutSheetOpen: false,

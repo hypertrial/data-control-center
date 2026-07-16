@@ -1,4 +1,5 @@
 import {
+  LayoutDashboard,
   LineChart,
   MessageCircle,
   Rows3,
@@ -22,6 +23,7 @@ export function CommandPalette() {
 
   const dsQ = useQuery({ queryKey: ['datasets'], queryFn: api.listDatasets })
   const sqQ = useQuery({ queryKey: ['saved-queries'], queryFn: api.listSavedQueries })
+  const chartsQ = useQuery({ queryKey: ['saved-charts'], queryFn: () => api.listSavedCharts() })
 
   const close = () => setOpen(false)
   const go = (path: string) => {
@@ -58,7 +60,7 @@ export function CommandPalette() {
                   value={`dataset ${d.name} ${d.dataset_id}`}
                   onSelect={() => {
                     setActive(d.dataset_id)
-                    go('/columns')
+                    go('/overview')
                   }}
                 >
                   <Table2 /> {d.name}{' '}
@@ -67,6 +69,9 @@ export function CommandPalette() {
               ))}
             </Command.Group>
             <Command.Group heading="Navigate">
+              <Command.Item value="overview page" onSelect={() => go('/overview')}>
+                <LayoutDashboard /> Overview
+              </Command.Item>
               <Command.Item value="columns page" onSelect={() => go('/columns')}>
                 <Table2 /> Columns
               </Command.Item>
@@ -104,6 +109,20 @@ export function CommandPalette() {
                   }}
                 >
                   <Terminal /> {q.name}
+                </Command.Item>
+              ))}
+            </Command.Group>
+            <Command.Group heading="Saved charts">
+              {(chartsQ.data ?? []).map((chart) => (
+                <Command.Item
+                  key={chart.chart_id}
+                  value={`saved chart ${chart.name}`}
+                  onSelect={() => {
+                    setActive(chart.dataset_id)
+                    go(`/charts?ds=${encodeURIComponent(chart.dataset_id)}&chart=${encodeURIComponent(chart.chart_id)}`)
+                  }}
+                >
+                  <LineChart /> {chart.name}
                 </Command.Item>
               ))}
             </Command.Group>

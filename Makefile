@@ -39,13 +39,13 @@ frontend/node_modules/.bin/vite:
 dev: frontend/node_modules/.bin/vite
 	bash -c '\
 		token=$$(cd backend && uv run python -c "import secrets; print(secrets.token_urlsafe(32))"); \
-		(cd backend && DCC_DEV_UI_ORIGIN=http://localhost:5173 DCC_LOCAL_API_TOKEN=$$token uv run uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000) & pid1=$$!; \
+		(cd backend && DCC_DEV_UI_ORIGIN=http://localhost:5173 DCC_LOCAL_API_TOKEN=$$token uv run python -m uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000) & pid1=$$!; \
 		(cd frontend && npm run dev) & pid2=$$!; \
 		trap "kill $$pid1 $$pid2 2>/dev/null" INT TERM; \
 		wait'
 
 backend:
-	cd backend && uv run uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000
+	cd backend && uv run python -m uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000
 
 frontend: frontend/node_modules/.bin/vite
 	cd frontend && npm run dev
@@ -54,11 +54,11 @@ build-ui: frontend/node_modules/.bin/vite
 	cd frontend && npm run build
 
 serve: build-ui
-	cd backend && DCC_UI_DIST_PATH=../frontend/dist uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+	cd backend && DCC_UI_DIST_PATH=../frontend/dist uv run python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 check:
 	cd backend && uv run ruff check app tests
-	cd backend && uv run pytest
+	cd backend && uv run python -m pytest
 	cd frontend && npm run lint
 	cd frontend && npm test
 	cd frontend && npm run test:coverage

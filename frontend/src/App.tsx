@@ -1,7 +1,7 @@
 import { Suspense, lazy, type ReactNode } from 'react'
 import { QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { LayoutDashboard } from 'lucide-react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { api } from '@/api/client'
 import { appQueryClient } from '@/appQueryClient'
 import { CardSkeleton } from '@/components/ui/skeleton'
@@ -17,6 +17,9 @@ import {
 
 const ColumnsPage = lazy(() =>
   import('@/features/columns/ColumnsPage').then((m) => ({ default: m.ColumnsPage })),
+)
+const OverviewPage = lazy(() =>
+  import('@/features/overview/OverviewPage').then((m) => ({ default: m.OverviewPage })),
 )
 const SamplesPage = lazy(() =>
   import('@/features/samples/SamplesPage').then((m) => ({ default: m.SamplesPage })),
@@ -86,9 +89,10 @@ function RoutedPages() {
   return (
     <Suspense fallback={<RouteLoadingFallback />}>
       <Routes>
-        <Route path="/" element={<Navigate to="/columns" replace />} />
+        <Route path="/" element={<OverviewRedirect />} />
+        <Route path="/overview" element={<OverviewPage />} />
         <Route path="/columns" element={<ColumnsPage />} />
-        <Route path="/quality" element={<Navigate to="/columns" replace />} />
+        <Route path="/quality" element={<OverviewRedirect />} />
         <Route path="/samples" element={<SamplesPage />} />
         <Route path="/charts" element={<ChartsPage />} />
         <Route path="/ask" element={<AskPage />} />
@@ -96,6 +100,11 @@ function RoutedPages() {
       </Routes>
     </Suspense>
   )
+}
+
+function OverviewRedirect() {
+  const { search } = useLocation()
+  return <Navigate to={{ pathname: '/overview', search }} replace />
 }
 
 function MainBody() {

@@ -1,6 +1,7 @@
 # Data Control Center — Frontend
 
-React + Vite + TypeScript UI for browsing datasets, profiles, charts, and SQL.
+React + Vite + TypeScript UI for guided dataset overviews, relationships, profiles,
+persistent charts, Ask, and SQL.
 
 Product usage (tabs, shortcuts, Ask): [`docs/user-guide.md`](../docs/user-guide.md).
 
@@ -41,8 +42,9 @@ editing [`backend/app/`](../backend/app) (see root **`Makefile`**: `--reload-dir
 
 ## Layout and conventions
 
-- **`src/features/`** — route-level pages (columns, samples, charts, SQL, ask). The app
-  opens on **Columns** by default; see [user guide](../docs/user-guide.md#profiles-and-jobs).
+- **`src/features/`** — route-level pages (overview, columns, samples, charts, SQL, ask).
+  The app opens on **Overview** by default; see the
+  [user guide](../docs/user-guide.md#overview-and-relationships).
 - **`src/api/`** — typed fetch client ([`client.ts`](src/api/client.ts)) and DTOs
   ([`types.ts`](src/api/types.ts)).
 - **`src/lib/sql.ts`** — SQL identifier quoting and snippet builders ([`sql.test.ts`](src/lib/sql.test.ts)).
@@ -56,6 +58,8 @@ editing [`backend/app/`](../backend/app) (see root **`Makefile`**: `--reload-dir
 | --- | --- |
 | `['datasets']` | Dataset list |
 | `['profile', datasetId]` | Cached profile (prefer **`useDatasetProfile`**) |
+| `['relationships', datasetId, includeDismissed]` | Suggested and decided relationships |
+| `['saved-charts', datasetId]` | Persistent charts for one dataset |
 
 Prefer **`useDatasetProfile`** for profile loads; it calls **`api.fetchDatasetProfileOnce`**
 and polls **`details.job_id`** with exponential backoff (1.2s–8s) when the API returns

@@ -34,10 +34,13 @@ export function AskPage() {
   const conversationHistoryCollapsed = useUiStore((s) => s.askConversationHistoryCollapsed)
   const setConversationHistoryCollapsed = useUiStore((s) => s.setAskConversationHistoryCollapsed)
   const openInSql = useOpenInSql()
+  const takePendingAskQuestion = useUiStore((s) => s.takePendingAskQuestion)
 
   const { busy, current, run, cancel } = useAskStream()
   const [streamQuestion, setStreamQuestion] = useState<string | null>(null)
-  const [composerText, setComposerText] = useState('')
+  const [composerText, setComposerText] = useState(
+    () => useUiStore.getState().pendingAskQuestion ?? '',
+  )
   const [optionsOpen, setOptionsOpen] = useState(false)
   const [optionsFocus, setOptionsFocus] = useState<AskOptionsFocus | null>(null)
   const [conversationsMobileOpen, setConversationsMobileOpen] = useState(false)
@@ -103,8 +106,9 @@ export function AskPage() {
   }, [current?.error])
 
   useEffect(() => {
+    takePendingAskQuestion()
     void taRef.current?.focus()
-  }, [])
+  }, [takePendingAskQuestion])
 
   useEffect(() => {
     if (prevBusy.current && !busy && activeConversationId) {

@@ -78,7 +78,7 @@ Individual steps (for debugging only; prefer `make check`):
 
 ```bash
 cd backend && uv run ruff check app tests
-cd backend && uv run pytest
+cd backend && uv run python -m pytest
 cd frontend && npm run lint
 cd frontend && npm test
 cd frontend && npm run test:coverage
@@ -113,7 +113,7 @@ The generator writes [`backend/tests/fixtures/chart_sql_cases.json`](backend/tes
 
 ### Coverage
 
-- **Backend:** pytest-cov in [`backend/pyproject.toml`](backend/pyproject.toml) fails below **100%** line coverage on `app/`. HTML report: `uv run pytest --cov=app --cov-report=html` → `backend/htmlcov/index.html`.
+- **Backend:** pytest-cov in [`backend/pyproject.toml`](backend/pyproject.toml) fails below **100%** line coverage on `app/`. HTML report: `uv run python -m pytest --cov=app --cov-report=html` → `backend/htmlcov/index.html`.
 - **Frontend:** Vitest thresholds in [`frontend/vitest.config.ts`](frontend/vitest.config.ts) (**`COVERAGE_BASELINE`** 94% lines/statements; see excludes there).
 
 Security and dependency checks for release hygiene:

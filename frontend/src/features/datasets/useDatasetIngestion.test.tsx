@@ -84,6 +84,32 @@ describe('useDatasetIngestion', () => {
     expect(setActiveDatasetId).toHaveBeenCalledWith('ds_1')
   })
 
+  it('signals navigation only when creating the first dataset', async () => {
+    const first = {
+      dataset_id: 'ds_1', name: 'a.csv', view_name: 'a', source_path: 'a.csv', format: 'csv',
+      row_count: 1, column_count: 1, file_size_bytes: 1,
+    }
+    vi.mocked(api.uploadDatasets).mockResolvedValue([first])
+    const onFirstDataset = vi.fn()
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    const Wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    )
+    const { result } = renderHook(
+      () => useDatasetIngestion({ setActiveDatasetId: vi.fn(), onFirstDataset }),
+      { wrapper: Wrapper },
+    )
+
+    await result.current.ingestFiles([new File(['a'], 'a.csv')])
+    expect(onFirstDataset).toHaveBeenCalledTimes(1)
+
+    qc.setQueryData(['datasets'], [first])
+    await result.current.ingestFiles([new File(['b'], 'b.csv')])
+    expect(onFirstDataset).toHaveBeenCalledTimes(1)
+  })
+
   it('opens small duckdb files via native pick instead of browser upload', async () => {
     const { result } = renderHook(() => useDatasetIngestion({ setActiveDatasetId: vi.fn() }), {
       wrapper: wrapper(),

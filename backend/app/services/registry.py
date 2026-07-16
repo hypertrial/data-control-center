@@ -323,6 +323,8 @@ class DatasetRegistry:
                 return False
             source_path = ds.source_path
             delete_source = self.is_app_owned_upload(source_path)
+            self._workspace.saved_charts.delete_for_dataset(dataset_id)
+            self._workspace.relationship_decisions.delete_for_dataset(dataset_id)
             self._workspace.drop_view_if_exists(ds.view_name)
             self._workspace.profiles.delete_profile_cache(dataset_id)
             with self._workspace.lock_db() as con:

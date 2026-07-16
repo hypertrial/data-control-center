@@ -13,7 +13,13 @@ from app.services.workspace_engine import (
 )
 from app.services.workspace_schema import UnsupportedWorkspaceSchemaError, WorkspaceSchema
 from app.services.ask_store import AskStore
-from app.services.workspace_stores import JobStore, ProfileStore, SavedQueryStore
+from app.services.workspace_stores import (
+    JobStore,
+    ProfileStore,
+    RelationshipDecisionStore,
+    SavedChartStore,
+    SavedQueryStore,
+)
 
 __all__ = [
     "Workspace",
@@ -32,6 +38,8 @@ class Workspace:
             self._schema.initialize(con, settings)
         self._profiles = ProfileStore(self._engine)
         self._saved_queries = SavedQueryStore(self._engine)
+        self._saved_charts = SavedChartStore(self._engine)
+        self._relationship_decisions = RelationshipDecisionStore(self._engine)
         self._jobs = JobStore(self._engine)
         self._ask = AskStore(self._engine)
 
@@ -54,6 +62,14 @@ class Workspace:
     @property
     def saved_queries(self) -> SavedQueryStore:
         return self._saved_queries
+
+    @property
+    def saved_charts(self) -> SavedChartStore:
+        return self._saved_charts
+
+    @property
+    def relationship_decisions(self) -> RelationshipDecisionStore:
+        return self._relationship_decisions
 
     @property
     def ask(self) -> AskStore:

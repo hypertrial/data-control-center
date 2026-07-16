@@ -260,6 +260,75 @@ export type SavedQueryPatch = {
   description?: string | null
 }
 
+export type SavedChart = {
+  chart_id: string
+  dataset_id: string
+  name: string
+  description: string | null
+  spec: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type SavedChartCreate = {
+  dataset_id: string
+  name: string
+  description?: string | null
+  spec: Record<string, unknown>
+}
+
+export type SavedChartPatch = {
+  name?: string
+  description?: string | null
+  spec?: Record<string, unknown>
+}
+
+export type DatasetDependencies = {
+  saved_chart_count: number
+  relationship_decision_count: number
+}
+
+export type RelationshipEndpoint = {
+  dataset_id: string
+  dataset_name: string
+  view_name: string
+  column_name: string
+  physical_type: string | null
+  semantic_type: string | null
+  unique_pct: number | null
+  metric_scope: string | null
+}
+
+export type DatasetRelationship = {
+  relationship_id: string
+  left: RelationshipEndpoint
+  right: RelationshipEndpoint
+  cardinality: 'one_to_one' | 'one_to_many' | 'many_to_one' | 'unknown'
+  confidence: 'high' | 'medium'
+  reasons: string[]
+  decision: 'suggested' | 'confirmed' | 'dismissed'
+  availability: 'ready' | 'stale'
+  suggested_sql: string | null
+}
+
+export type RelationshipsResponse = {
+  relationships: DatasetRelationship[]
+  pending_dataset_ids: string[]
+}
+
+export type RelationshipVerification = {
+  relationship_id: string
+  scope: 'sample'
+  left_sample_rows: number
+  right_sample_rows: number
+  left_distinct: number
+  right_distinct: number
+  overlap_distinct: number
+  left_match_pct: number
+  right_match_pct: number
+  verdict: 'strong' | 'partial' | 'weak' | 'no_overlap'
+}
+
 export type AskConversation = {
   conversation_id: string
   title: string

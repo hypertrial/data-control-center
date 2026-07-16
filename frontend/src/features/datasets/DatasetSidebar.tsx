@@ -3,7 +3,6 @@ import type { DatasetSummary } from '@/api/types'
 import { api } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { DatasetDropzone } from '@/features/datasets/DatasetDropzone'
 import { useDatasetIngestionContext } from '@/features/datasets/DatasetIngestionProvider'
 import { TABULAR_ACCEPT_ATTR } from '@/features/datasets/uploadFiles'
 import { removeActiveDatasetQueries } from '@/hooks/invalidateActiveDatasetQueries'
@@ -40,6 +39,11 @@ export function DatasetSidebar() {
   const { busy, ingestFiles, duckDbCapabilities, openDuckDbFromDisk } = useDatasetIngestionContext()
 
   const q = useQuery({ queryKey: ['datasets'], queryFn: api.listDatasets })
+  const dependencies = useQuery({
+    queryKey: ['dataset-dependencies', confirmDelete?.id],
+    queryFn: () => api.getDatasetDependencies(confirmDelete!.id),
+    enabled: !!confirmDelete,
+  })
   const list = useMemo(() => q.data ?? [], [q.data])
 
   const sortedFiltered = useMemo(() => {
@@ -69,7 +73,11 @@ export function DatasetSidebar() {
           setSearchParams(next, { replace: true })
         }
         if (activeDatasetId === datasetId) setActiveDatasetId(null)
-        await qc.invalidateQueries({ queryKey: ['datasets'] })
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: ['datasets'] }),
+          qc.invalidateQueries({ queryKey: ['saved-charts'] }),
+          qc.invalidateQueries({ queryKey: ['relationships'] }),
+        ])
         toast.success(`Removed ${name}.`)
       } catch (e) {
         toast.error((e as Error).message)
@@ -155,10 +163,41 @@ export function DatasetSidebar() {
                 />
               </div>
             ) : (
-              <div className="mt-3 space-y-3 rounded-lg border border-dashed border-border-default bg-white/[0.03] p-3 text-center text-xs leading-relaxed text-fg-muted">
-                <Upload className="mx-auto h-6 w-6 text-fg-muted" aria-hidden />
+              <div className="mt-3 space-y-2 rounded-lg border border-border-default bg-white/[0.03] p-3 text-center text-xs leading-relaxed text-fg-muted">
                 <p className="font-medium text-fg">No datasets in this workspace</p>
-                <DatasetDropzone busy={busy} onFilesPicked={(files) => void ingestFiles(files)} />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept={TABULAR_ACCEPT_ATTR}
+                  className="sr-only"
+                  aria-label="Upload data files"
+                  onChange={(e) => {
+                    const files = e.target.files ? Array.from(e.target.files) : []
+                    e.target.value = ''
+                    void ingestFiles(files)
+                  }}
+                />
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  multiple
+                  accept={TABULAR_ACCEPT_ATTR}
+                  className="sr-only"
+                  aria-label="Upload folder of data files"
+                  {...({ webkitdirectory: '' } as object)}
+                  onChange={(e) => {
+                    const files = e.target.files ? Array.from(e.target.files) : []
+                    e.target.value = ''
+                    void ingestFiles(files)
+                  }}
+                />
+                <Button type="button" variant="outline" size="sm" className="w-full" disabled={busy} onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="mr-2 h-3.5 w-3.5" /> Upload
+                </Button>
+                <Button type="button" variant="outline" size="sm" className="w-full" disabled={busy} onClick={() => folderInputRef.current?.click()}>
+                  <FolderOpen className="mr-2 h-3.5 w-3.5" /> Folder
+                </Button>
                 {duckDbCapabilities?.local_open_enabled ? (
                   <Button
                     type="button"
@@ -172,6 +211,14 @@ export function DatasetSidebar() {
                     Import DuckDB
                   </Button>
                 ) : null}
+                <a
+                  className="inline-block pt-1 text-[hsl(var(--accent))] underline-offset-2 hover:underline"
+                  href="https://github.com/hypertrial/data-control-center/blob/main/docs/5-minute-tour.md"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Follow the 5-minute tour
+                </a>
               </div>
             )
           ) : null}
@@ -335,10 +382,19 @@ export function DatasetSidebar() {
 
       <Dialog open={!!confirmDelete} onOpenChange={(open) => !open && setConfirmDelete(null)}>
         <DialogContent title="Remove dataset" className="max-w-md">
-          <p className="text-sm text-fg-muted">Remove {confirmDelete?.name} from this workspace? Source files are not deleted.</p>
+          <div className="space-y-3 text-sm text-fg-muted">
+            <p>Remove {confirmDelete?.name} from this workspace? Original local source files are not deleted.</p>
+            {dependencies.isLoading ? <p>Checking saved dependencies…</p> : null}
+            {dependencies.isError ? <p className="text-[hsl(var(--status-error))]">Could not check dependencies. Retry before removing this dataset.</p> : null}
+            {dependencies.data && (dependencies.data.saved_chart_count || dependencies.data.relationship_decision_count) ? (
+              <div className="rounded-md border border-[hsl(var(--severity-warning)/0.45)] bg-[hsl(var(--severity-warning)/0.1)] p-3 text-amber-50">
+                This also removes {dependencies.data.saved_chart_count} saved chart{dependencies.data.saved_chart_count === 1 ? '' : 's'} and {dependencies.data.relationship_decision_count} relationship decision{dependencies.data.relationship_decision_count === 1 ? '' : 's'}.
+              </div>
+            ) : null}
+          </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => setConfirmDelete(null)}>Cancel</Button>
-            <Button type="button" variant="destructive" onClick={() => confirmDelete && void removeDataset(confirmDelete.id, confirmDelete.name)}>Remove</Button>
+            <Button type="button" variant="destructive" disabled={dependencies.isLoading || dependencies.isError} onClick={() => confirmDelete && void removeDataset(confirmDelete.id, confirmDelete.name)}>Remove</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

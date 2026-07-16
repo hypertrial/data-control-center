@@ -8,6 +8,32 @@ stable release. Maintainer tagging steps: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## [Unreleased]
 
+### Added
+
+- Guided **Overview** as the default dataset landing page, combining profile narrative,
+  shape/grain, health priorities, next actions, relationships, and recent saved charts.
+- Conservative cross-dataset relationship suggestions, explicit verification and
+  confirm/dismiss decisions, safe join-preview SQL, and stale-decision management.
+- Persistent named charts with Save, Save changes, Save as, deep links, dirty-state
+  protection, a recent chart manager, and PNG/CSV/JSON downloads.
+- Dependency preflight for dataset deletion; saved charts and relationship decisions now
+  cascade when their dataset is removed.
+
+### Changed
+
+- The current workspace is extended forward-only with **`dcc_chart_artifacts`** and
+  **`dcc_relationship_decisions`** before strict validation. Downgrading requires restoring
+  a pre-upgrade workspace copy or running **`make clean-local`**; no automatic backup is made.
+- Sidebar ingestion uses compact Upload, Folder, and Import actions while the empty workspace
+  keeps the single primary dropzone.
+- Backend development and validation Make targets invoke Uvicorn and pytest through
+  **`uv run python -m ...`**, avoiding stale console-script shebangs after checkout moves.
+
+### Fixed
+
+- Root routing now preserves query parameters and cannot be rewritten before redirecting to
+  Overview; legacy **`/quality`** links also land on Overview.
+
 ## [1.1.2] - 2026-07-01
 
 ### Added

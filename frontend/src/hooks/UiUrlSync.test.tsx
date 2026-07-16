@@ -1,6 +1,6 @@
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { UiUrlSync } from '@/hooks/UiUrlSync'
 import { useUiStore } from '@/store/uiStore'
@@ -115,15 +115,26 @@ describe('UiUrlSync', () => {
 
   it('writes store state back to the URL and removes default filters', async () => {
     wrap('/columns?ds=ds_001&q=old&sem=text&sev=critical&cq=flags&col=old_col')
-    await waitFor(() => expect(useUiStore.getState().activeDatasetId).toBe('ds_001'))
+    await waitFor(() =>
+      expect(useUiStore.getState()).toMatchObject({
+        activeDatasetId: 'ds_001',
+        columnSearch: 'old',
+        semanticFilter: 'text',
+        columnQualityFilter: 'has_flags',
+        selectedColumn: 'old_col',
+        columnDrawerOpen: true,
+      }),
+    )
 
-    useUiStore.setState({
-      activeDatasetId: 'ds_002',
-      columnSearch: 'profit',
-      semanticFilter: 'datetime',
-      columnQualityFilter: 'critical_only',
-      selectedColumn: 'event_date',
-      columnDrawerOpen: true,
+    act(() => {
+      useUiStore.setState({
+        activeDatasetId: 'ds_002',
+        columnSearch: 'profit',
+        semanticFilter: 'datetime',
+        columnQualityFilter: 'critical_only',
+        selectedColumn: 'event_date',
+        columnDrawerOpen: true,
+      })
     })
 
     await waitFor(() =>
@@ -136,15 +147,28 @@ describe('UiUrlSync', () => {
       }),
     )
 
-    useUiStore.setState({
-      activeDatasetId: null,
-      columnSearch: '',
-      semanticFilter: 'all',
-      columnQualityFilter: 'all',
-      selectedColumn: null,
-      columnDrawerOpen: false,
+    act(() => {
+      useUiStore.setState({
+        activeDatasetId: null,
+        columnSearch: '',
+        semanticFilter: 'all',
+        columnQualityFilter: 'all',
+        selectedColumn: null,
+        columnDrawerOpen: false,
+      })
     })
 
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/columns'))
+  })
+
+  it('does not rewrite the root while its redirect is pending', async () => {
+    wrap('/')
+    await waitFor(() => expect(useUiStore.getState().activeDatasetId).toBe('ds_001'))
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/)
+  })
+
+  it('keeps saved chart links only on the Charts route', async () => {
+    wrap('/columns?ds=ds_001&chart=chart_1')
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/columns?ds=ds_001'))
   })
 })

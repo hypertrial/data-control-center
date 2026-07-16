@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   HelpCircle,
+  LayoutDashboard,
   LineChart,
   Loader2,
   Menu,
@@ -27,6 +28,7 @@ import { useUiStore } from '@/store/uiStore'
 import { cn } from '@/lib/utils'
 
 const NAV: Array<{ to: string; label: string; icon: LucideIcon; end?: boolean }> = [
+  { to: '/overview', label: 'Overview', icon: LayoutDashboard, end: true },
   { to: '/columns', label: 'Columns', icon: Table2, end: true },
   { to: '/samples', label: 'Samples', icon: Rows3 },
   { to: '/charts', label: 'Charts', icon: LineChart },
@@ -223,6 +225,12 @@ export function TopBar() {
 
   const onRefresh = profileQ.refresh
   const onCancelRefresh = profileQ.cancelRefresh
+  const navSearch = (path: string) => {
+    const next = new URLSearchParams(location.search)
+    if (path !== '/charts') next.delete('chart')
+    const value = next.toString()
+    return value ? `?${value}` : ''
+  }
 
   return (
     <header className="shrink-0 border-b border-border-default bg-[hsl(var(--surface-1))]/60 backdrop-blur-md">
@@ -286,7 +294,7 @@ export function TopBar() {
         {NAV.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
-            to={{ pathname: to, search: location.search }}
+            to={{ pathname: to, search: navSearch(to) }}
             end={end}
             className={({ isActive }) =>
               cn(

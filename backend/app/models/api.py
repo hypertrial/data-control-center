@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -332,6 +332,79 @@ class SavedQueryPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     sql: str | None = Field(default=None, min_length=1, max_length=500_000)
     description: str | None = Field(default=None, max_length=5_000)
+
+
+class SavedChart(BaseModel):
+    chart_id: str
+    dataset_id: str
+    name: str
+    description: str | None = None
+    spec: dict[str, Any]
+    created_at: str
+    updated_at: str
+
+
+class SavedChartCreate(BaseModel):
+    dataset_id: str = Field(..., min_length=1, max_length=200)
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5_000)
+    spec: dict[str, Any]
+
+
+class SavedChartPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5_000)
+    spec: dict[str, Any] | None = None
+
+
+class DatasetDependencies(BaseModel):
+    saved_chart_count: int = 0
+    relationship_decision_count: int = 0
+
+
+class RelationshipEndpoint(BaseModel):
+    dataset_id: str
+    dataset_name: str
+    view_name: str
+    column_name: str
+    physical_type: str | None = None
+    semantic_type: str | None = None
+    unique_pct: float | None = None
+    metric_scope: str | None = None
+
+
+class DatasetRelationship(BaseModel):
+    relationship_id: str
+    left: RelationshipEndpoint
+    right: RelationshipEndpoint
+    cardinality: Literal["one_to_one", "one_to_many", "many_to_one", "unknown"]
+    confidence: Literal["high", "medium"]
+    reasons: list[str] = Field(default_factory=list)
+    decision: Literal["suggested", "confirmed", "dismissed"]
+    availability: Literal["ready", "stale"]
+    suggested_sql: str | None = None
+
+
+class RelationshipsResponse(BaseModel):
+    relationships: list[DatasetRelationship] = Field(default_factory=list)
+    pending_dataset_ids: list[str] = Field(default_factory=list)
+
+
+class RelationshipDecisionRequest(BaseModel):
+    status: Literal["confirmed", "dismissed"]
+
+
+class RelationshipVerification(BaseModel):
+    relationship_id: str
+    scope: Literal["sample"] = "sample"
+    left_sample_rows: int
+    right_sample_rows: int
+    left_distinct: int
+    right_distinct: int
+    overlap_distinct: int
+    left_match_pct: float
+    right_match_pct: float
+    verdict: Literal["strong", "partial", "weak", "no_overlap"]
 
 
 class AgentAskRequest(BaseModel):

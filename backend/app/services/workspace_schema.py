@@ -67,6 +67,25 @@ EXPECTED_TABLES: dict[str, tuple[ColumnSpec, ...]] = {
         ("created_at", "TIMESTAMP", False, False),
         ("updated_at", "TIMESTAMP", False, False),
     ),
+    "dcc_chart_artifacts": (
+        ("chart_id", "VARCHAR", True, True),
+        ("dataset_id", "VARCHAR", True, False),
+        ("name", "VARCHAR", True, False),
+        ("description", "VARCHAR", False, False),
+        ("spec_json", "VARCHAR", True, False),
+        ("created_at", "TIMESTAMP", False, False),
+        ("updated_at", "TIMESTAMP", False, False),
+    ),
+    "dcc_relationship_decisions": (
+        ("relationship_id", "VARCHAR", True, True),
+        ("left_dataset_id", "VARCHAR", True, False),
+        ("left_column", "VARCHAR", True, False),
+        ("right_dataset_id", "VARCHAR", True, False),
+        ("right_column", "VARCHAR", True, False),
+        ("status", "VARCHAR", True, False),
+        ("created_at", "TIMESTAMP", False, False),
+        ("updated_at", "TIMESTAMP", False, False),
+    ),
     "dcc_ask_conversations": (
         ("conversation_id", "VARCHAR", True, True),
         ("title", "VARCHAR", True, False),
@@ -229,6 +248,8 @@ def create_workspace_schema(con: duckdb.DuckDBPyConnection) -> None:
         );
         """
     )
+    _create_chart_artifacts_table(con)
+    _create_relationship_decisions_table(con)
     con.execute(
         """
         CREATE TABLE dcc_ask_conversations (
@@ -273,6 +294,53 @@ def _drop_obsolete_saved_charts_table(con: duckdb.DuckDBPyConnection) -> None:
         return
     con.execute("DROP TABLE dcc_saved_charts")
     logger.info("Removed obsolete dcc_saved_charts table from workspace database")
+
+
+def _create_chart_artifacts_table(con: duckdb.DuckDBPyConnection) -> None:
+    con.execute(
+        """
+        CREATE TABLE dcc_chart_artifacts (
+          chart_id VARCHAR PRIMARY KEY,
+          dataset_id VARCHAR NOT NULL,
+          name VARCHAR NOT NULL,
+          description VARCHAR,
+          spec_json VARCHAR NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
+def _create_relationship_decisions_table(con: duckdb.DuckDBPyConnection) -> None:
+    con.execute(
+        """
+        CREATE TABLE dcc_relationship_decisions (
+          relationship_id VARCHAR PRIMARY KEY,
+          left_dataset_id VARCHAR NOT NULL,
+          left_column VARCHAR NOT NULL,
+          right_dataset_id VARCHAR NOT NULL,
+          right_column VARCHAR NOT NULL,
+          status VARCHAR NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
+def _add_feature_tables(con: duckdb.DuckDBPyConnection) -> None:
+    existing = _existing_dcc_tables(con)
+    feature_tables = {"dcc_chart_artifacts", "dcc_relationship_decisions"}
+    legacy_tables = set(EXPECTED_TABLES) - feature_tables
+    if not legacy_tables.issubset(existing) or not existing.issubset(set(EXPECTED_TABLES)):
+        return
+    if "dcc_chart_artifacts" not in existing:
+        _create_chart_artifacts_table(con)
+        logger.info("Added dcc_chart_artifacts table to workspace database")
+    if "dcc_relationship_decisions" not in existing:
+        _create_relationship_decisions_table(con)
+        logger.info("Added dcc_relationship_decisions table to workspace database")
 
 
 def _add_saved_query_description_column(con: duckdb.DuckDBPyConnection) -> None:
@@ -345,6 +413,7 @@ class WorkspaceSchema:
             _drop_obsolete_indexes(con)
             _drop_obsolete_saved_charts_table(con)
             _add_saved_query_description_column(con)
+            _add_feature_tables(con)
             _validate_schema(con)
         else:
             create_workspace_schema(con)

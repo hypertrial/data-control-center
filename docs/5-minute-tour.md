@@ -19,16 +19,20 @@ Open the datasets area and upload (files or **Choose folder**):
 
 Uploads are copied into the app-owned upload directory before registration.
 
-## 2. Inspect the data
+## 2. Start from Overview
 
-The app opens on **Columns** by default. Select each dataset and browse **Columns** and
-**Samples** (schema, profile summaries, and sample rows). Quality scores and column flags
-appear on **Columns**—there is no separate Quality tab. The files are deliberately small
-so inspection is immediate.
+The first upload opens **Overview**. Select `customers.csv` and read the profile narrative,
+likely grain, quality score, and highest-impact issues. Open **Samples** once, then return
+to Overview. The files are deliberately small, so profiling should finish quickly.
 
-## 3. Run a query
+## 3. Verify a relationship and run its join
 
-Open the SQL workspace and try:
+On the customers Overview, find the suggested `customer_id` relationship with orders.
+Choose **Verify**, review the aggregate overlap verdict, then **Confirm**. Choose
+**Open join SQL** and run the generated read-only preview. It uses the registered view
+names, quoted columns, and a 100-row limit without exposing source paths.
+
+For a grouped follow-up, try:
 
 ```sql
 select
@@ -43,11 +47,19 @@ order by total_usd desc;
 If the registered view name differs because of a duplicate local name, use the view
 name shown in the dataset sidebar.
 
-## 4. Delete the datasets
+## 4. Save and download a chart
 
-Delete the uploaded datasets from the app. App-owned uploaded copies are removed when
-their datasets are unregistered. External files registered through advanced path
-registration are never deleted by unregistering.
+Select orders and open **Charts**. Build a bar or histogram, choose **Save**, and give it a
+short name. Change the title and use **Save changes**. Open another tab, return to Charts,
+and reopen it from **Saved chart** (or from Overview). Download the chart as **PNG**, its
+current result as **CSV**, and its normalized specification as **JSON**.
+
+## 5. Delete the datasets
+
+Delete orders from the app. The confirmation names the saved chart and relationship
+decision counts that will be removed. Confirm, then verify those dependencies disappear.
+App-owned uploaded copies are removed when their datasets are unregistered. External files
+registered through advanced path registration are never deleted by unregistering.
 
 For a full local cleanup, see [README — Upgrading](../README.md#upgrading--workspace-schema)
 (`make clean-local`).

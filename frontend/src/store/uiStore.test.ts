@@ -28,6 +28,10 @@ describe('uiStore', () => {
     expect(useUiStore.getState().takePendingQuery()).toBe('SELECT 1')
     expect(useUiStore.getState().pendingQuery).toBeNull()
 
+    useUiStore.getState().setPendingAskQuestion('What changed?')
+    expect(useUiStore.getState().takePendingAskQuestion()).toBe('What changed?')
+    expect(useUiStore.getState().pendingAskQuestion).toBeNull()
+
     useUiStore.getState().setCommandPaletteOpen(true)
     expect(useUiStore.getState().commandPaletteOpen).toBe(true)
 

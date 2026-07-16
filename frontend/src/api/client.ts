@@ -4,6 +4,7 @@ import { datasetApi } from '@/api/datasets'
 import { jobApi, nextJobPollIntervalMs, waitForJob, fetchDatasetProfileOnce } from '@/api/jobs'
 import { queryApi } from '@/api/queries'
 import { API, apiFetch, handle, mergeFetchInit } from '@/api/transport'
+import { workspaceApi } from '@/api/workspace'
 
 export {
   ApiRequestError,
@@ -25,4 +26,5 @@ export const api = {
   ...jobApi,
   ...queryApi,
   ...askApi,
+  ...workspaceApi,
 }

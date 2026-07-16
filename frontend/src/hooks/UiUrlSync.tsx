@@ -37,6 +37,7 @@ function encodeColumnQuality(v: 'all' | 'has_flags' | 'critical_only'): string |
 export function UiUrlSync() {
   const qc = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
+  const searchString = searchParams.toString()
   const pathname = useLocation().pathname
   const dq = useQuery({ queryKey: ['datasets'], queryFn: api.listDatasets })
 
@@ -63,15 +64,16 @@ export function UiUrlSync() {
     if (dq.isLoading) return
     const list = dq.data ?? []
     if (!list.length) return
-    const ds = searchParams.get('ds')
+    const ds = new URLSearchParams(searchString).get('ds')
     if (ds) return
     const cur = useUiStore.getState().activeDatasetId
     if (cur) return
     setActive(list[0]!.dataset_id)
-  }, [dq.isLoading, dq.data, searchParams, setActive])
+  }, [dq.isLoading, dq.data, searchString, setActive])
 
   useEffect(() => {
-    const ds = searchParams.get('ds')
+    const params = new URLSearchParams(searchString)
+    const ds = params.get('ds')
     const st = useUiStore.getState()
     if (!dq.isLoading) {
       const list = dq.data ?? []
@@ -82,24 +84,24 @@ export function UiUrlSync() {
       }
     }
 
-    const col = searchParams.get('col')
+    const col = params.get('col')
     if (pathname === '/columns' && col) {
       setSelectedColumn(col)
       setDrawerOpen(true)
     }
 
-    const qParam = searchParams.get('q')
+    const qParam = params.get('q')
     if (qParam !== null && qParam !== st.columnSearch) setColumnSearch(qParam)
 
-    const sem = searchParams.get('sem')
+    const sem = params.get('sem')
     if (sem && SEM_VALUES.has(sem) && sem !== st.semanticFilter) setSemantic(sem)
 
-    const cq = decodeColumnQuality(searchParams.get('cq'))
+    const cq = decodeColumnQuality(params.get('cq'))
     if (cq && cq !== st.columnQualityFilter) setColumnQuality(cq)
   }, [
     dq.isLoading,
     dq.data,
-    searchParams,
+    searchString,
     pathname,
     setActive,
     setColumnSearch,
@@ -110,7 +112,8 @@ export function UiUrlSync() {
   ])
 
   useEffect(() => {
-    const next = new URLSearchParams(searchParams)
+    if (pathname === '/') return
+    const next = new URLSearchParams(searchString)
     let dirty = false
 
     if (activeId) {
@@ -169,9 +172,14 @@ export function UiUrlSync() {
       dirty = true
     }
 
+    if (pathname !== '/charts' && next.has('chart')) {
+      next.delete('chart')
+      dirty = true
+    }
+
     if (!dirty) return
     const a = next.toString()
-    const b = searchParams.toString()
+    const b = searchString
     if (a !== b) setSearchParams(next, { replace: true })
   }, [
     activeId,
@@ -181,7 +189,7 @@ export function UiUrlSync() {
     selectedColumn,
     drawerOpen,
     pathname,
-    searchParams,
+    searchString,
     setSearchParams,
   ])
 

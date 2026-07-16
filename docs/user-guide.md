@@ -10,6 +10,7 @@ request/response shapes and **`DCC_*`** settings, see
 
 - [Getting data in](#getting-data-in)
 - [Profiles and jobs](#profiles-and-jobs)
+- [Overview and relationships](#overview-and-relationships)
 - [SQL tab](#sql-tab)
 - [Charts tab](#charts-tab)
 - [Ask tab](#ask-tab)
@@ -37,8 +38,11 @@ local workflows and keep **`DCC_REGISTRATION_ALLOWED_ROOTS`** narrow.
 at least one registered view when datasets exist.
 
 **Unregister:** Use the sidebar trash action or **`DELETE /api/datasets/{dataset_id}`**.
-This drops the DuckDB view, clears cached profile state, and deletes app-owned upload
-copies. Externally registered source files are never deleted.
+The confirmation dialog preflights and names saved-chart and relationship-decision counts.
+Deletion removes those structured dependencies, drops the DuckDB view, clears cached
+profile state, and deletes app-owned upload copies. Saved SQL and Ask history are not
+cascaded because they have no structured dataset ownership. Externally registered source
+files are never deleted.
 
 If Samples, SQL, or Charts report that the dataset source file is unavailable, the
 registered dataset points at a local file that the workspace can no longer read. Re-upload
@@ -83,9 +87,13 @@ until **`completed`**, then retry.
 **`POST /api/datasets/{dataset_id}/profile/refresh`**. The UI handles job polling;
 see [`backend/README.md`](../backend/README.md) for job deduplication behavior.
 
-**Quality score:** Shown in the header and dataset list when a cached profile exists (0–100). Column flags and filters on the **Columns** tab surface per-column quality issues.
+**Quality score:** Shown in Overview, the header, and dataset list when a cached profile
+exists (0–100). It is 100 minus the profile issue impacts, clamped to 0–100. Column flags
+and filters on the **Columns** tab surface per-column quality issues.
 
-**Columns tab:** Opens by default (`/` redirects here). The table sorts by column name ascending on first load; click headers to sort by other metrics. Numeric columns show distribution stats (range, IQR, median, mean, **STDEV**) plus a compact sparkline rail.
+**Columns tab:** The table sorts by column name ascending on first load; click headers to
+sort by other metrics. Numeric columns show distribution stats (range, IQR, median, mean,
+**STDEV**) plus a compact sparkline rail.
 
 **Structure inference (v6):** Profiles detect composite row grain keys, discrete
 temporal axes, **entity identifiers** (separate from row grain), and ranked measure
@@ -101,6 +109,35 @@ the UI keeps the sampled value and labels it using profile metadata.
 **History and diff:** Profile snapshot diff is no longer exposed in the UI; use the API if you need historical comparison.
 
 **Saved SQL:** Snippets and optional descriptions persist in the workspace and appear in the SQL tab and command palette.
+
+## Overview and relationships
+
+**Overview** is the default page for a selected dataset. The first successful import into an
+empty workspace opens it automatically; later imports keep the current page while selecting
+the new dataset. Overview works without an LLM and combines:
+
+- a safe rendered profile narrative, shape, format, likely grain, identifiers, measures,
+  temporal fields, and full-versus-sampled profile scope;
+- the highest-impact health issues, with links to affected columns, flagged columns,
+  Samples, or sanitized suggested SQL;
+- shortcuts into Samples, a recommended chart, SQL, and an optional prefilled Ask question;
+- the five most recently updated saved charts; and
+- confirmed, suggested, pending, dismissed, and stale dataset relationships.
+
+**Relationship suggestions:** The app compares cached profiles across registered datasets.
+It only suggests compatible key-like columns whose names match after case and separator
+normalization when at least one endpoint is at least 98% unique; it does not suggest
+many-to-many joins. Profiling may still be in progress, in which case Overview polls until
+cached metadata is ready.
+
+**Verify** runs a bounded, deterministic sample comparison only when requested. It returns
+aggregate distinct/intersection counts and coverage percentages—never sampled values or
+source paths. A strong result means both sides have at least 80% sampled coverage; partial
+means at least 20%; weak means some overlap; no overlap means zero. Verification does not
+confirm a relationship. Use **Confirm**, **Dismiss**, and **Restore** to persist or reset the
+decision, and **Open join SQL** for a quoted, read-only `INNER JOIN` preview limited to 100
+rows. Dismissed relationships stay collapsed by default. If a profiled endpoint column
+disappears or changes, the old decision remains visible as stale and cannot be queried.
 
 ## SQL tab
 
@@ -152,8 +189,16 @@ SQL tab.
   variables, filters, split, buckets, or aggregation rerun after a short debounce. Display-only
   changes update the preview without rerunning SQL. If the result is truncated at the chart row
   limit, the preview shows a truncation warning.
-- **Export and SQL:** Copy chart PNG data, CSV rows, or the chart spec JSON. Use the **SQL**
-  action to open the generated read-only query in the SQL tab.
+- **Save:** Use **Save**, **Save changes**, or **Save as** to persist a named chart in the
+  local workspace. Saved chart links include both dataset and chart IDs, reopen after a
+  restart, and are sorted by most recently updated in the chart selector, Overview, and the
+  command palette. An **Unsaved** badge compares the normalized chart with its last saved
+  version. Reset and loading another saved chart ask before discarding dirty state; deleting
+  a dirty active saved chart also asks for confirmation but keeps the current chart as an
+  unsaved draft. Ordinary navigation remains unblocked.
+- **Downloads and SQL:** Download the rendered chart as PNG, the current query result as CSV,
+  or the normalized versioned chart specification as JSON. Downloads use sanitized filenames
+  and remain in the browser. Use **SQL** to open the generated read-only query in the SQL tab.
 
 ## Ask tab
 
@@ -222,5 +267,5 @@ a token via **`GET /api/local-session`** or pin **`DCC_LOCAL_API_TOKEN`** — se
 | **⌘/Ctrl+K** | Command palette |
 | **?** | Shortcuts sheet |
 | **/** | Focus dataset search |
-| **g** then **c** / **s** / **h** / **a** / **y** | Jump to Columns / Samples / Charts / Ask / SQL |
+| **g** then **o** / **c** / **s** / **h** / **a** / **y** | Jump to Overview / Columns / Samples / Charts / Ask / SQL |
 | **r** | Refresh cached queries |

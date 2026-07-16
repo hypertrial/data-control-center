@@ -28,6 +28,7 @@ vi.mock('@/api/client', () => ({
     openLocalDuckDb: vi.fn(),
     duckDbRelationCount: vi.fn(),
     deleteDataset: vi.fn(),
+    getDatasetDependencies: vi.fn(),
     inspectDuckDb: vi.fn(),
     importDuckDbRelations: vi.fn(),
     waitForJob: vi.fn(),
@@ -82,6 +83,10 @@ describe('DatasetSidebar', () => {
       },
     ])
     vi.mocked(api.deleteDataset).mockResolvedValue(undefined)
+    vi.mocked(api.getDatasetDependencies).mockResolvedValue({
+      saved_chart_count: 0,
+      relationship_decision_count: 0,
+    })
     vi.mocked(api.duckDbCapabilities).mockResolvedValue({
       local_open_enabled: true,
       upload_soft_max_bytes: 1024 * 1024 * 1024,
@@ -180,6 +185,18 @@ describe('DatasetSidebar', () => {
     await user.click(screen.getByRole('button', { name: /^Cancel$/ }))
 
     expect(api.deleteDataset).not.toHaveBeenCalled()
+  })
+
+  it('warns with exact dependent record counts before removal', async () => {
+    vi.mocked(api.getDatasetDependencies).mockResolvedValue({
+      saved_chart_count: 2,
+      relationship_decision_count: 1,
+    })
+    const user = userEvent.setup()
+    wrap(<DatasetSidebar />)
+    await user.click(await screen.findByRole('button', { name: 'Remove a' }))
+
+    expect(await screen.findByText(/2 saved charts and 1 relationship decision/i)).toBeInTheDocument()
   })
 
   it('loading and error', async () => {

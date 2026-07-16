@@ -47,6 +47,10 @@ describe('useGlobalShortcuts', () => {
     expect(screen.getByLabelText('sidebar search')).toHaveFocus()
 
     fireEvent.keyDown(window, { key: 'g' })
+    fireEvent.keyDown(window, { key: 'o' })
+    expect(screen.getByTestId('path')).toHaveTextContent('/overview')
+
+    fireEvent.keyDown(window, { key: 'g' })
     fireEvent.keyDown(window, { key: 'a' })
     expect(screen.getByTestId('path')).toHaveTextContent('/ask')
 

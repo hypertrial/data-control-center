@@ -15,6 +15,7 @@ beforeEach(() => {
     columnSearch: '',
     semanticFilter: 'all',
     pendingQuery: null,
+    pendingAskQuestion: null,
     sqlInjectTick: 0,
     commandPaletteOpen: false,
     shortcutSheetOpen: false,

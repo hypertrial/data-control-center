@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -24,6 +24,10 @@ const h = vi.hoisted(() => ({
   fetchDatasetProfile: vi.fn(),
   fetchDatasetProfileOnce: vi.fn(),
   runQuery: vi.fn(),
+  listSavedCharts: vi.fn(),
+  createSavedChart: vi.fn(),
+  patchSavedChart: vi.fn(),
+  deleteSavedChart: vi.fn(),
 }))
 
 vi.mock('@/api/client', async (importOriginal) => {
@@ -36,16 +40,20 @@ vi.mock('@/api/client', async (importOriginal) => {
       fetchDatasetProfile: h.fetchDatasetProfile,
       fetchDatasetProfileOnce: h.fetchDatasetProfileOnce,
       runQuery: h.runQuery,
+      listSavedCharts: h.listSavedCharts,
+      createSavedChart: h.createSavedChart,
+      patchSavedChart: h.patchSavedChart,
+      deleteSavedChart: h.deleteSavedChart,
     },
   }
 })
 
-function wrap(ui: React.ReactElement) {
+function wrap(ui: React.ReactElement, entry = '/charts') {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[entry]}>
       <QueryClientProvider client={qc}>
         <TooltipProvider delayDuration={280}>{ui}</TooltipProvider>
       </QueryClientProvider>
@@ -94,6 +102,16 @@ describe('ChartsPage', () => {
       truncated: false,
       error: null,
     })
+    h.listSavedCharts.mockResolvedValue([])
+    h.createSavedChart.mockImplementation(async (body) => ({
+      chart_id: 'chart_1', dataset_id: body.dataset_id, name: body.name,
+      description: body.description ?? null, spec: body.spec, created_at: 'now', updated_at: 'now',
+    }))
+    h.patchSavedChart.mockImplementation(async (chartId, body) => ({
+      chart_id: chartId, dataset_id: 'ds_001', name: body.name ?? 'Saved chart',
+      description: body.description ?? null, spec: body.spec ?? {}, created_at: 'now', updated_at: 'later',
+    }))
+    h.deleteSavedChart.mockResolvedValue(undefined)
     useUiStore.setState({ activeDatasetId: 'ds_001' })
   })
 
@@ -135,7 +153,7 @@ describe('ChartsPage', () => {
     expect(screen.getByDisplayValue('revenue distribution')).toBeInTheDocument()
     expect(screen.queryByText('Saved Charts')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Run chart/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^Save$/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Save$/i })).toBeInTheDocument()
     expect(screen.getByText('Chart').compareDocumentPosition(screen.getByText('Data'))).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
@@ -216,6 +234,52 @@ describe('ChartsPage', () => {
     expect(h.runQuery.mock.calls[0]?.[0].sql.toLowerCase()).toContain('cast(min(revenue) as bigint) as min_v')
   })
 
+  it('creates and explicitly updates a saved chart', async () => {
+    const user = userEvent.setup()
+    wrap(<ChartsPage />)
+    await screen.findByLabelText('Chart type')
+
+    await user.click(screen.getByRole('button', { name: /^Save$/ }))
+    const dialog = screen.getByRole('dialog')
+    const name = within(dialog).getByLabelText('Name')
+    await user.clear(name)
+    await user.type(name, 'Revenue distribution')
+    await user.click(within(dialog).getByRole('button', { name: /^Save$/ }))
+
+    await waitFor(() => expect(h.createSavedChart).toHaveBeenCalledWith(expect.objectContaining({
+      dataset_id: 'ds_001', name: 'Revenue distribution',
+    })))
+    expect(screen.getByLabelText('Saved chart')).toHaveValue('chart_1')
+
+    await user.clear(screen.getByLabelText('Title'))
+    await user.type(screen.getByLabelText('Title'), 'Updated title')
+    await user.click(screen.getByRole('button', { name: /Save changes/i }))
+    await waitFor(() => expect(h.patchSavedChart).toHaveBeenCalledWith('chart_1', expect.objectContaining({
+      spec: expect.objectContaining({ title: 'Updated title' }),
+    })))
+  })
+
+  it('loads and normalizes a legacy saved chart deep link', async () => {
+    h.listSavedCharts.mockResolvedValue([{
+      chart_id: 'legacy', dataset_id: 'ds_001', name: 'Legacy', description: null,
+      spec: { version: 2, datasetId: 'ds_001', chartType: 'histogram', valueColumn: 'revenue', title: 'Legacy title' },
+      created_at: 'then', updated_at: 'now',
+    }])
+    wrap(<ChartsPage />, '/charts?ds=ds_001&chart=legacy')
+
+    expect(await screen.findByDisplayValue('Legacy title')).toBeInTheDocument()
+    expect(screen.getByLabelText('Saved chart')).toHaveValue('legacy')
+    expect(screen.queryByText('Unsaved')).not.toBeInTheDocument()
+  })
+
+  it('keeps the chart workspace usable when saved charts cannot be loaded', async () => {
+    h.listSavedCharts.mockRejectedValue(new Error('Saved charts are unavailable'))
+    wrap(<ChartsPage />, '/charts?ds=ds_001&chart=chart_1')
+
+    expect(await screen.findByText('Saved charts are unavailable')).toBeInTheDocument()
+    expect(screen.getByLabelText('Chart type')).toHaveValue('histogram')
+  })
+
   it('shows a truncation warning from the query result', async () => {
     h.runQuery.mockResolvedValue({
       columns: [{ name: 'bin_index', type: null }, { name: 'lower_bound', type: null }, { name: 'upper_bound', type: null }, { name: 'count', type: null }],
@@ -261,7 +325,7 @@ describe('ChartsPage', () => {
 
   it('exercises scale, filter, split, and export controls with live query results', async () => {
     const user = userEvent.setup()
-    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined)
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
     h.runQuery.mockResolvedValue({
       columns: [{ name: 'bin_index', type: null }, { name: 'lower_bound', type: null }, { name: 'upper_bound', type: null }, { name: 'count', type: null }],
       rows: [{ bin_index: 0, lower_bound: 0, upper_bound: 10, count: 10 }],
@@ -300,7 +364,7 @@ describe('ChartsPage', () => {
     await user.click(screen.getByRole('button', { name: /CSV/i }))
     await user.click(screen.getByRole('button', { name: /Spec/i }))
     await user.click(screen.getByRole('button', { name: /Zoom/i }))
-    expect(write).toHaveBeenCalled()
+    expect(click).toHaveBeenCalledTimes(3)
 
     await user.click(screen.getByRole('button', { name: /Reset/i }))
     expect(screen.getByDisplayValue('revenue distribution')).toBeInTheDocument()

@@ -1,7 +1,8 @@
 # Data Control Center — Backend
 
 FastAPI service with a DuckDB **workspace** database (metadata, profile cache, Ask
-transcripts, jobs) and **Polars** profiling of registered datasets.
+transcripts, jobs, saved charts, relationship decisions) and **Polars** profiling of
+registered datasets.
 
 Dataset HTTP routes are split under [`app/api/`](app/api/): **`datasets_upload.py`**
 (upload/register), **`datasets_profile.py`** (profile, history, diff, columns, quality),
@@ -18,7 +19,7 @@ From `backend/`:
 
 ```bash
 uv sync --extra dev
-uv run uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000
+uv run python -m uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000
 ```
 
 Using `--reload-dir app` limits Uvicorn reloads to application code so edits under `tests/`
@@ -92,6 +93,26 @@ DuckDB import supports two source kinds (see **`GET /api/datasets/duckdb/capabil
 | **`DCC_DUCKDB_LOCAL_OPEN_TTL_HOURS`** | `24` | TTL for local-open metadata under **`duckdb_sources/local/`** |
 | **`DCC_DUCKDB_IMPORT_TIMEOUT_SECONDS`** | `300` | Per-import **`COPY … TO Parquet`** timeout (large tables can take minutes) |
 
+### Saved charts, relationships, and deletion dependencies
+
+| Route | Purpose |
+| --- | --- |
+| **`GET /api/saved-charts?dataset_id=...`** | List saved charts, newest updated first |
+| **`POST /api/saved-charts`** | Create a named chart with versioned JSON spec |
+| **`PATCH /api/saved-charts/{chart_id}`** | Update chart metadata or spec |
+| **`DELETE /api/saved-charts/{chart_id}`** | Delete a saved chart |
+| **`GET /api/relationships?dataset_id=...&include_dismissed=false`** | List conservative profile-based suggestions and decisions |
+| **`POST /api/relationships/{relationship_id}/verify`** | Compare bounded deterministic samples and return aggregates |
+| **`PUT /api/relationships/{relationship_id}/decision`** | Confirm or dismiss explicitly |
+| **`DELETE /api/relationships/{relationship_id}/decision`** | Reset to suggested status |
+| **`GET /api/datasets/{dataset_id}/dependencies`** | Count saved charts and relationship decisions before deletion |
+
+Chart specs must be positive-version JSON objects no larger than 500 KB and must name the
+request dataset. Relationship verification samples at most 10,000 rows per endpoint under
+the normal query timeout and never returns sampled values, source paths, or parser details.
+Dataset deletion cascades saved charts and relationship decisions in application services;
+saved SQL and Ask history remain separate.
+
 ### Workspace database
 
 | Variable | Default | Purpose |
@@ -100,17 +121,18 @@ DuckDB import supports two source kinds (see **`GET /api/datasets/duckdb/capabil
 | **`DCC_DB_READER_POOL_SIZE`** | `4` | Reader connection pool size (1–16) |
 
 Holds cached profiles (**`structure_version: "v6"`**), profile history, **`dcc_jobs`**,
-saved SQL, and Ask tables. Finished jobs are pruned to the **200** most recent terminal rows
+saved SQL, saved chart artifacts, relationship decisions, and Ask tables. Finished jobs are pruned to the **200** most recent terminal rows
 (**`completed`**, **`failed`**, **`canceled`**) after each background job completes. Implementation: [`app/services/workspace.py`](app/services/workspace.py),
 [`workspace_engine.py`](app/services/workspace_engine.py),
 [`workspace_schema.py`](app/services/workspace_schema.py),
 [`workspace_stores/`](app/services/workspace_stores/).
 
-On open, an empty file gets **`create_workspace_schema`**; an existing file must match
-expected **`dcc_*`** tables. A legacy **`schema_version`** table is dropped automatically
-after validation. Incompatible layouts fail fast—see root [README — Upgrading](../README.md#upgrading--workspace-schema).
-The current schema includes **`dcc_saved_queries.description`**; older local workspaces
-with only the prior saved-query table shape are updated in place on startup.
+On open, an empty file gets **`create_workspace_schema`**. Compatible older workspaces are
+extended idempotently with **`dcc_chart_artifacts`** and **`dcc_relationship_decisions`**
+before strict validation; the obsolete **`dcc_saved_charts`** and legacy
+**`schema_version`** tables are removed. The extension is forward-only and creates no
+automatic backup. Downgrades require a pre-upgrade workspace copy or **`make clean-local`**.
+Other incompatible layouts fail fast—see root [README — Upgrading](../README.md#upgrading--workspace-schema).
 
 ### Query and samples
 

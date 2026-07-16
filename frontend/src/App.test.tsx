@@ -32,6 +32,8 @@ vi.mock('@/api/client', async (importOriginal) => {
       getProfileHistory: vi.fn(),
       getProfileDiff: vi.fn(),
       listSavedQueries: vi.fn(),
+      listSavedCharts: vi.fn(),
+      listRelationships: vi.fn(),
       listAskConversations: vi.fn(),
       listLlmModels: vi.fn(),
       duckDbCapabilities: vi.fn(),
@@ -49,6 +51,7 @@ function renderApp() {
 
 describe('App', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/')
     appQueryClient.clear()
     useUiStore.setState({
       activeDatasetId: null,
@@ -88,6 +91,8 @@ describe('App', () => {
     })
     vi.mocked(api.getProfileHistory).mockResolvedValue([])
     vi.mocked(api.listSavedQueries).mockResolvedValue([])
+    vi.mocked(api.listSavedCharts).mockResolvedValue([])
+    vi.mocked(api.listRelationships).mockResolvedValue({ relationships: [], pending_dataset_ids: [] })
     vi.mocked(api.listAskConversations).mockResolvedValue([])
     vi.mocked(api.listLlmModels).mockResolvedValue({
       default_model: 'qwen3:4b',
@@ -114,14 +119,24 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByTestId('route-page-transition')).toBeInTheDocument())
   })
 
+  it('redirects a root dataset URL to a populated Overview without losing selection', async () => {
+    window.history.replaceState({}, '', '/?ds=ds_001')
+    renderApp()
+
+    expect(await screen.findByRole('heading', { name: 'Overview' }, { timeout: 5_000 })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/overview')
+    expect(window.location.search).toContain('ds=ds_001')
+  })
+
   it('resets main scroll position when switching primary tabs', async () => {
     const user = userEvent.setup()
     renderApp()
     await waitFor(() => expect(useUiStore.getState().activeDatasetId).toBe('ds_001'))
+    await screen.findByRole('heading', { name: 'Overview' }, { timeout: 5_000 })
     const main = screen.getByTestId('main-scroll-region')
     main.scrollTop = 200
     await user.click(screen.getByRole('link', { name: /SQL/i }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Run query' })).toBeInTheDocument())
+    await screen.findByRole('button', { name: 'Run query' }, { timeout: 5_000 })
     expect(main.scrollTop).toBe(0)
   })
 
@@ -129,19 +144,26 @@ describe('App', () => {
     const user = userEvent.setup()
     renderApp()
     await waitFor(() => expect(useUiStore.getState().activeDatasetId).toBe('ds_001'))
+    await screen.findByRole('heading', { name: 'Overview' }, { timeout: 5_000 })
     expect(screen.getByRole('link', { name: /Columns/i })).toBeInTheDocument()
 
     await user.click(screen.getByRole('link', { name: /SQL/i }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Run query' })).toBeInTheDocument())
+    await screen.findByRole('button', { name: 'Run query' }, { timeout: 5_000 })
 
     await user.click(screen.getByRole('link', { name: /Columns/i }))
-    await waitFor(() => expect(screen.getByPlaceholderText(/Column name/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByPlaceholderText(/Column name/)).toBeInTheDocument(), {
+      timeout: 5_000,
+    })
 
     await user.click(screen.getByRole('link', { name: /Charts/i }))
-    await waitFor(() => expect(screen.getByLabelText('Chart type')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByLabelText('Chart type')).toBeInTheDocument(), {
+      timeout: 5_000,
+    })
 
     await user.click(screen.getByRole('link', { name: /Ask/i }))
-    await waitFor(() => expect(screen.getByPlaceholderText(/plain language/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByPlaceholderText(/plain language/i)).toBeInTheDocument(), {
+      timeout: 5_000,
+    })
   })
 
   it('navigates to Charts from the command palette', async () => {
@@ -152,7 +174,9 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: /Search/i }))
     await user.click(screen.getByRole('option', { name: /Charts/i }))
 
-    await waitFor(() => expect(screen.getByLabelText('Chart type')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByLabelText('Chart type')).toBeInTheDocument(), {
+      timeout: 5_000,
+    })
   })
 
   it('shows loading skeletons while datasets are loading', () => {
@@ -165,6 +189,6 @@ describe('App', () => {
     vi.mocked(api.listDatasets).mockResolvedValue([])
     renderApp()
     await waitFor(() => expect(screen.getByText(/Welcome to Data Control Center/i)).toBeInTheDocument())
-    expect(screen.getAllByRole('button', { name: /Drop files here or click to choose files/i }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: /Drop files here or click to choose files/i })).toHaveLength(1)
   })
 })

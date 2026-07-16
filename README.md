@@ -4,8 +4,9 @@ https://github.com/user-attachments/assets/d62aa7bb-4696-470d-b354-0e66c0c7f76e
 
 **Local-first tool** for profiling, exploring, and querying local data files (CSV, TSV,
 Parquet, JSON, JSON Lines, NDJSON, and DuckDB) with fast browse-and-import for `.duckdb`
-files via **Import DuckDB** (one system file dialog when native pick is enabled; HTTP upload remains for API/tests/fallback). Built for a **single trusted workstation**—fast EDA and ad-hoc DuckDB
-SQL, not hosted BI or multi-tenant use.
+files via **Import DuckDB** (one system file dialog when native pick is enabled; HTTP upload remains for API/tests/fallback). A guided Overview, conservative relationship discovery,
+persistent charts, and ad-hoc DuckDB SQL support fast analysis on a **single trusted
+workstation**—not hosted BI or multi-tenant use.
 This app is **local-only**; see [`SECURITY.md`](SECURITY.md) for the threat model and
 vulnerability reporting.
 
@@ -17,7 +18,8 @@ vulnerability reporting.
 3. **New here?** Follow the [**5-minute tour**](docs/5-minute-tour.md) with
    [`examples/`](examples/) fixtures before using your own data.
 
-Explore **Columns**, **Charts**, **SQL**, and more. **Ask** is optional and needs
+Start in **Overview**, verify suggested joins, save and download charts, then use
+**Columns**, **Samples**, or **SQL** for deeper exploration. **Ask** is optional and needs
 [Ollama](https://ollama.com); see [User guide — Ask](docs/user-guide.md#ask-tab).
 
 ## Platform notes
@@ -41,11 +43,13 @@ Day-to-day development uses **`make dev`** (Vite on **5173** + API on **8000**).
 ## Upgrading / workspace schema
 
 Workspace metadata lives in **`DCC_WORKSPACE_DB_PATH`** (default **`.dcc_workspace.duckdb`**
-relative to the backend cwd). There is **no** in-place migration. After pulling changes
-that alter workspace layout or profile shape, run **`make clean-local`** or delete the
-workspace file by hand—that removes app cache, Ask history, and upload copies under
-**`.dcc_uploads/`**, not your original source files. See [**CHANGELOG**](CHANGELOG.md)
-for breaking changes. Schema details:
+relative to the backend cwd). The current release extends compatible workspaces in place
+with saved-chart and relationship-decision tables before strict schema validation. This
+extension is forward-only and does not create an automatic backup. To downgrade, restore a
+pre-upgrade workspace copy or run **`make clean-local`**. That command removes app cache,
+saved work, Ask history, and upload copies under **`.dcc_uploads/`**, not original source
+files. Other incompatible layout or profile changes still fail fast; follow the applicable
+[**CHANGELOG**](CHANGELOG.md) upgrade notes. Schema details:
 [`backend/README.md`](backend/README.md#workspace-database).
 
 ### Upgrading to 1.1.0
@@ -105,6 +109,8 @@ With the backend running: **`http://127.0.0.1:8000/docs`** (Swagger UI).
 ## Known limitations (MVP)
 
 - Excel and remote files are not supported yet.
-- No cross-dataset join UI; explore overlaps with ad-hoc SQL.
+- Relationship suggestions are conservative: they require matching key-like column names
+  and compatible profiled types. Arbitrary manual and many-to-many relationship modeling is
+  not included.
 - Very wide files may be slow on first profile; use **Refresh** in the dataset strip or
   `POST /api/datasets/{id}/profile/refresh`.

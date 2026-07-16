@@ -3,10 +3,11 @@ import { useMutation } from '@tanstack/react-query'
 import type * as echarts from 'echarts'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
-import type { DatasetProfile } from '@/api/types'
+import type { DatasetProfile, SavedChart } from '@/api/types'
 import { useDisposableEChart } from '@/hooks/useDisposableEChart'
 import { useOpenInSql } from '@/hooks/useOpenInSql'
 import { queryResultToCsv } from '@/features/query/queryGridUtils'
+import { downloadDataUrl, downloadText, safeDownloadName } from '@/lib/download'
 import {
   buildChartOption,
   buildChartSql,
@@ -22,6 +23,7 @@ import {
   getTemporalColumnNames,
   getTemporalKind,
   isBucketableTemporalColumn,
+  normalizeChartSpec,
   sortColumnNamesAsc,
   queryResultToChartData,
   validateChartSpec,
@@ -37,6 +39,8 @@ export function useChartWorkspaceState(activeId: string, profile: DatasetProfile
   const chartInstanceRef = useRef<echarts.ECharts | null>(null)
   const openInSql = useOpenInSql()
   const [spec, setSpec] = useState<ChartSpec>(() => createDefaultChartSpec(activeId, profile))
+  const [activeSavedChart, setActiveSavedChart] = useState<SavedChart | null>(null)
+  const [savedBaseline, setSavedBaseline] = useState<string | null>(null)
   const [lastRunSql, setLastRunSql] = useState('')
   const runChart = useMutation({ mutationFn: api.runQuery })
   const { mutate: runChartQuery, reset: resetRunChart } = runChart
@@ -58,6 +62,11 @@ export function useChartWorkspaceState(activeId: string, profile: DatasetProfile
   const settingsChanged = !!generatedSql && !!lastRunSql && generatedSql !== lastRunSql
   const splitCardinality = spec.splitBy ? getColumnCardinality(profile, spec.splitBy) : null
   const splitWarning = splitCardinality != null && splitCardinality > 25
+  const defaultBaseline = useMemo(
+    () => JSON.stringify(createDefaultChartSpec(activeId, profile)),
+    [activeId, profile],
+  )
+  const isDirty = JSON.stringify(spec) !== (savedBaseline ?? defaultBaseline)
 
   useDisposableEChart(
     chartRef,
@@ -99,27 +108,73 @@ export function useChartWorkspaceState(activeId: string, profile: DatasetProfile
   const runError = runChart.isError ? (runChart.error as Error).message : runChart.data?.error
 
   const resetWorkspace = useCallback(() => {
+    if (
+      isDirty &&
+      typeof window.confirm === 'function' &&
+      !window.confirm('Discard unsaved chart changes?')
+    ) return false
     setSpec(createDefaultChartSpec(activeId, profile))
+    setActiveSavedChart(null)
+    setSavedBaseline(null)
     setLastRunSql('')
     resetRunChart()
-  }, [activeId, profile, resetRunChart])
+    return true
+  }, [activeId, isDirty, profile, resetRunChart])
 
-  const copyCsv = useCallback(() => {
+  const downloadCsv = useCallback(() => {
     if (!runChart.data || runChart.data.error) return
-    void navigator.clipboard.writeText(queryResultToCsv(runChart.data.columns, runChart.data.rows))
-    toast.success('Chart data copied as CSV')
-  }, [runChart.data])
+    const name = safeDownloadName(profile.name, activeSavedChart?.name ?? 'chart')
+    downloadText(
+      queryResultToCsv(runChart.data.columns, runChart.data.rows),
+      `${name}.csv`,
+      'text/csv;charset=utf-8',
+    )
+    toast.success('Chart data downloaded')
+  }, [activeSavedChart?.name, profile.name, runChart.data])
 
-  const copySpec = useCallback(() => {
-    void navigator.clipboard.writeText(chartSpecJson(spec))
-    toast.success('Chart spec copied')
-  }, [spec])
+  const downloadSpec = useCallback(() => {
+    const name = safeDownloadName(profile.name, activeSavedChart?.name ?? 'chart')
+    downloadText(chartSpecJson(spec), `${name}.json`, 'application/json;charset=utf-8')
+    toast.success('Chart spec downloaded')
+  }, [activeSavedChart?.name, profile.name, spec])
 
-  const copyPng = useCallback(() => {
+  const downloadPng = useCallback(() => {
     const chart = chartInstanceRef.current
     if (!chart) return
-    void navigator.clipboard.writeText(chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#111827' }))
-    toast.success('Chart PNG data URL copied')
+    const name = safeDownloadName(profile.name, activeSavedChart?.name ?? 'chart')
+    downloadDataUrl(
+      chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#111827' }),
+      `${name}.png`,
+    )
+    toast.success('Chart image downloaded')
+  }, [activeSavedChart?.name, profile.name])
+
+  const loadSavedChart = useCallback(
+    (chart: SavedChart) => {
+      if (
+        isDirty &&
+        typeof window.confirm === 'function' &&
+        !window.confirm('Discard unsaved chart changes?')
+      ) return false
+      const normalized = normalizeChartSpec(chart.spec as Partial<ChartSpec>, activeId, profile)
+      setSpec(normalized)
+      setActiveSavedChart(chart)
+      setSavedBaseline(JSON.stringify(normalized))
+      setLastRunSql('')
+      resetRunChart()
+      return true
+    },
+    [activeId, isDirty, profile, resetRunChart],
+  )
+
+  const markSaved = useCallback((chart: SavedChart) => {
+    setActiveSavedChart(chart)
+    setSavedBaseline(JSON.stringify(spec))
+  }, [spec])
+
+  const markDeleted = useCallback(() => {
+    setActiveSavedChart(null)
+    setSavedBaseline('__deleted_saved_chart__')
   }, [])
 
   const resetZoom = useCallback(() => {
@@ -150,9 +205,14 @@ export function useChartWorkspaceState(activeId: string, profile: DatasetProfile
     executeSql,
     openInSql,
     resetWorkspace,
-    copyCsv,
-    copySpec,
-    copyPng,
+    downloadCsv,
+    downloadSpec,
+    downloadPng,
+    activeSavedChart,
+    isDirty,
+    loadSavedChart,
+    markSaved,
+    markDeleted,
     resetZoom,
     getColumnSemanticType,
     getColumnIsInteger,

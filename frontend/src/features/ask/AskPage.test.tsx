@@ -134,6 +134,7 @@ describe('AskPage', () => {
     })
     useUiStore.setState({
       pendingQuery: null,
+      pendingAskQuestion: null,
       activeConversationId: null,
       activeDatasetId: null,
       askConversationHistoryCollapsed: false,
@@ -165,6 +166,13 @@ describe('AskPage', () => {
   it('disables ask when question empty', () => {
     wrap(<AskPage />)
     expect(screen.getByRole('button', { name: /^Ask$/ })).toBeDisabled()
+  })
+
+  it('consumes an Overview question into the composer', async () => {
+    useUiStore.getState().setPendingAskQuestion('Summarize this dataset')
+    wrap(<AskPage />)
+    expect(await screen.findByPlaceholderText(/plain language/i)).toHaveValue('Summarize this dataset')
+    expect(useUiStore.getState().pendingAskQuestion).toBeNull()
   })
 
   it('shows hero on first visit without turns', async () => {

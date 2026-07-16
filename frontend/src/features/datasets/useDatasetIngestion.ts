@@ -13,13 +13,14 @@ import { toast } from 'sonner'
 
 type UseDatasetIngestionOptions = {
   setActiveDatasetId: (id: string | null) => void
+  onFirstDataset?: () => void
 }
 
 function isPickCancelled(message: string): boolean {
   return /cancel/i.test(message)
 }
 
-export function useDatasetIngestion({ setActiveDatasetId }: UseDatasetIngestionOptions) {
+export function useDatasetIngestion({ setActiveDatasetId, onFirstDataset }: UseDatasetIngestionOptions) {
   const qc = useQueryClient()
   const [busy, setBusy] = useState(false)
   const [duckDbSession, setDuckDbSession] = useState<DuckDbImportSession | null>(null)
@@ -134,10 +135,12 @@ export function useDatasetIngestion({ setActiveDatasetId }: UseDatasetIngestionO
       setBusy(true)
       try {
         if (dataFiles.length) {
+          const firstDataset = !(qc.getQueryData<DatasetSummary[]>(['datasets']) ?? []).length
           const rows = await api.uploadDatasets(dataFiles)
           await qc.invalidateQueries({ queryKey: ['datasets'] })
           if (rows.length) {
             setActiveDatasetId(rows[rows.length - 1]!.dataset_id)
+            if (firstDataset) onFirstDataset?.()
             toast.success(
               `Registered ${rows.length} file(s). Large files profile in the background; row counts and quality scores update when ready.`,
             )
@@ -193,7 +196,7 @@ export function useDatasetIngestion({ setActiveDatasetId }: UseDatasetIngestionO
         setBusy(false)
       }
     },
-    [canUseNativeDuckDbPick, importDuckDbViaNativePick, openLocalDuckDbPath, qc, setActiveDatasetId, stageDuckDbFile],
+    [canUseNativeDuckDbPick, importDuckDbViaNativePick, onFirstDataset, openLocalDuckDbPath, qc, setActiveDatasetId, stageDuckDbFile],
   )
 
   const closeDuckDbSession = useCallback(() => {
@@ -215,12 +218,14 @@ export function useDatasetIngestion({ setActiveDatasetId }: UseDatasetIngestionO
 
   const handleDuckDbImported = useCallback(
     async (imported: DatasetSummary[]) => {
+      const firstDataset = !(qc.getQueryData<DatasetSummary[]>(['datasets']) ?? []).length
       await qc.invalidateQueries({ queryKey: ['datasets'] })
       if (imported.length) {
         setActiveDatasetId(imported[imported.length - 1]!.dataset_id)
+        if (firstDataset) onFirstDataset?.()
       }
     },
-    [qc, setActiveDatasetId],
+    [onFirstDataset, qc, setActiveDatasetId],
   )
 
   const openDuckDbFromDisk = useCallback(

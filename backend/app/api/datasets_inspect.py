@@ -9,7 +9,7 @@ from fastapi import APIRouter, Query, Response
 
 from app.api.deps import RegistryDep, SettingsDep, WorkspaceDep
 from app.errors import CODES, to_http_error
-from app.models.api import DatasetSummary
+from app.models.api import DatasetDependencies, DatasetSummary
 from app.services.duckdb_timeout import apply_statement_timeout
 from app.services.source_errors import MISSING_DATASET_SOURCE_MESSAGE, is_missing_dataset_source_error
 from app.services.workspace import sanitize_sql_identifier
@@ -84,6 +84,18 @@ def delete_dataset(dataset_id: str, registry: RegistryDep) -> Response:
     if not registry.unregister(dataset_id):
         raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="Dataset not found")
     return Response(status_code=204)
+
+
+@router.get("/{dataset_id}/dependencies", response_model=DatasetDependencies)
+def dataset_dependencies(
+    dataset_id: str, registry: RegistryDep, workspace: WorkspaceDep
+) -> DatasetDependencies:
+    if not registry.get(dataset_id):
+        raise to_http_error(status_code=404, code=CODES.NOT_FOUND, message="Dataset not found")
+    return DatasetDependencies(
+        saved_chart_count=workspace.saved_charts.count_for_dataset(dataset_id),
+        relationship_decision_count=workspace.relationship_decisions.count_for_dataset(dataset_id),
+    )
 
 
 @router.get("/{dataset_id}/sample")

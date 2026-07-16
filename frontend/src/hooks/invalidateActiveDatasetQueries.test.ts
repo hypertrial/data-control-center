@@ -17,7 +17,8 @@ describe('invalidateActiveDatasetQueries', () => {
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['profile-history', 'ds_001'] })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['profile-diff', 'ds_001'] })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['sample', 'ds_001'] })
-    expect(invalidateQueries).toHaveBeenCalledTimes(5)
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['relationships', 'ds_001'] })
+    expect(invalidateQueries).toHaveBeenCalledTimes(6)
   })
 
   it('optionally invalidates the dataset list', () => {
@@ -27,7 +28,7 @@ describe('invalidateActiveDatasetQueries', () => {
     invalidateActiveDatasetQueries(qc, 'ds_001', { includeDatasets: true })
 
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['datasets'] })
-    expect(invalidateQueries).toHaveBeenCalledTimes(6)
+    expect(invalidateQueries).toHaveBeenCalledTimes(7)
   })
 
   it('removes all per-dataset query keys', () => {
@@ -41,6 +42,9 @@ describe('invalidateActiveDatasetQueries', () => {
     expect(removeQueries).toHaveBeenCalledWith({ queryKey: ['profile-history', 'ds_001'] })
     expect(removeQueries).toHaveBeenCalledWith({ queryKey: ['profile-diff', 'ds_001'] })
     expect(removeQueries).toHaveBeenCalledWith({ queryKey: ['sample', 'ds_001'] })
-    expect(removeQueries).toHaveBeenCalledTimes(5)
+    expect(removeQueries).toHaveBeenCalledWith({ queryKey: ['relationships', 'ds_001'] })
+    expect(removeQueries).toHaveBeenCalledWith({ queryKey: ['saved-charts', 'ds_001'] })
+    expect(removeQueries).toHaveBeenCalledWith({ queryKey: ['dataset-dependencies', 'ds_001'] })
+    expect(removeQueries).toHaveBeenCalledTimes(8)
   })
 })
