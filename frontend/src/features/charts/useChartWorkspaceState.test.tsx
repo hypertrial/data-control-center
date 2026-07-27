@@ -196,6 +196,59 @@ describe('useChartWorkspaceState', () => {
     expect(h.runQuery).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps last-run series mapping while settingsChanged during debounce', async () => {
+    const profile = mkProfile({
+      measure_candidates: [
+        { name: 'revenue', score: 0.9, confidence: 'high' },
+        { name: 'profit', score: 0.8, confidence: 'high' },
+      ],
+      column_profiles: [
+        mkColumn({ name: 'order_date', semantic_type: 'datetime', null_pct: 0 }),
+        mkColumn({ name: 'revenue', semantic_type: 'numeric', null_pct: 0 }),
+        mkColumn({ name: 'profit', semantic_type: 'numeric', null_pct: 0 }),
+      ],
+      primary_temporal_column: { name: 'order_date', kind: 'continuous_datetime', confidence: 'high' },
+      temporal_columns: [{ name: 'order_date', kind: 'continuous_datetime', confidence: 'high' }],
+    })
+    h.runQuery.mockResolvedValue({
+      columns: [
+        { name: 'x', type: 'VARCHAR' },
+        { name: 'revenue', type: 'DOUBLE' },
+      ],
+      rows: [{ x: '2024-01', revenue: 10 }],
+      row_count: 1,
+      truncated: false,
+      error: null,
+    })
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const view = renderHook(() => useChartWorkspaceState('ds_1', profile, 'orders'), {
+      wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
+    })
+
+    act(() => {
+      view.result.current.patchSpec({
+        chartType: 'line',
+        xColumn: 'order_date',
+        yColumns: ['revenue'],
+        aggregation: 'sum',
+        bucket: 'month',
+        xColumnBucketable: true,
+        xColumnTemporalKind: 'continuous_datetime',
+      })
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(450)
+    })
+    expect(view.result.current.chartData[0]?.values).toEqual({ revenue: 10 })
+
+    act(() => {
+      view.result.current.patchSpec({ yColumns: ['profit'] })
+    })
+    expect(view.result.current.settingsChanged).toBe(true)
+    expect(view.result.current.chartData[0]?.values).toEqual({ revenue: 10 })
+    expect(view.result.current.chartData[0]?.values).not.toHaveProperty('profit')
+  })
+
   it('retries the current generated SQL on demand', async () => {
     const { result } = renderWorkspace()
 

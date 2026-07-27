@@ -21,8 +21,8 @@ request/response shapes and **`DCC_*`** settings, see
 Evaluate the app without private data using the synthetic fixtures in
 [`examples/`](../examples/) and the [five-minute tour](5-minute-tour.md).
 
-**Upload (default):** In the web UI, drag-and-drop or select tabular files (CSV, TSV, Parquet, JSON),
-or use **Choose folder** to upload all supported files in a directory at once. The API stores copies under
+**Upload (default):** In the web UI, drag-and-drop or select tabular files (CSV, TSV, Parquet, JSON,
+JSON Lines, NDJSON), or use **Choose folder** to upload all supported files in a directory at once. The API stores copies under
 **`.dcc_uploads/`** (relative to the backend cwd unless overridden), validates them,
 then registers them. Upload limits are configured with **`DCC_UPLOAD_*`** variables (see
 [`backend/README.md`](../backend/README.md#uploads-and-path-registration)).
@@ -34,8 +34,10 @@ local workflows and keep **`DCC_REGISTRATION_ALLOWED_ROOTS`** narrow.
 **View names:** DuckDB creates one internal **view per dataset** from the file stem
 (e.g. `orders.parquet` → `orders`). Duplicate stems get suffixes such as
 `orders_ds_002`; reserved SQL-like names get a `_dcc` suffix. The dataset sidebar and
-**`GET /api/datasets`** show **`view_name`** for each dataset. Ad-hoc SQL must reference
-at least one registered view when datasets exist.
+**`GET /api/datasets`** show **`view_name`** for each dataset. Ad-hoc SQL may only reference
+registered dataset views (not workspace metadata tables). When datasets exist, a query must
+reference at least one registered view; with an empty registry, relation-free SQL such as
+**`SELECT 1`** is still allowed.
 
 **Unregister:** Use the sidebar trash action or **`DELETE /api/datasets/{dataset_id}`**.
 The confirmation dialog preflights and names saved-chart and relationship-decision counts.

@@ -5,6 +5,7 @@ describe('askTableUtils', () => {
   it('stripTrailingLimit removes trailing LIMIT', () => {
     expect(stripTrailingLimit('SELECT 1 LIMIT 500')).toBe('SELECT 1')
     expect(stripTrailingLimit('SELECT 1 limit 10')).toBe('SELECT 1')
+    expect(stripTrailingLimit('SELECT 1 LIMIT 500;')).toBe('SELECT 1')
   })
 
   it('isNumericAskCell detects numeric SQL types', () => {

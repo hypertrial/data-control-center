@@ -38,7 +38,7 @@ jobs:
           uv run ruff check app tests
 
       - name: Test
-        run: uv run pytest
+        run: uv run python -m pytest
 
   frontend:
     runs-on: ubuntu-latest

@@ -83,4 +83,28 @@ describe('SamplesPage', () => {
     await waitFor(() => expect(screen.getByText(/101-150/)).toBeInTheDocument())
     expect(screen.getByRole('button', { name: 'Previous' })).not.toBeDisabled()
   })
+
+  it('resets to page 1 when the active dataset changes', async () => {
+    const user = userEvent.setup()
+    h.getSample.mockImplementation(async (_id: string, page: number) => ({
+      page,
+      page_size: 100,
+      row_count: page === 1 ? 100 : 50,
+      total_rows: 150,
+      columns: ['a'],
+      rows: [{ a: `row-p${page}` }],
+    }))
+    useUiStore.setState({ activeDatasetId: 'ds_1' })
+    wrap(<SamplesPage />)
+    await waitFor(() => expect(screen.getByText('row-p1')).toBeInTheDocument())
+    expect(h.getSample).toHaveBeenCalledWith('ds_1', 1, 100)
+
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    await waitFor(() => expect(screen.getByText('row-p2')).toBeInTheDocument())
+    expect(h.getSample).toHaveBeenCalledWith('ds_1', 2, 100)
+
+    useUiStore.setState({ activeDatasetId: 'ds_2' })
+    await waitFor(() => expect(h.getSample).toHaveBeenCalledWith('ds_2', 1, 100))
+    await waitFor(() => expect(screen.getByText('row-p1')).toBeInTheDocument())
+  })
 })

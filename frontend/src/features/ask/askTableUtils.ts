@@ -5,5 +5,5 @@ export function isNumericAskCell(typeByCol: Record<string, string>, col: string)
 
 /** Remove a trailing `LIMIT n` clause for opening in SQL editor without row cap. */
 export function stripTrailingLimit(sql: string): string {
-  return sql.replace(/\s+LIMIT\s+\d+\s*$/i, '').trim()
+  return sql.replace(/\s+LIMIT\s+\d+\s*;?\s*$/i, '').trim()
 }

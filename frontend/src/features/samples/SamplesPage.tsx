@@ -16,9 +16,32 @@ const PAGE_OPTIONS = [50, 100, 250, 500] as const
 
 export function SamplesPage() {
   const activeId = useUiStore((s) => s.activeDatasetId)
-  const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<(typeof PAGE_OPTIONS)[number]>(100)
-  const [jump, setJump] = useState('')
+  const [pagination, setPagination] = useState<{ datasetId: string | null; page: number; jump: string }>({
+    datasetId: activeId,
+    page: 1,
+    jump: '',
+  })
+  // Reset paging when the active dataset changes without an effect (lint-safe).
+  if (pagination.datasetId !== activeId) {
+    setPagination({ datasetId: activeId, page: 1, jump: '' })
+  }
+  const page = pagination.datasetId === activeId ? pagination.page : 1
+  const jump = pagination.datasetId === activeId ? pagination.jump : ''
+  const setPage = (next: number | ((prev: number) => number)) => {
+    setPagination((prev) => {
+      const sameDataset = prev.datasetId === activeId
+      const cur = sameDataset ? prev.page : 1
+      const page = typeof next === 'function' ? next(cur) : next
+      return { datasetId: activeId, page, jump: sameDataset ? prev.jump : '' }
+    })
+  }
+  const setJump = (next: string) => {
+    setPagination((prev) => {
+      const sameDataset = prev.datasetId === activeId
+      return { datasetId: activeId, page: sameDataset ? prev.page : 1, jump: next }
+    })
+  }
 
   const profileHook = useDatasetProfile(activeId)
   const profileQ = {

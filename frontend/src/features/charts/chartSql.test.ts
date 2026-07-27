@@ -64,7 +64,7 @@ describe('chartSql', () => {
 
   it('builds quoted aggregate SQL with bucketing', () => {
     const sql = buildLineChartSql(baseSpec(), 'sales orders')
-    expect(sql).toContain("date_trunc('month', \"order date\") as x")
+    expect(sql).toContain("date_trunc('month', \"order date\") as \"x\"")
     expect(sql).toContain('avg("gross revenue") as "gross revenue"')
     expect(sql).toContain('from "sales orders"')
     expect(sql).toContain('group by 1')
@@ -73,7 +73,7 @@ describe('chartSql', () => {
 
   it('builds unaggregated SQL without grouping or bucket expression', () => {
     const sql = buildLineChartSql(baseSpec({ aggregation: 'none', bucket: 'none' }), 'orders')
-    expect(sql).toContain('"order date" as x')
+    expect(sql).toContain('"order date" as "x"')
     expect(sql).not.toContain('group by')
     expect(sql).not.toContain('date_trunc')
   })
@@ -90,14 +90,54 @@ describe('chartSql', () => {
       'orders',
     )
     expect(sql).toContain('median("gross revenue") as "gross revenue"')
-    expect(sql).toContain("region = 'Bob''s'")
-    expect(sql).toContain("team in ('A', 'B')")
+    expect(sql).toContain("\"region\" = 'Bob''s'")
+    expect(sql).toContain("\"team\" in ('A', 'B')")
+  })
+
+  it('preserves zero-padded and oversized digit filter literals', () => {
+    const eq = buildLineChartSql(
+      baseSpec({ filters: [{ id: 'f1', column: 'sku', operator: 'eq', value: '01' }] }),
+      'orders',
+    )
+    expect(eq).toContain("\"sku\" = '01'")
+    const inn = buildLineChartSql(
+      baseSpec({ filters: [{ id: 'f1', column: 'sku', operator: 'in', value: '01, 02' }] }),
+      'orders',
+    )
+    expect(inn).toContain("\"sku\" in ('01', '02')")
+    const num = buildLineChartSql(
+      baseSpec({ filters: [{ id: 'f1', column: 'n', operator: 'eq', value: '42' }] }),
+      'orders',
+    )
+    expect(num).toContain('"n" = 42')
+    const big = buildLineChartSql(
+      baseSpec({
+        filters: [{ id: 'f1', column: 'id', operator: 'eq', value: '9007199254740993' }],
+      }),
+      'orders',
+    )
+    expect(big).toContain("\"id\" = '9007199254740993'")
+  })
+
+  it('quotes reserved column names', () => {
+    const sql = buildBarChartSql(
+      baseSpec({
+        chartType: 'bar',
+        xColumn: 'order',
+        yColumns: ['amount'],
+        aggregation: 'sum',
+        topN: 10,
+      }),
+      'orders',
+    )
+    expect(sql).toContain('CAST("order" as VARCHAR)')
+    expect(sql).not.toMatch(/CAST\(order as VARCHAR\)/i)
   })
 
   it('builds split-by SQL', () => {
     const sql = buildLineChartSql(baseSpec({ yColumns: ['rating'], splitBy: 'team', aggregation: 'avg' }), 'ratings')
-    expect(sql).toContain('team as split')
-    expect(sql).toContain('avg(rating) as value')
+    expect(sql).toContain('"team" as "split"')
+    expect(sql).toContain('avg("rating") as "value"')
     expect(sql).toContain('group by')
   })
 
@@ -127,7 +167,7 @@ describe('chartSql', () => {
       }),
       'player_ratings',
     )
-    expect(sql.toLowerCase()).toContain('cast(min(standing_tackle) as bigint) as min_v')
+    expect(sql.toLowerCase()).toContain('cast(min("standing_tackle") as bigint) as min_v')
     expect(sql).toContain('least(12, max_v - min_v + 1) as bucket_count')
   })
 
@@ -137,14 +177,14 @@ describe('chartSql', () => {
       'orders',
     )
     expect(countSql.toLowerCase()).toContain('_dcc_bar_ranked')
-    expect(countSql.toLowerCase()).toContain('max(_dcc_bar_ranked.sort_value)')
+    expect(countSql.toLowerCase()).toContain('max(_dcc_bar_ranked."sort_value")')
 
     const sumSql = buildBarChartSql(
       baseSpec({ chartType: 'bar', xColumn: 'region', yColumns: ['gross revenue'], aggregation: 'sum', topN: 15 }),
       'orders',
     )
     expect(sumSql).toContain('sum("gross revenue")')
-    expect(sumSql.toLowerCase()).toContain('max(_dcc_bar_ranked.sort_value)')
+    expect(sumSql.toLowerCase()).toContain('max(_dcc_bar_ranked."sort_value")')
   })
 
   it('builds bar split SQL', () => {
@@ -159,8 +199,8 @@ describe('chartSql', () => {
       }),
       'orders',
     )
-    expect(sql.toLowerCase()).toContain('cast(team as varchar) as split')
-    expect(sql.toLowerCase()).toContain('max(_dcc_bar_ranked.sort_value)')
+    expect(sql.toLowerCase()).toContain('cast("team" as varchar) as "split"')
+    expect(sql.toLowerCase()).toContain('max(_dcc_bar_ranked."sort_value")')
   })
 
   it('builds scatter SQL without grouping', () => {
@@ -168,7 +208,7 @@ describe('chartSql', () => {
       baseSpec({ chartType: 'scatter', xColumn: 'gross revenue', yColumns: ['profit'], aggregation: 'none' }),
       'orders',
     )
-    expect(sql).toContain('"gross revenue" as x')
+    expect(sql).toContain('"gross revenue" as "x"')
     expect(sql).not.toContain('group by')
     expect(sql).toContain('limit 5000')
   })

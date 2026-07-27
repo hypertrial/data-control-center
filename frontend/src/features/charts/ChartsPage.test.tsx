@@ -213,8 +213,8 @@ describe('ChartsPage', () => {
 
     await waitFor(() => expect(h.runQuery).toHaveBeenCalled())
     const sql = h.runQuery.mock.calls.at(-1)?.[0].sql.toLowerCase() ?? ''
-    expect(sql).toContain('revenue as x')
-    expect(sql).toContain('profit as y')
+    expect(sql).toContain('"revenue" as "x"')
+    expect(sql).toContain('"profit" as "y"')
     expect(sql).not.toContain('group by')
   })
 
@@ -231,7 +231,7 @@ describe('ChartsPage', () => {
         sql: expect.stringContaining('least(12, max_v - min_v + 1)'),
       }),
     )
-    expect(h.runQuery.mock.calls[0]?.[0].sql.toLowerCase()).toContain('cast(min(revenue) as bigint) as min_v')
+    expect(h.runQuery.mock.calls[0]?.[0].sql.toLowerCase()).toContain('cast(min("revenue") as bigint) as min_v')
   })
 
   it('creates and explicitly updates a saved chart', async () => {

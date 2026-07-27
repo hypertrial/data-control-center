@@ -74,7 +74,6 @@ export function formatAnalyticsSql(sql: string): string {
 }
 
 export function quoteIdent(name: string): string {
-  if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) return name
   return `"${name.replaceAll('"', '""')}"`
 }
 

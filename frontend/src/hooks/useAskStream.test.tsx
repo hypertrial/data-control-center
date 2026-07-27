@@ -76,4 +76,86 @@ describe('useAskStream', () => {
     })
     expect(result.current.busy).toBe(false)
   })
+
+  it('overlapping runs keep busy until the newer stream finishes', async () => {
+    const signals: AbortSignal[] = []
+    h.askAgentStream.mockImplementation(async (_b, _on, opts) => {
+      const signal = opts?.signal
+      if (!signal) throw new Error('missing signal')
+      signals.push(signal)
+      await new Promise<void>((_resolve, reject) => {
+        if (signal.aborted) {
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+          return
+        }
+        const onAbort = () => {
+          signal.removeEventListener('abort', onAbort)
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+        }
+        signal.addEventListener('abort', onAbort)
+        // Keep run alive until aborted or test settles via cancel.
+      })
+    })
+    const { result } = renderHook(() => useAskStream())
+
+    let run1: Promise<void>
+    let run2: Promise<void>
+    await act(async () => {
+      run1 = result.current.run({ question: 'one' })
+    })
+    await act(async () => {
+      run2 = result.current.run({ question: 'two' })
+    })
+    await waitFor(() => expect(signals).toHaveLength(2))
+    expect(signals[0]?.aborted).toBe(true)
+    expect(result.current.busy).toBe(true)
+
+    await act(async () => {
+      result.current.cancel()
+      await Promise.allSettled([run1!, run2!])
+    })
+    expect(signals[1]?.aborted).toBe(true)
+    expect(result.current.busy).toBe(false)
+  })
+
+  it('ignores late errors from a superseded run', async () => {
+    let rejectOlder: ((err: Error) => void) | null = null
+    let resolveNewer: (() => void) | null = null
+    h.askAgentStream
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((_resolve, reject) => {
+          rejectOlder = reject
+        })
+      })
+      .mockImplementationOnce(async (_b, onEv) => {
+        onEv({ type: 'answer', data: { answer: 'fresh' } } as never)
+        await new Promise<void>((resolve) => {
+          resolveNewer = resolve
+        })
+        onEv({ type: 'done', data: {} } as never)
+      })
+
+    const { result } = renderHook(() => useAskStream())
+    let older: Promise<void>
+    await act(async () => {
+      older = result.current.run({ question: 'old' })
+    })
+    await act(async () => {
+      void result.current.run({ question: 'new' })
+    })
+    await waitFor(() => expect(result.current.current?.answer).toBe('fresh'))
+
+    await act(async () => {
+      rejectOlder?.(new Error('stale failure'))
+      await older!
+    })
+    expect(result.current.current?.answer).toBe('fresh')
+    expect(result.current.current?.error).toBeNull()
+    expect(result.current.busy).toBe(true)
+
+    await act(async () => {
+      resolveNewer?.()
+    })
+    await waitFor(() => expect(result.current.busy).toBe(false))
+  })
 })

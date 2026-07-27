@@ -65,6 +65,8 @@ export function useAskStream() {
     setCurrent({ ...emptyCall })
     try {
       await askAgentStream(body, (ev: AgentStreamEvent) => {
+        // Ignore late events from a run that is no longer active.
+        if (abortRef.current !== ac) return
         setCurrent((s) => {
           const base: AskCallState = s ?? { ...emptyCall }
           switch (ev.type) {
@@ -153,13 +155,18 @@ export function useAskStream() {
       if ((e as Error).name === 'AbortError') {
         return
       }
+      if (abortRef.current !== ac) {
+        return
+      }
       setCurrent((s) => ({
         ...(s ?? { ...emptyCall }),
         error: (e as Error).message || 'Stream failed',
       }))
     } finally {
-      setBusy(false)
-      abortRef.current = null
+      if (abortRef.current === ac) {
+        setBusy(false)
+        abortRef.current = null
+      }
     }
   }, [])
 

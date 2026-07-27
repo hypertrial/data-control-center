@@ -238,3 +238,69 @@ def test_validate_workspace_sql_details_excludes_cte_refs_from_unknowns() -> Non
 
     assert result.error is None
     assert result.relation_refs == {"real"}
+
+
+def test_empty_view_names_rejects_non_registered_relations() -> None:
+    for sql in (
+        "SELECT * FROM dcc_ask_turns",
+        "SELECT * FROM information_schema.tables",
+    ):
+        err, norm = validate_workspace_sql(sql, set())
+        assert norm is None
+        assert err and "non-registered relations" in err
+
+
+def test_empty_view_names_still_allows_select_without_relations() -> None:
+    err, norm = validate_workspace_sql("SELECT 1 AS x", set())
+    assert err is None
+    assert norm == "SELECT 1 AS x"
+
+
+def test_dollar_quote_preserves_comment_like_contents() -> None:
+    sql = "SELECT length($$ -- x\n$$) AS n FROM real"
+    err, norm = validate_workspace_sql(sql, {"real"})
+    assert err is None
+    assert norm == sql
+
+
+def test_dollar_quote_semicolon_is_not_multi_statement() -> None:
+    err, norm = validate_workspace_sql("SELECT $q$foo;bar$q$ AS x FROM real", {"real"})
+    assert err is None
+    assert norm == "SELECT $q$foo;bar$q$ AS x FROM real"
+
+
+def test_dollar_quote_hides_forbidden_keywords() -> None:
+    err, norm = validate_workspace_sql("SELECT $$ATTACH$$ AS x FROM real", {"real"})
+    assert err is None
+    assert norm is not None
+
+
+def test_validate_workspace_sql_rejects_token_error_without_raising() -> None:
+    err, norm = validate_workspace_sql("SELECT $A$hello", None)
+    assert norm is None
+    assert err and "SELECT" in err
+
+
+def test_quoted_alias_attach_is_allowed() -> None:
+    err, norm = validate_workspace_sql('SELECT 1 AS "ATTACH" FROM real', {"real"})
+    assert err is None
+    assert norm is not None
+
+
+def test_blank_string_literals_blanks_double_quoted_idents() -> None:
+    out = blank_string_literals('SELECT 1 AS "ATTACH"')
+    assert "ATTACH" not in out
+
+
+def test_blank_string_literals_doubled_double_quotes() -> None:
+    out = blank_string_literals('SELECT 1 AS "AT""TACH"')
+    assert "ATTACH" not in out
+    assert '""' in out
+
+
+def test_dollar_quote_end_rejects_incomplete_openers() -> None:
+    from app.services.sql_validate import _dollar_quote_end
+
+    assert _dollar_quote_end("", 0) is None
+    assert _dollar_quote_end("$incomplete", 0) is None
+    assert _dollar_quote_end("$tag$no closer", 0) is None

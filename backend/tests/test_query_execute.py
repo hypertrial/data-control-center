@@ -207,6 +207,40 @@ def test_empty_registry_allows_select(registry_with_view: DatasetRegistry, monke
     assert out.rows == [{"x": 1}]
 
 
+def test_empty_registry_rejects_workspace_metadata_tables(
+    registry_with_view: DatasetRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(registry_with_view, "list_all", lambda: [])
+    out = execute_query(
+        registry_with_view,
+        Settings(),
+        QueryRequest(sql="SELECT * FROM dcc_ask_turns"),
+    )
+    assert out.error
+    assert "non-registered relations" in (out.error or "")
+
+
+def test_execute_preserves_dollar_quoted_literal_contents(registry_with_view: DatasetRegistry) -> None:
+    vw = next(iter(registry_with_view.list_all())).view_name
+    out = execute_query(
+        registry_with_view,
+        Settings(),
+        QueryRequest(sql=f"SELECT length($$ -- x\n$$) AS n FROM {vw} LIMIT 1"),
+    )
+    assert not out.error
+    assert out.rows == [{"n": 6}]
+
+
+def test_execute_token_error_returns_query_error(registry_with_view: DatasetRegistry) -> None:
+    out = execute_query(
+        registry_with_view,
+        Settings(),
+        QueryRequest(sql="SELECT $A$hello"),
+    )
+    assert out.error
+    assert "SELECT" in (out.error or "")
+
+
 def test_execute_query_timeout_error_message(
     registry_with_view: DatasetRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:

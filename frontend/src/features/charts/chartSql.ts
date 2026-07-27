@@ -28,7 +28,10 @@ function aggregationExpression(aggregation: Exclude<ChartAggregation, 'none'>, c
 
 function filterValue(raw: string): string {
   const trimmed = raw.trim()
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return quoteLiteral(Number(trimmed))
+  const n = Number(trimmed)
+  if (/^-?\d+(\.\d+)?$/.test(trimmed) && Number.isFinite(n) && String(n) === trimmed) {
+    return quoteLiteral(n)
+  }
   return quoteLiteral(trimmed)
 }
 

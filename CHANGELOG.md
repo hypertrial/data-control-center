@@ -31,6 +31,18 @@ stable release. Maintainer tagging steps: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ### Fixed
 
+- SQL workspace validation now enforces relation allowlisting when no datasets are registered
+  (only registered views; empty registry still allows relation-free `SELECT 1`), treats DuckDB
+  dollar-quoted strings as opaque literals, maps sqlglot tokenizer failures to query errors
+  instead of HTTP 500s, and allows forbidden keywords used only as quoted aliases.
+- Ask overlapping stream runs no longer clear the newer request’s busy/cancel state; “Open
+  without LIMIT” strips a trailing `LIMIT` even when SQL ends with `;`.
+- Chart SQL always quotes identifiers (including reserved names like `order`), preserves
+  zero-padded and oversized digit filter literals, and keeps the last-run series mapping while
+  debounced settings changes rerun.
+- Samples resets to page 1 when the active dataset changes.
+- CI backend tests invoke pytest via **`uv run python -m pytest`**, matching Make/CONTRIBUTING.
+- User guide upload formats include JSON Lines and NDJSON.
 - Root routing now preserves query parameters and cannot be rewritten before redirecting to
   Overview; legacy **`/quality`** links also land on Overview.
 

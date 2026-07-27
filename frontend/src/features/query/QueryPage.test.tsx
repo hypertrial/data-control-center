@@ -306,7 +306,7 @@ describe('QueryPage', () => {
     useUiStore.setState({ activeDatasetId: 'ds_001' })
     await waitFor(() =>
       expect((screen.getByLabelText('SQL editor') as HTMLTextAreaElement).value).toBe(
-        ['select *', 'from foo', 'limit 50;'].join('\n'),
+        ['select *', 'from "foo"', 'limit 50;'].join('\n'),
       ),
     )
 

@@ -42,6 +42,7 @@ export function useChartWorkspaceState(activeId: string, profile: DatasetProfile
   const [activeSavedChart, setActiveSavedChart] = useState<SavedChart | null>(null)
   const [savedBaseline, setSavedBaseline] = useState<string | null>(null)
   const [lastRunSql, setLastRunSql] = useState('')
+  const [lastRunSpec, setLastRunSpec] = useState<ChartSpec | null>(null)
   const runChart = useMutation({ mutationFn: api.runQuery })
   const { mutate: runChartQuery, reset: resetRunChart } = runChart
 
@@ -56,8 +57,15 @@ export function useChartWorkspaceState(activeId: string, profile: DatasetProfile
     () => (validation.valid && viewName ? buildChartSql(spec, viewName) : ''),
     [spec, validation.valid, viewName],
   )
-  const chartData = useMemo(() => queryResultToChartData(runChart.data, spec), [runChart.data, spec])
-  const option = useMemo(() => buildChartOption(spec, chartData), [spec, chartData])
+  // While SQL is unchanged, use the live spec (display-only edits). While debounced
+  // SQL changes are pending, keep mapping against the last-run spec so stale rows
+  // are not reinterpreted under the new shape.
+  const mappingSpec = generatedSql && generatedSql === lastRunSql ? spec : (lastRunSpec ?? spec)
+  const chartData = useMemo(
+    () => queryResultToChartData(runChart.data, mappingSpec),
+    [runChart.data, mappingSpec],
+  )
+  const option = useMemo(() => buildChartOption(mappingSpec, chartData), [mappingSpec, chartData])
   const canRenderChart = validation.valid && chartData.length > 0 && !runChart.data?.error
   const settingsChanged = !!generatedSql && !!lastRunSql && generatedSql !== lastRunSql
   const splitCardinality = spec.splitBy ? getColumnCardinality(profile, spec.splitBy) : null
@@ -86,9 +94,10 @@ export function useChartWorkspaceState(activeId: string, profile: DatasetProfile
   }, [])
 
   const executeSql = useCallback(
-    (sql: string) => {
+    (sql: string, runSpec: ChartSpec) => {
       if (!sql) return
       setLastRunSql(sql)
+      setLastRunSpec(runSpec)
       runChartQuery({ sql, max_rows: CHART_MAX_ROWS })
     },
     [runChartQuery],
@@ -96,14 +105,14 @@ export function useChartWorkspaceState(activeId: string, profile: DatasetProfile
 
   const execute = useCallback(() => {
     if (!validation.valid || !generatedSql) return
-    executeSql(generatedSql)
-  }, [validation.valid, generatedSql, executeSql])
+    executeSql(generatedSql, spec)
+  }, [validation.valid, generatedSql, executeSql, spec])
 
   useEffect(() => {
     if (!validation.valid || !generatedSql || generatedSql === lastRunSql) return
-    const timer = window.setTimeout(() => executeSql(generatedSql), 450)
+    const timer = window.setTimeout(() => executeSql(generatedSql, spec), 450)
     return () => window.clearTimeout(timer)
-  }, [executeSql, generatedSql, lastRunSql, validation.valid])
+  }, [executeSql, generatedSql, lastRunSql, validation.valid, spec])
 
   const runError = runChart.isError ? (runChart.error as Error).message : runChart.data?.error
 
@@ -117,6 +126,7 @@ export function useChartWorkspaceState(activeId: string, profile: DatasetProfile
     setActiveSavedChart(null)
     setSavedBaseline(null)
     setLastRunSql('')
+    setLastRunSpec(null)
     resetRunChart()
     return true
   }, [activeId, isDirty, profile, resetRunChart])
@@ -161,6 +171,7 @@ export function useChartWorkspaceState(activeId: string, profile: DatasetProfile
       setActiveSavedChart(chart)
       setSavedBaseline(JSON.stringify(normalized))
       setLastRunSql('')
+      setLastRunSpec(null)
       resetRunChart()
       return true
     },

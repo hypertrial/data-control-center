@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import sqlglot
 from sqlglot import exp
-from sqlglot.errors import ParseError
+from sqlglot.errors import ParseError, TokenError
 
 FORBIDDEN_KEYWORDS = re.compile(
     r"\b("
@@ -65,12 +65,33 @@ FORBIDDEN_DUCKDB_FUNCTIONS = {
     "query_table",
 }
 
+_READONLY_SELECT_MSG = "Only read-only SELECT queries (optionally starting with WITH) are allowed."
+
 
 @dataclass(frozen=True)
 class SqlValidationResult:
     error: str | None
     normalized_sql: str | None
     relation_refs: set[str]
+
+
+def _dollar_quote_end(sql: str, start: int) -> int | None:
+    """If sql[start] opens a DuckDB dollar quote, return index after the closer; else None."""
+    if start >= len(sql) or sql[start] != "$":
+        return None
+    n = len(sql)
+    j = start + 1
+    while j < n and (sql[j].isalnum() or sql[j] == "_"):
+        j += 1
+    if j >= n or sql[j] != "$":
+        return None
+    closer = sql[start : j + 1]
+    k = j + 1
+    while k <= n - len(closer):
+        if sql.startswith(closer, k):
+            return k + len(closer)
+        k += 1
+    return None
 
 
 def strip_sql_comments(sql: str) -> str:
@@ -84,6 +105,11 @@ def strip_sql_comments(sql: str) -> str:
         nxt = sql[i + 1] if i + 1 < n else ""
 
         if not in_single and not in_double:
+            dollar_end = _dollar_quote_end(sql, i)
+            if dollar_end is not None:
+                out.append(sql[i:dollar_end])
+                i = dollar_end
+                continue
             if ch == "-" and nxt == "-":
                 i += 2
                 while i < n and sql[i] not in "\r\n":
@@ -131,6 +157,12 @@ def split_sql_statements(sql: str) -> list[str]:
     in_double = False
     while i < n:
         ch = sql[i]
+        if not in_single and not in_double:
+            dollar_end = _dollar_quote_end(sql, i)
+            if dollar_end is not None:
+                buf.append(sql[i:dollar_end])
+                i = dollar_end
+                continue
         if ch == "'" and not in_double:
             if in_single and i + 1 < n and sql[i + 1] == "'":
                 buf.append("''")
@@ -165,30 +197,58 @@ def split_sql_statements(sql: str) -> list[str]:
 
 
 def blank_string_literals(sql: str) -> str:
+    """Blank single-quoted / dollar-quoted / double-quoted interiors for keyword scans."""
     out: list[str] = []
     i = 0
     n = len(sql)
-    in_single = False
     while i < n:
+        dollar_end = _dollar_quote_end(sql, i)
+        if dollar_end is not None:
+            j = i + 1
+            while j < n and (sql[j].isalnum() or sql[j] == "_"):
+                j += 1
+            opener_end = j + 1
+            closer_len = opener_end - i
+            body_end = dollar_end - closer_len
+            out.append(sql[i:opener_end])
+            out.append(" " * max(0, body_end - opener_end))
+            out.append(sql[body_end:dollar_end])
+            i = dollar_end
+            continue
+
         ch = sql[i]
-        if ch == "'" and not in_single:
-            in_single = True
+        if ch == "'":
             out.append("'")
             i += 1
-            continue
-        if in_single:
-            if i + 1 < n and ch == "'" and sql[i + 1] == "'":
-                out.append("''")
-                i += 2
-                continue
-            if ch == "'":
-                in_single = False
-                out.append("'")
+            while i < n:
+                if i + 1 < n and sql[i] == "'" and sql[i + 1] == "'":
+                    out.append("''")
+                    i += 2
+                    continue
+                if sql[i] == "'":
+                    out.append("'")
+                    i += 1
+                    break
+                out.append(" ")
                 i += 1
-                continue
-            out.append(" ")
-            i += 1
             continue
+
+        if ch == '"':
+            out.append('"')
+            i += 1
+            while i < n:
+                if i + 1 < n and sql[i] == '"' and sql[i + 1] == '"':
+                    out.append('""')
+                    i += 2
+                    continue
+                if sql[i] == '"':
+                    out.append('"')
+                    i += 1
+                    break
+                out.append(" ")
+                i += 1
+            continue
+
         out.append(ch)
         i += 1
     return "".join(out)
@@ -219,13 +279,13 @@ def _extract_ast_relations(tree: exp.Expression) -> tuple[set[str], set[str]]:
 def _validate_readonly_ast(sql: str) -> tuple[str | None, set[str], set[str]]:
     try:
         tree = sqlglot.parse_one(sql, read="duckdb")
-    except ParseError:
-        return ("Only read-only SELECT queries (optionally starting with WITH) are allowed.", set(), set())
+    except (ParseError, TokenError):
+        return (_READONLY_SELECT_MSG, set(), set())
     if tree is None:
-        return ("Only read-only SELECT queries (optionally starting with WITH) are allowed.", set(), set())
+        return (_READONLY_SELECT_MSG, set(), set())
 
     if not isinstance(tree, exp.Select | exp.SetOperation):
-        return ("Only read-only SELECT queries (optionally starting with WITH) are allowed.", set(), set())
+        return (_READONLY_SELECT_MSG, set(), set())
 
     for node in tree.walk():
         if node.__class__.__name__ in FORBIDDEN_AST_NODE_NAMES:
@@ -269,7 +329,7 @@ def validate_workspace_sql_details(
     upper_head = stmt.lstrip().upper()
     if not (upper_head.startswith("SELECT") or upper_head.startswith("WITH")):
         return SqlValidationResult(
-            "Only read-only SELECT queries (optionally starting with WITH) are allowed.",
+            _READONLY_SELECT_MSG,
             None,
             set(),
         )
@@ -279,7 +339,8 @@ def validate_workspace_sql_details(
         return SqlValidationResult(ast_err, None, set())
     relation_refs = refs - cte_names
     registered_refs = {r for r in relation_refs if view_names is None or r in view_names}
-    if view_names and refs:
+    # Empty set must still enforce allowlisting; None means "do not enforce".
+    if view_names is not None and refs:
         unknown = {r for r in refs if r not in view_names and r not in cte_names}
         if unknown:
             return SqlValidationResult(
