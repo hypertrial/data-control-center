@@ -1,83 +1,43 @@
-# AGENTS.md
+# Agent entry point
 
-## Project Overview
+This repository uses the Universal Pad specification for non-trivial agentic work.
 
-Data Control Center is a local-only workstation app for uploading, profiling,
-exploring, and querying local datasets.
+**Git** is the source of truth for code. **CI** is the source of truth for verification. **Pad** is the source of truth for intent, scope, status, dependencies, decisions, evidence, and handoffs.
 
-- Frontend: `frontend/` uses React, Vite, TypeScript, TanStack Query/Table,
-  Zustand, ECharts, Tailwind, and shadcn-style primitives.
-- Backend: `backend/` uses FastAPI, DuckDB, Polars, Pydantic, and `uv`.
-- Keep the product local-only. Do not introduce hosted, multi-user, shared-LAN,
-  tenancy, or account-auth assumptions without an explicit user request.
+Read [`PROJECT_AGENT.md`](PROJECT_AGENT.md) before implementation. It holds repository-specific invariants, stack notes, and the native verification commands wrapped by `scripts/verify-fast` and `scripts/verify`.
 
-## Setup and validation
+## Work
 
-Run commands from the repository root unless noted. **Canonical commands and CI parity:**
-[`CONTRIBUTING.md`](CONTRIBUTING.md) (setup, Makefile targets, validation, coverage).
+Use Pad collections **Work** and **Plans** only.
 
-Quick reference:
+Work types: Feature, Bug, Refactor, Investigation, Maintenance. Plans are multi-ticket containers only.
 
-- `make install` / `make dev` — dependencies and local dev servers
-- `make check` — full validation before finishing work
-- `make check-ci` — after **frontend** lockfile changes
-- `cd backend && uv sync --extra dev` — after **backend** `uv.lock` / pyproject changes, then `make check`
-- `make clean-local` — discard local workspace and uploads
+Statuses (machine values): `backlog`, `ready`, `in-progress`, `blocked`, `review`, `done`.
 
-Use **Node 22** from [`.nvmrc`](.nvmrc) (matches CI). Use **Python 3.11+** with `uv`.
+Risk: `r0` (trivial), `r1` (normal), `r2` (consequential), `r3` (critical).
 
-If a required tool is missing or a network-dependent audit cannot run, state the exact
-blocker and any fallback checks performed.
+Do not create Ideas, Tasks, chores, or extra default types. Do not run the Pad onboard playbook.
 
-## Code Style
+## Lifecycle
 
-- Follow existing module boundaries and naming before adding new abstractions.
-- Backend API routes live in `backend/app/api/`; Pydantic models in
-  `backend/app/models/`; service logic in `backend/app/services/`.
-- Frontend API client/types live in `frontend/src/api/`; feature UI lives in
-  `frontend/src/features/`; reusable primitives live in
-  `frontend/src/components/`.
-- Add or update tests with behavior changes. Backend coverage is expected to
-  remain at 100%; frontend coverage must satisfy the configured Vitest baseline.
-- Keep generated artifacts, coverage output, local databases, uploads, caches,
-  and private datasets out of commits.
-- Prefer small, focused changes over broad refactors. Do not rewrite unrelated
-  code while fixing a local issue.
+specify → test/reproduce → implement → targeted verification → full verification → adversarial review → fix findings → re-verify → CI → evidence → done
 
-## Security Requirements
+Do not start material implementation until the ticket is `ready`: intended behavior, invariants, regression surface, and verification are specified.
 
-- Preserve loopback/local-only defaults and local token protections.
-- Treat `.dcc_workspace.duckdb` and `.dcc_uploads/` as private local data.
-- Browser uploads are the normal ingestion path. Path registration is advanced
-  local-only functionality and must remain explicitly gated.
-- Never expose absolute local paths in user-facing behavior unless the existing
-  `DCC_EXPOSE_ABSOLUTE_SOURCE_PATHS` setting allows it.
-- Keep public errors sanitized; avoid leaking local filesystem paths, tokens, or
-  parser internals.
-- Do not add telemetry, remote network calls, or hosted services without explicit
-  user direction.
+Implement the smallest coherent change. Do not silently expand scope. Put unrelated work in a new Pad ticket.
 
-## Documentation Expectations
+## Verification
 
-Update docs when behavior, setup, validation commands, env vars, security
-posture, workflows, or public API contracts change.
+Development feedback: `scripts/verify-fast`
 
-- User-facing overview: `README.md`
-- User docs index: `docs/README.md`
-- Product usage: `docs/user-guide.md`
-- Backend details: `backend/README.md`
-- Frontend details: `frontend/README.md`
-- Contributor workflow: `CONTRIBUTING.md`
-- Security policy: `SECURITY.md`
-- Safe demo path: `docs/5-minute-tour.md` and `examples/`
+Completion gate: `scripts/verify`
 
-## Git And PR Hygiene
+A ticket is not `done` while required verification is failing or unrun. Record why if a required command cannot run.
 
-- Inspect `git status --short` before editing and before final response.
-- Do not revert user changes unless explicitly asked.
-- Commit messages should be specific, imperative, and based on the actual diff.
-- Before release or public-sharing work, run local cleanup with `make clean-local`
-  and verify only intentional tracked changes remain.
-- Before tagging a release, follow the maintainer checklist in
-  [`CONTRIBUTING.md`](CONTRIBUTING.md#release-checklist-maintainers) and
-  [`docs/RELEASE.md`](docs/RELEASE.md).
+## Evidence and handoffs
+
+Record decisions with `pad item decide`. Represent blockers as Pad dependencies, not prose.
+
+Incomplete work must include a handoff a fresh agent can resume without chat history.
+
+R2/R3 work needs independent adversarial review before `done`.
