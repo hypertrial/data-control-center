@@ -52,7 +52,7 @@ Security = "https://github.com/hypertrial/data-control-center/security/advisorie
 [tool.uv]
 constraint-dependencies = [
     "msgpack>=1.2.1",
-    "pip>=26.1.2",
+    "pip>=26.2",
 ]
 
 [tool.pytest.ini_options]
