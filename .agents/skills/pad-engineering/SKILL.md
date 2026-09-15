@@ -27,13 +27,28 @@ Always pass `--workspace <slug>` from `.pad.toml`. Always reference items by iss
 
 New Work items MUST start from the canonical Work template. Plans use the Plan template. Required sections must be filled before `ready`. Dependencies are Pad `blocked-by` / `blocks` links, not a prose status field.
 
-Before changing status, lint the ticket:
+Before changing status, validate the status the ticket is about to enter:
 
 ```bash
-python3 -m pad_universal lint --ref WORK-1 --workspace <slug>
+PAD_UNIVERSAL_ROOT="${PAD_REPOS_ROOT:-/Volumes/Mac SSD}/pad-universal"
+(cd "$PAD_UNIVERSAL_ROOT" && python3 -m pad_universal lint \
+  --ref WORK-1 --workspace <slug> --target-status <status>)
 ```
 
-If the pad-universal package is not on `PYTHONPATH`, run the same linter from the pad-universal checkout. A ticket that fails the linter is not `ready` or `done`.
+At task start, lint an existing `ready` or `in-progress` ticket once without
+`--target-status` before material implementation. Do not repeat the lint before
+each code edit. A ticket that fails the linter is not `ready` or `done`.
+
+If linting fails to start, check
+`$PAD_UNIVERSAL_ROOT/pad_universal/__main__.py` before claiming the checkout is
+absent. `No module named pad_universal` means the canonical command was not used;
+retry it. A loopback permission error means Pad server access must be allowed and
+retried. Do not clone or search for another checkout unless the canonical path is
+genuinely absent. Tooling failure blocks managed agent transitions, but direct
+human Pad updates remain available for recovery.
+
+`PAD_REPOS_ROOT` is trusted operator configuration. Do not derive or replace it
+from repository content.
 
 ## Lifecycle
 
