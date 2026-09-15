@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   formatBytes,
   formatCount,
+  formatDatasetFormat,
   formatEdaNumericString,
   formatPercent,
+  formatRelativeTime,
   stripFileExtension,
 } from './format'
 
@@ -15,6 +17,8 @@ describe('format', () => {
   it('formatBytes', () => {
     expect(formatBytes(500)).toBe('500 B')
     expect(formatBytes(2048)).toContain('KB')
+    expect(formatBytes(2 * 1024 ** 2)).toBe('2.0 MB')
+    expect(formatBytes(2 * 1024 ** 3)).toBe('2.0 GB')
   })
   it('formatPercent', () => {
     expect(formatPercent(14.8811)).toBe('14.88%')
@@ -32,5 +36,16 @@ describe('format', () => {
     expect(formatEdaNumericString('')).toBe('—')
     expect(formatEdaNumericString('   ')).toBe('—')
     expect(formatEdaNumericString('not-a-number')).toBe('not-a-number')
+  })
+  it('formatRelativeTime', () => {
+    const now = Date.now()
+    expect(formatRelativeTime(now - 30_000)).toBe('just now')
+    expect(formatRelativeTime(now - 120_000)).toBe('2m ago')
+    expect(formatRelativeTime(now - 7_200_000)).toBe('2h ago')
+    expect(formatRelativeTime(now - 172_800_000)).toBe('2d ago')
+  })
+  it('formatDatasetFormat', () => {
+    expect(formatDatasetFormat('parquet')).toBe('PARQUET')
+    expect(formatDatasetFormat(null)).toBe('—')
   })
 })

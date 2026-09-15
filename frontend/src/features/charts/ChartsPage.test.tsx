@@ -93,6 +93,7 @@ function chartableProfile() {
 
 describe('ChartsPage', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     h.listDatasets.mockResolvedValue([dsRow])
     h.fetchDatasetProfileOnce.mockResolvedValue(chartableProfile())
     h.runQuery.mockResolvedValue({
